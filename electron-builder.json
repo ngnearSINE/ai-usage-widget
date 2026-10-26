@@ -13,6 +13,12 @@
     "public/**/*",
     "package.json"
   ],
+  "extraFiles": [
+    {
+      "from": "docs/user-guide.pdf",
+      "to": "사용 설명서.pdf"
+    }
+  ],
   "win": {
     "icon": "public/icon.ico",
     "target": [

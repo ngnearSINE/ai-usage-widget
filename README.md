@@ -6,7 +6,7 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 
 ![위젯 — 종합 디자인](docs/images/widget-rich.png)
 
-처음 쓰신다면 **[사용 설명서](docs/user-guide.md)**부터 보세요. 설치, 서비스 연결, 화면 읽는 법, 도킹, 설정, 문제 해결을 순서대로 안내합니다.
+처음 쓰신다면 [**사용 설명서**](docs/user-guide.md)부터 보세요. 설치, 서비스 연결, 화면 읽는 법, 도킹, 설정, 문제 해결을 순서대로 안내합니다.
 
 ---
 
