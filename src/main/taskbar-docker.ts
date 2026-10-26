@@ -402,6 +402,18 @@ export class TaskbarDocker {
     return (await this.helper.run(['fade', this.getHwnd(win), faded ? '0' : 'off'])).code === 0
   }
 
+  /** 도킹된 위젯을 작업표시줄 안에서 가로로만 옮긴다(왼쪽 기준 논리 픽셀). 끌기 중 매 좌표마다 써도 가볍다. */
+  public static async slideDocked(win: BrowserWindow, offset: number): Promise<boolean> {
+    if (process.platform !== 'win32' || !win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return false
+    return (await this.helper.run(['slide', this.getHwnd(win), String(Math.round(offset))])).code === 0
+  }
+
+  /** 창 전체 투명도(0~255). null이면 layered 속성을 떼어 원래대로 되돌린다(아크릴 유지). */
+  public static async setAlpha(win: BrowserWindow, alpha: number | null): Promise<boolean> {
+    if (process.platform !== 'win32' || !win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return false
+    return (await this.helper.run(['fade', this.getHwnd(win), alpha === null ? 'off' : String(Math.max(0, Math.min(255, Math.round(alpha))))])).code === 0
+  }
+
   /** Windows 11은 활성 창에만 아크릴 흐림을 그리므로 비활성 창도 활성처럼 그리게 한다. */
   public static keepBackdropActive(win: BrowserWindow): void {
     if (process.platform !== 'win32' || !win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return

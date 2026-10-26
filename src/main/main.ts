@@ -359,6 +359,7 @@ function applyWindowTopmost(config: WidgetConfig) {
 // 레이아웃(dock/undock/setBounds)은 동시 실행 시 서로의 HWND 상태를 덮어쓰므로 직렬 큐로 실행
 let layoutQueue: Promise<void> = Promise.resolve()
 let dockRepairPending = false
+let dockRepairTimes: number[] = []
 
 function updateWidgetBounds(): Promise<void> {
   layoutQueue = layoutQueue
@@ -398,6 +399,10 @@ async function layoutWidget() {
       widgetWindow,
       () => handleDockedWidgetClick(),
       () => {
+        // 탐색기가 다시 시작되면 다시 붙인다. 붙여도 바로 또 풀리는 상태(작업표시줄 자식이 되지 못함)면 끝없이 반복되므로 5초에 3번까지만.
+        const now = Date.now()
+        dockRepairTimes = dockRepairTimes.filter(t => now - t < 5000).concat(now)
+        if (dockRepairTimes.length > 3) { console.warn('[Main] Dock keeps getting lost; stopping automatic re-dock'); TaskbarDocker.stopDockWatcher(); return }
         console.log('[Main] Explorer restart or dock lost detected, re-docking widget...')
         dockRepairPending = true
         updateWidgetBounds()
@@ -471,7 +476,7 @@ function createWidgetWindow() {
       applyClickThrough()
     }
     // 첫 드래그에서 안내 창 생성·로드가 끊김을 만들지 않도록 유휴 시간에 미리 만든다.
-    setTimeout(() => { if (!interacting) showDockHint(false, undefined, undefined, true); void ensureTipWindow() }, 1500)
+    setTimeout(() => { if (!interacting) showDockPreview(false, undefined, true); void ensureTipWindow() }, 1500)
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -499,7 +504,6 @@ let boundsSaveTimer: NodeJS.Timeout | undefined
 let pointerProcess: { stop(): void } | null = null
 let interacting = false
 let endInteraction: ((p?: {x:number;y:number}) => Promise<void>) | null = null
-let dockHint: BrowserWindow | null = null
 let dockGhost: BrowserWindow | null = null
 let dockPreviewVisible = false
 
@@ -518,41 +522,69 @@ function dockWidth() {
   return Math.max(80,24+136*visibleUsages(state.usages,state.accounts,state.config).length)
 }
 
-function showDockHint(visible: boolean, area?: Electron.Rectangle, point?: {x:number;y:number}, preload = false, ghostWidth = dockWidth()) {
-  // 드래그 중 매 좌표마다 호출되므로 숨김 상태가 유지되면 창 배치를 건너뛴다.
-  if (!visible && !preload) { if (dockPreviewVisible) { dockHint?.hide(); dockGhost?.hide() } dockPreviewVisible=false; return }
-  dockPreviewVisible=visible
-  const cursor=point || screen.getCursorScreenPoint()
-  const display=screen.getDisplayNearestPoint(cursor)
-  const workArea=area || display.workArea
-  if (!dockHint) {
-    dockHint = new BrowserWindow({ width: 240, height: 44, frame: false, transparent: true, show: false,
-      focusable: false, skipTaskbar: true, alwaysOnTop: true, webPreferences: { nodeIntegration: false, contextIsolation: true } })
-    dockHint.setIgnoreMouseEvents(true)
-    void dockHint.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<html lang="ko"><body style="margin:0;background:#b7a6ff;color:#171326;border:1px solid #e1d9ff;border-radius:12px;font:600 12px Segoe UI,sans-serif;display:grid;place-items:center;height:40px;box-sizing:border-box">↓ 마우스를 놓으면 도킹됩니다</body></html>'))
-  }
-  dockHint.setBounds({x:Math.round(Math.max(workArea.x+8,Math.min(cursor.x+18,workArea.x+workArea.width-248))),y:Math.round(Math.max(workArea.y+8,cursor.y-64)),width:240,height:44})
-  applyWindowShape(dockHint,12)
-  if(visible) dockHint.showInactive(); else dockHint.hide()
-  if (!dockGhost) {
-    const height=getTaskbarInfo(display).taskbarHeight
-    dockGhost=new BrowserWindow({width:ghostWidth,height,frame:false,transparent:true,show:false,focusable:false,skipTaskbar:true,alwaysOnTop:true,
-      title:'도킹 미리보기',webPreferences:{preload:getPreloadPath(),nodeIntegration:false,contextIsolation:true}})
-    dockGhost.on('page-title-updated',event=>event.preventDefault())
-    dockGhost.setIgnoreMouseEvents(true)
-    dockGhost.setOpacity(.58)
-    dockGhost.webContents.once('did-finish-load',()=>{if(dockPreviewVisible)dockGhost?.showInactive()})
-    if(process.env.VITE_DEV_SERVER_URL) void dockGhost.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=dock-preview&dockHeight=${height}`)
-    else void dockGhost.loadFile(path.join(__dirname,'../dist/index.html'),{query:{view:'dock-preview',dockHeight:String(height)}})
-  }
-  const width=Math.min(ghostWidth,display.bounds.width)
-  const height=getTaskbarInfo(display).taskbarHeight
-  const x=Math.max(display.bounds.x,Math.min(cursor.x-100,display.bounds.x+display.bounds.width-width))
-  dockGhost.setBounds({x:Math.round(x),y:display.bounds.y+display.bounds.height-height,width,height})
-  if(visible) dockGhost.showInactive(); else dockGhost.hide()
+/** 마우스를 놓으면 위젯이 들어갈 작업표시줄 자리. 미리보기와 실제 도킹이 같은 계산을 쓴다. */
+function dockSlot(p: {x:number;y:number}, width = dockWidth()) {
+  const display = screen.getDisplayNearestPoint(p)
+  const height = getTaskbarInfo(display).taskbarHeight
+  const w = Math.min(width, display.bounds.width)
+  const x = Math.max(display.bounds.x, Math.min(p.x - 100, display.bounds.x + display.bounds.width - w))
+  return { display, rect: { x: Math.round(x), y: display.bounds.y + display.bounds.height - height, width: w, height } }
 }
 
-async function setPlacement(mode: 'floating' | 'docked') {
+// 도킹 미리보기: 커서 옆 안내 상자 대신 작업표시줄의 실제 들어갈 자리에 위젯 모양을 강조색 윤곽과 함께 보여 준다.
+// 드래그 중 매 좌표마다 호출되므로 상태가 그대로면 창 배치를 건너뛴다.
+function showDockPreview(visible: boolean, point?: {x:number;y:number}, preload = false, ghostWidth = dockWidth()) {
+  if (!visible && !preload) { if (dockPreviewVisible) dockGhost?.hide(); dockPreviewVisible = false; return }
+  const cursor = point || screen.getCursorScreenPoint()
+  const { rect } = dockSlot(cursor, ghostWidth)
+  if (!dockGhost || dockGhost.isDestroyed()) {
+    dockGhost = new BrowserWindow({ width: rect.width, height: rect.height, frame: false, transparent: true, show: false, focusable: false, skipTaskbar: true,
+      alwaysOnTop: true, hasShadow: false, title: '도킹 미리보기', webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true } })
+    dockGhost.on('page-title-updated', event => event.preventDefault())
+    dockGhost.setIgnoreMouseEvents(true)
+    dockGhost.setAlwaysOnTop(true, 'screen-saver', 9000)
+    dockGhost.webContents.once('did-finish-load', () => {
+      dockGhost?.webContents.send(IPC_CHANNELS.STATE_CHANGED, getAppState())
+      if (dockPreviewVisible) { dockGhost?.showInactive(); replayDockPreviewEnter() }
+    })
+    if (process.env.VITE_DEV_SERVER_URL) void dockGhost.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=dock-preview&dockHeight=${rect.height}`)
+    else void dockGhost.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'dock-preview', dockHeight: String(rect.height) } })
+  }
+  dockGhost.setBounds(rect)
+  if (visible && !dockPreviewVisible) {
+    // 미리보기는 위젯의 실제 도킹 모습을 그리므로 지금 상태(서비스 목록)를 넘겨준다.
+    if (!dockGhost.webContents.isLoading()) dockGhost.webContents.send(IPC_CHANNELS.STATE_CHANGED, getAppState())
+    dockGhost.showInactive(); replayDockPreviewEnter()
+  } else if (!visible) dockGhost.hide()
+  // 커서가 작업표시줄 위에 있으면 작업표시줄이 자기 창을 맨 위로 올려 미리보기를 가린다. 갱신할 때마다 다시 맨 위로 올린다.
+  if (visible) dockGhost.moveTop()
+  dockPreviewVisible = visible
+}
+/** 미리보기가 새로 나타날 때마다 등장 애니메이션을 처음부터 다시 재생한다. */
+function replayDockPreviewEnter() {
+  void dockGhost?.webContents.executeJavaScript("document.body.classList.remove('dock-enter');void document.body.offsetWidth;document.body.classList.add('dock-enter')").catch(() => {})
+}
+
+/** 놓았을 때 창이 미리보기 자리로 줄어들며 들어가는 애니메이션(약 0.18초). 아크릴을 깨지 않도록 투명도는 보조 프로그램으로 조절한다. */
+async function animateIntoSlot(win: SurfaceWindow, to: Electron.Rectangle, ms = 180) {
+  const from = win.getBounds(), t0 = Date.now()
+  // 투명 창(흐림 없는 반투명)은 Electron 투명도를, 아크릴 창은 보조 프로그램을 쓴다(setOpacity는 아크릴을 지운다).
+  const alpha = (a: number) => { if (win.kind === 'backdrop') void TaskbarDocker.setAlpha(win, a); else win.setOpacity(a / 255) }
+  win.setMinimumSize(1, 1)
+  const ease = (t: number) => 1 - Math.pow(1 - t, 3)
+  for (;;) {
+    const t = Math.min(1, (Date.now() - t0) / ms), k = ease(t)
+    if (win.isDestroyed()) return
+    win.setBounds({ x: Math.round(from.x + (to.x - from.x) * k), y: Math.round(from.y + (to.y - from.y) * k),
+      width: Math.max(1, Math.round(from.width + (to.width - from.width) * k)), height: Math.max(1, Math.round(from.height + (to.height - from.height) * k)) })
+    alpha(Math.round(255 - 150 * k))
+    if (t >= 1) break
+    await new Promise(r => setTimeout(r, 12))
+  }
+}
+
+/** floatBounds: 도킹할 때 기억해 둘 자유 창 위치·크기(빨려드는 애니메이션으로 창이 줄어든 상태가 저장되지 않도록). */
+async function setPlacement(mode: 'floating' | 'docked', floatBounds?: Electron.Rectangle) {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   const previous = accountStore.getConfig()
   if (previous.placementMode === mode) return
@@ -560,9 +592,13 @@ async function setPlacement(mode: 'floating' | 'docked') {
     TaskbarDocker.stopDockWatcher()
     const detached = await TaskbarDocker.undockWindow(widgetWindow)
     if (!detached) throw new Error('작업표시줄에서 창을 분리하지 못했습니다.')
+    // 작업표시줄 자식에서 떼어 내면 Chromium이 마우스 입력을 더 받지 못하는 경우가 있다(실측: 위로 끌어 창으로 바꾼 뒤 제목줄·카드가 반응 없음).
+    // 창을 한 번 숨겼다 다시 보이면 입력 경로가 되살아난다.
+    widgetWindow.hide()
+    widgetWindow.showInactive()
   } else {
     clearTimeout(boundsSaveTimer)
-    if (previous.placementMode === 'floating') previous.windowBounds = widgetWindow.getBounds()
+    if (previous.placementMode === 'floating') previous.windowBounds = floatBounds || widgetWindow.getBounds()
     TaskbarDocker.stopStayTop()
     widgetWindow.setAlwaysOnTop(false)
     currentWidgetWidth = dockWidth()
@@ -578,47 +614,76 @@ async function setPlacement(mode: 'floating' | 'docked') {
   broadcastState()
 }
 
-// 렌더러가 포인터를 잡고 있는 자유 창 제스처는 IPC 좌표로 직접 움직인다.
-// 외부 포인터 감시 프로세스는 작업표시줄에 도킹된 창을 끌어낼 때만 쓴다(프로세스 기동 지연·폴링 간격 회피).
+// 자유 창 제스처는 렌더러가 보내는 좌표(프레임마다 한 번)와 보조 프로그램의 실제 커서 좌표를 함께 쓴다.
+// 버튼 놓음도 둘 다 감시해 먼저 오는 쪽으로 끝낸다. 렌더러만 믿으면 포인터 잡기가 풀리거나 커서가 작업표시줄 위로 갈 때
+// 이동·놓음 신호가 끊겨, 미리보기가 안 뜨거나 놓아도 도킹되지 않는 일이 있었다.
 let interactionMove: ((p: {x:number;y:number}) => void) | null = null
+/** 작업표시줄 안 끌기에서 창으로 바뀌는 높이: 작업표시줄 위쪽 경계에서 이만큼 올라가면 창이 된다. */
+const SLIDE_ESCAPE_PX = 40
 
 async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:number}, rendererDriven = false) {
   if (interacting || !widgetWindow || widgetWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
   interacting = true
+  const win = widgetWindow
   const startedDocked = accountStore.getConfig().placementMode === 'docked'
-  const pointerFromRenderer = rendererDriven && !startedDocked
   let leftDockArea = !startedDocked
   hidePopup(true)
+  hideTip()
   // UIA 클라이언트(접근성 도구 등)가 켜진 PC에서는 활성 창의 접근성 트리를 주기적으로 읽어 UI 스레드가 50~70ms씩 멈춘다.
   // 끌기 위한 클릭으로 위젯이 활성화되면 그 멈춤이 이동 끊김으로 보이므로 제스처 동안 활성 상태를 내려놓는다.
-  if (widgetWindow.isFocused()) widgetWindow.blur()
-  const origin = pointerOrigin && Number.isFinite(pointerOrigin.x) && Number.isFinite(pointerOrigin.y)
+  if (win.isFocused()) win.blur()
+  let origin = pointerOrigin && Number.isFinite(pointerOrigin.x) && Number.isFinite(pointerOrigin.y)
     ? { x: Math.round(pointerOrigin.x), y: Math.round(pointerOrigin.y) } : screen.getCursorScreenPoint()
   try {
-    if (accountStore.getConfig().placementMode !== 'floating') {
-      await setPlacement('floating')
-      const restored = widgetWindow.getBounds()
-      widgetWindow.setBounds({ ...restored, x: origin.x - Math.min(restored.width / 2, 160), y: origin.y - 24 })
-    }
-    const start = widgetWindow.getBounds()
     const ghostWidth = dockWidth()
     const shown = getAppState(), cardCount = Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
-    if(kind==='move') showDockHint(false,undefined,origin,true,ghostWidth)
+    let start = win.getBounds()
     let last = origin
     let moved = false
+
+    // 작업표시줄 안 끌기: 도킹된 채로 좌우로만 움직이다가 위로 벗어나면 창으로 바뀐다.
+    let mode: 'slide' | 'float' | 'converting' = startedDocked ? 'slide' : 'float'
+    let slide: { grabDx: number; display: Electron.Display; top: number; width: number; offset: number } | null = null
+    let slideBusy = false, slidePending: number | null = null
+    if (startedDocked) {
+      const r = await TaskbarDocker.getWidgetScreenRect(win)
+      const display = screen.getDisplayNearestPoint(origin)
+      const rect = r ? screen.screenToDipRect(null, r) : { x: origin.x - 100, y: 0, width: currentWidgetWidth, height: 0 }
+      slide = { grabDx: origin.x - rect.x, display, top: display.bounds.y + display.bounds.height - getTaskbarInfo(display).taskbarHeight, width: rect.width, offset: rect.x - display.bounds.x }
+    } else if (kind === 'move') showDockPreview(false, origin, true, ghostWidth)
+
+    const slideTo = (offset: number) => {
+      // 도킹은 수 ms~수십 ms 걸리므로 하나씩, 마지막 위치만 따라간다.
+      slidePending = offset
+      if (slideBusy) return
+      slideBusy = true
+      void (async () => {
+        while (slidePending !== null && mode === 'slide') {
+          const next = slidePending; slidePending = null
+          await TaskbarDocker.slideDocked(win, next).catch(() => false)
+        }
+        slideBusy = false
+      })()
+    }
+    const toFloat = async (p: {x:number;y:number}) => {
+      mode = 'converting'
+      while (slideBusy) await new Promise(r => setTimeout(r, 5))
+      await setPlacement('floating')
+      const restored = win.getBounds()
+      win.setBounds({ ...restored, x: Math.round(p.x - Math.min(restored.width / 2, 160)), y: Math.round(p.y - 24) })
+      start = win.getBounds()
+      origin = p
+      leftDockArea = true
+      mode = 'float'
+    }
+
     const update = (p: { x: number; y: number }) => {
-      if (!widgetWindow || widgetWindow.isDestroyed()) return
+      if (win.isDestroyed()) return
       if (p.x === last.x && p.y === last.y && moved) return
       last = p
       const dx = p.x - origin.x, dy = p.y - origin.y
       moved ||= Math.abs(dx) + Math.abs(dy) > 5
-      if (kind === 'move') {
-        widgetWindow.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false)
-        const display = screen.getDisplayNearestPoint(p)
-        const target = isDockTarget(p, display.bounds, display.workArea)
-        if (!target) leftDockArea = true
-        showDockHint(leftDockArea && target, display.workArea,p,false,ghostWidth)
-      } else {
+      if (kind !== 'move') {
         const edge = kind.slice(7)
         let { x, y, width, height } = start
         if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
@@ -628,41 +693,74 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         if (edge.includes('s')) height = Math.max(minH, start.height + dy)
         if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
         if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
-        widgetWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+        win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+        return
       }
+      if (mode === 'converting') return
+      if (mode === 'slide' && slide) {
+        if (p.y < slide.top - SLIDE_ESCAPE_PX) { void toFloat(p).catch(err => console.error('[Window] Undock during drag failed:', err)); return }
+        const maxOffset = Math.max(0, slide.display.bounds.width - slide.width)
+        slide.offset = Math.round(Math.max(0, Math.min(maxOffset, p.x - slide.grabDx - slide.display.bounds.x)))
+        slideTo(slide.offset)
+        return
+      }
+      win.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false)
+      const display = screen.getDisplayNearestPoint(p)
+      const target = isDockTarget(p, display.bounds, display.workArea)
+      if (!target) leftDockArea = true
+      showDockPreview(leftDockArea && target, p, false, ghostWidth)
     }
     const finish = async (p?: { x: number; y: number }) => {
       if (!interacting) return
-      if (p) update(p)
-      showDockHint(false)
+      if (p && mode !== 'converting') update(p)
       interacting = false
       endInteraction = null
       interactionMove = null
       pointerProcess?.stop()
       pointerProcess = null
-      if (!widgetWindow || widgetWindow.isDestroyed()) return
+      while (mode === 'converting') await new Promise(r => setTimeout(r, 10))
+      if (win.isDestroyed()) return
+      if (mode === 'slide' && slide) {
+        // 작업표시줄 안에서 놓으면 그 자리를 기억한다.
+        while (slideBusy) await new Promise(r => setTimeout(r, 5))
+        accountStore.saveConfig({ ...accountStore.getConfig(), alignment: 'left', offsetPx: slide.offset, verticalOffsetPx: 0 })
+        broadcastState()
+        return
+      }
       const display = screen.getDisplayNearestPoint(last)
-      if (kind === 'move' && moved && leftDockArea && isDockTarget(last, display.bounds, display.workArea)) {
+      const willDock = kind === 'move' && moved && leftDockArea && isDockTarget(last, display.bounds, display.workArea)
+      if (willDock) {
+        const { rect } = dockSlot(last, ghostWidth)
         const config = accountStore.getConfig()
-        const safe = fitWindow(widgetWindow.getBounds(), display.workArea)
-        accountStore.saveConfig({ ...config, windowBounds: safe, alignment: 'left', offsetPx: Math.max(0, last.x - display.bounds.x - 100), verticalOffsetPx: 0 })
-        // setPlacement가 저장하는 마지막 자유 창 좌표도 화면 안으로 유지한다.
-        widgetWindow.setBounds(safe)
-        await setPlacement('docked')
+        const safe = fitWindow(win.getBounds(), display.workArea)
+        // setPlacement가 저장하는 마지막 자유 창 좌표는 끌기 전처럼 화면 안의 크기·위치로 남긴다.
+        accountStore.saveConfig({ ...config, windowBounds: safe, alignment: 'left', offsetPx: rect.x - display.bounds.x, verticalOffsetPx: 0 })
+        await animateIntoSlot(win, rect)
+        // 반투명(layered) 상태로는 작업표시줄 자식이 되지 못하므로 도킹 전에 되돌린다. 그 순간 줄어든 창이 비치지 않게 잠깐 숨긴다
+        // (자리는 그대로 두어 도킹할 모니터가 바뀌지 않게 하고, 도킹 명령이 다시 보이게 한다).
+        win.hide()
+        if (win.kind === 'backdrop') await TaskbarDocker.setAlpha(win, null)
+        else win.setOpacity(1)
+        await setPlacement('docked', safe)
+        if (!win.isDestroyed() && !win.isVisible()) win.showInactive()
+        showDockPreview(false)
       } else {
-        const bounds = fitWindow(widgetWindow.getBounds(), display.workArea)
-        widgetWindow.setBounds(bounds)
+        showDockPreview(false)
+        const bounds = fitWindow(win.getBounds(), display.workArea)
+        win.setBounds(bounds)
         accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: bounds })
         rememberLayout()
       }
     }
     endInteraction = finish
-    if (pointerFromRenderer) interactionMove = update
-    else pointerProcess = TaskbarDocker.watchPointer(update, p => { void finish(p).catch(console.error) })
+    // 렌더러가 좌표를 보내는 자유 창 제스처도 보조 프로그램의 실제 커서 좌표·버튼 놓음을 함께 받는다.
+    // 커서가 작업표시줄 위로 들어가면 렌더러는 이동을 더 받지 못해(실측) 도킹 미리보기가 뜨지 않는 일이 있었다.
+    if (rendererDriven && !startedDocked) interactionMove = update
+    pointerProcess = TaskbarDocker.watchPointer(update, p => { void finish(p).catch(console.error) })
   } catch (err) {
     interacting = false
     interactionMove = null
-    showDockHint(false)
+    showDockPreview(false)
     console.error('[Window] Interaction failed:', err)
   }
 }
@@ -1273,7 +1371,6 @@ app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('before-quit', () => {
   clearTimeout(boundsSaveTimer)
   pointerProcess?.stop()
-  dockHint?.destroy()
   tipWindow?.destroy()
   dockGhost?.destroy()
   if (widgetWindow && !widgetWindow.isDestroyed() && accountStore?.getConfig().placementMode === 'floating') {

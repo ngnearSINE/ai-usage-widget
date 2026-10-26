@@ -334,6 +334,24 @@ namespace FluentFlyoutDocker
 
         [DllImport("user32.dll")]
         static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        // Windows 11은 창 없는 백그라운드 프로세스의 타이머를 늦춘다(전력 제한). 마우스 감시가 1초 넘게 멈추면
+        // 짧은 누름·끌기를 통째로 놓치므로 이 프로세스는 실행 속도·타이머 해상도 제한에서 뺀다.
+        [StructLayout(LayoutKind.Sequential)]
+        struct PROCESS_POWER_THROTTLING_STATE { public uint Version; public uint ControlMask; public uint StateMask; }
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool SetProcessInformation(IntPtr hProcess, int infoClass, ref PROCESS_POWER_THROTTLING_STATE info, int size);
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetCurrentProcess();
+        static void OptOutOfPowerThrottling()
+        {
+            try
+            {
+                PROCESS_POWER_THROTTLING_STATE st = new PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = 0x1 | 0x4, StateMask = 0 };
+                SetProcessInformation(GetCurrentProcess(), 4, ref st, Marshal.SizeOf(typeof(PROCESS_POWER_THROTTLING_STATE)));
+            }
+            catch { }
+        }
         const uint WM_NCACTIVATE = 0x0086;
         [DllImport("user32.dll")]
         static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
@@ -414,6 +432,22 @@ namespace FluentFlyoutDocker
                 if (!IsWindow(hwnd)) return 4;
                 int type = args[2] == "acrylic" ? 3 : 1;
                 return DwmSetWindowAttribute(hwnd, 38, ref type, 4) == 0 ? 0 : 1;
+            }
+
+            // slide <hwnd> <logicalOffset>: 도킹된 위젯을 작업표시줄 안에서 가로로만 옮긴다(왼쪽 기준).
+            // dock처럼 스타일·부모를 다시 정하지 않으므로 끌기 중 매 좌표마다 불러도 watch가 도킹 유실로 오해하지 않는다.
+            if (action == "slide" && args.Length >= 3)
+            {
+                IntPtr hwnd = ParseHwnd(args[1]);
+                IntPtr parent = GetParent(hwnd);
+                if (!IsWindow(hwnd) || parent == IntPtr.Zero) return 4;
+                RECT pc, wr;
+                if (!GetClientRect(parent, out pc) || !GetWindowRect(hwnd, out wr)) return 1;
+                double scale = GetWindowDpi(parent) / 96.0;
+                int width = wr.Right - wr.Left;
+                int x = (int)Math.Round(double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) * scale);
+                x = Math.Max(0, Math.Min(x, (pc.Right - pc.Left) - width));
+                return SetWindowPos(hwnd, IntPtr.Zero, x, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) ? 0 : 1;
             }
 
             // fade <hwnd> <0-255|off>: 창 전체 투명도. Electron setOpacity는 한 번 layered가 된 창을 되돌리지 않아
@@ -772,6 +806,7 @@ namespace FluentFlyoutDocker
             {
                 IntPtr widget = ParseHwnd(args[1]);
                 IntPtr taskbar = ParseHwnd(args[2]);
+                timeBeginPeriod(1);
                 bool previousDown = false;
                 bool pressedOnWidget = false;
                 bool dragging = false;
@@ -823,6 +858,7 @@ namespace FluentFlyoutDocker
         static int Main(string[] args)
         {
             int exitCode = 0;
+            OptOutOfPowerThrottling();
             try
             {
                 try
