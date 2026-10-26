@@ -17,9 +17,30 @@
     "icon": "public/icon.ico",
     "target": [
       {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
         "target": "zip",
-        "arch": ["x64"]
+        "arch": [
+          "x64"
+        ]
       }
-    ]
+    ],
+    "artifactName": "${productName}-${version}-win-x64.${ext}"
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "createStartMenuShortcut": true,
+    "createDesktopShortcut": false,
+    "shortcutName": "AI Usage Widget",
+    "runAfterFinish": true,
+    "deleteAppDataOnUninstall": false,
+    "installerIcon": "public/icon.ico",
+    "uninstallerIcon": "public/icon.ico",
+    "artifactName": "${productName} Setup ${version}.${ext}"
   }
 }
