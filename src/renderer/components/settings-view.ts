@@ -1,4 +1,4 @@
-import type { AppState, WidgetConfig } from '../../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig } from '../../common/types.js'
 import { visibleUsages, DEFAULT_WINDOW_SIZE } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { previewUsages } from '../../common/preview-data.js'
@@ -7,14 +7,22 @@ import type { HistoryPoint } from '../../common/types.js'
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext } from './usage-views.js'
 import { applyAppearance, escapeText, icon } from './dashboard.js'
-import { renderPopupTab } from './popup-view.js'
 import { updateMarkup } from '../dom-update.js'
 
-/** 설정 창: 왼쪽 미리보기(실제 위젯과 같은 렌더러·배치), 오른쪽 조절 항목. 슬라이더는 끄는 동안 미리보기에만, 놓으면 저장해 위젯에도 반영. */
-type Tab = 'design' | 'display' | 'services' | 'alerts' | 'history' | 'convenience' | 'accounts' | 'general' | 'api'
-const TABS: Array<[Tab, string]> = [['design', '디자인'], ['display', '표시'], ['services', '서비스'], ['alerts', '알림'], ['history', '기록'], ['convenience', '편의'], ['accounts', '계정'], ['general', '일반'], ['api', 'API']]
+/**
+ * 설정 창: 왼쪽 미리보기(실제 위젯과 같은 렌더러·배치), 오른쪽 조절 항목.
+ * 슬라이더는 끄는 동안 미리보기에만, 놓으면 저장해 위젯에도 반영. 드물게 쓰는 항목은 탭마다 '고급' 접기에 둔다.
+ */
+type Tab = 'design' | 'display' | 'services' | 'alerts' | 'history' | 'general'
+const TABS: Array<[Tab, string]> = [['design', '디자인'], ['display', '표시'], ['services', '서비스'], ['alerts', '알림'], ['history', '기록'], ['general', '일반']]
+// 예전 탭 이름으로 열어도 옮겨 간 곳으로 간다.
+const TAB_ALIAS: Record<string, Tab> = { accounts: 'services', convenience: 'general', api: 'general' }
+const toTab = (v?: string | null): Tab | null => v ? (TABS.some(t => t[0] === v) ? v as Tab : TAB_ALIAS[v] || null) : null
 type SizeKey = 'current' | 'flat' | 'small' | 'tall' | 'large'
 const SIZES: Array<[SizeKey, string, number, number]> = [['current', '현재 창', 0, 0], ['flat', '납작', 640, 110], ['small', '작게', 300, 220], ['tall', '세로', 300, 640], ['large', '크게', 980, 560]]
+const INTERVALS: Array<[number, string]> = [[15, '15초'], [30, '30초'], [60, '1분'], [120, '2분'], [300, '5분']]
+
+interface DetectedApp { id: string; name: string; provider: string; installed?: boolean; running?: boolean }
 
 let tab: Tab = 'design'
 let size: SizeKey = 'current'
@@ -24,6 +32,12 @@ let draft: WidgetConfig | null = null // 슬라이더를 끄는 동안의 임시
 let root: HTMLElement
 let previewFrame = 0
 let toastTimer: ReturnType<typeof setTimeout>
+let pendingState: AppState | null = null // 입력 중에 온 상태(입력을 마치면 그린다)
+let expanded = '' // 서비스 탭에서 펼친 계정
+const openAdvanced = new Set<string>() // 펼쳐 둔 '고급' 접기
+let detected: DetectedApp[] | null = null
+let detecting = false
+let addingCustom = false
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
 const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#a99bff'
@@ -36,42 +50,56 @@ export function initSettings(container: HTMLElement, initial: AppState, initialT
     if (b) window.api.windowControl(b.dataset.win as 'minimize' | 'maximize' | 'close')
   })
   root.addEventListener('dblclick', e => { if ((e.target as HTMLElement).closest('.s-titlebar') && !(e.target as HTMLElement).closest('button')) window.api.windowControl('maximize') })
-  if (TABS.some(t => t[0] === initialTab)) tab = initialTab as Tab
+  // 글자 입력 칸에서 벗어나면 그동안 미뤄 둔 상태를 그린다.
+  root.addEventListener('focusout', () => setTimeout(() => { if (pendingState && !typing()) renderSettings(pendingState, true) }, 0))
+  // 키보드로 탭 이동(←/→)
+  root.addEventListener('keydown', e => {
+    const t = (e.target as HTMLElement).closest<HTMLElement>('[role=tab]')
+    if (!t || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
+    const i = TABS.findIndex(x => x[0] === tab), n = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length][0]
+    tab = n; renderSettings(state, true)
+    root.querySelector<HTMLElement>(`[role=tab][data-tab="${n}"]`)?.focus()
+  })
+  tab = toTab(initialTab) || 'design'
   renderSettings(initial)
-  window.api.onSettingsTab?.(next => { if (TABS.some(t => t[0] === next)) { tab = next as Tab; renderSettings(state, true) } })
+  window.api.onSettingsTab?.(next => { const t = toTab(next); if (t) { tab = t; renderSettings(state, true) } })
   new ResizeObserver(() => { cancelAnimationFrame(previewFrame); previewFrame = requestAnimationFrame(renderPreview) }).observe(container)
+}
+
+/** 이름·주소·단축키를 입력하는 중인지. 그동안 새 상태로 다시 그리면 입력이 지워진다. */
+function typing() {
+  const a = document.activeElement as HTMLElement | null
+  return !!a && root.contains(a) && (a.matches('input[type=text],input[type=url],input[type=number],.sc-input'))
 }
 
 export function renderSettings(next: AppState, force = false) {
   state = next
-  if (!force && draft) return // 슬라이더 조작 중에는 패널을 다시 그리지 않는다
+  if (!force && (draft || typing())) { if (!draft) pendingState = next; return } // 슬라이더·입력 중에는 다시 그리지 않는다
+  pendingState = null
   applyAppearance(config())
-  const scroll = root.querySelector('.s-body')?.scrollTop || 0
+  const body0 = root.querySelector('.s-body')
+  const scroll = body0?.getAttribute('data-for') === tab ? body0.scrollTop : 0
   updateMarkup(root, `<div class="dashboard settings-root">
-    <header class="s-titlebar"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량 설정</span><span class="s-saved">${icon('check')} 바꾸면 바로 저장되고 위젯에도 반영돼요</span><div class="s-winbtns"><button data-win="minimize" title="최소화" aria-label="최소화"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button><button data-win="maximize" title="최대화" aria-label="최대화"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button><button data-win="close" class="close" title="닫기" aria-label="닫기"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button></div></header>
+    <header class="s-titlebar"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량 설정</span><span class="s-saved">${icon('check')} 바꾸면 바로 저장돼요</span><div class="s-winbtns"><button data-win="minimize" title="최소화" aria-label="최소화"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button><button data-win="maximize" title="최대화" aria-label="최대화"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button><button data-win="close" class="close" title="닫기" aria-label="닫기"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button></div></header>
     <div class="s-main">
       <section class="s-preview" aria-label="미리보기">
         <div class="s-preview-bar"><div class="segmented s-sizes" role="group" aria-label="미리보기 크기">${SIZES.map(([k, label]) => `<button data-size="${k}" aria-pressed="${size === k}">${label}</button>`).join('')}</div>
-          <div class="segmented s-sample" role="group" aria-label="미리보기 데이터"><button data-sample="real" aria-pressed="${usePreviewSample() ? 'false' : 'true'}">실제</button><button data-sample="sample" aria-pressed="${usePreviewSample()}">예시</button></div></div>
+          <div class="segmented s-sample" role="group" aria-label="미리보기 데이터"><button data-sample="real" aria-pressed="${usePreviewSample() ? 'false' : 'true'}" title="지금 내 사용량으로 보기">실제</button><button data-sample="sample" aria-pressed="${usePreviewSample()}" title="예시 데이터로 보기">예시</button></div></div>
         <div class="s-stage" data-stage><div class="s-stage-inner" data-stage-inner></div></div>
         <p class="s-caption" data-caption></p>
       </section>
       <aside class="s-panel">
-        <nav class="s-tabs" role="tablist">${TABS.map(([k, label]) => `<button role="tab" data-tab="${k}" aria-selected="${tab === k}">${label}</button>`).join('')}</nav>
-        <div class="s-body" data-body></div>
+        <nav class="s-tabs" role="tablist" aria-label="설정 분류">${TABS.map(([k, label]) => `<button role="tab" data-tab="${k}" aria-selected="${tab === k}" tabindex="${tab === k ? 0 : -1}">${label}</button>`).join('')}</nav>
+        <div class="s-body" data-body data-for="${tab}" role="tabpanel"></div>
       </aside>
     </div>
     <div class="toast" role="status" aria-live="polite"></div>
   </div>`)
   const body = root.querySelector<HTMLElement>('[data-body]')!
-  if (tab === 'accounts' || tab === 'general' || tab === 'api') {
-    renderPopupTab(body, state, tab === 'general' ? 'settings' : tab)
-    // 팝업의 '디자인 열기' 버튼은 이 창에서는 디자인 탭으로 보낸다.
-    body.querySelector<HTMLElement>('#btn-open-design')?.addEventListener('click', e => { e.stopImmediatePropagation(); tab = 'design'; renderSettings(state, true) }, true)
-  } else {
-    body.innerHTML = tab === 'design' ? designTab(config()) : tab === 'display' ? displayTab(config()) : tab === 'alerts' ? alertsTab(state) : tab === 'history' ? historyTab() : tab === 'convenience' ? convenienceTab(state) : servicesTab(state)
-    if (tab === 'history') void drawHistory()
-  }
+  const html = tab === 'design' ? designTab(config()) : tab === 'display' ? displayTab(config()) : tab === 'alerts' ? alertsTab(state) : tab === 'history' ? historyTab() : tab === 'general' ? generalTab(state) : servicesTab(state)
+  updateMarkup(body, `<div class="s-tab-${tab}">${html}</div>`)
+  if (tab === 'history') void drawHistory()
+  if (tab === 'services' && detected === null && !detecting) void detectApps()
   body.scrollTop = scroll
   bindEvents()
   renderPreview()
@@ -122,50 +150,82 @@ function renderPreview() {
   if (cap) cap.textContent = `${W}×${H}${size === 'current' ? ' (지금 위젯 크기)' : ''}${k < 1 ? ` · ${Math.round(k * 100)}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
 }
 
-/* ---------- 탭 내용 ---------- */
+/* ---------- 공통 조각 ---------- */
 const presets = [['silk', '실크', '부드럽고 차분하게'], ['aurora', '오로라', '은은하게 흐르는 빛'], ['neon', '네온', '선명한 빛의 대비'], ['segments', '세그먼트', '정교한 리듬감'], ['mono', '모노', '덜어낸 아름다움'], ['spectrum', '스펙트럼', '다채로운 에너지']]
-const segment = (key: string, current: string, options: string[][]) => `<div class="segmented" role="group">${options.map(([value, label]) => `<button data-config="${key}" data-value="${value}" aria-pressed="${current === value}">${label}</button>`).join('')}</div>`
+const segment = (key: string, current: string, options: string[][], label: string) => `<div class="segmented" role="group" aria-label="${label}">${options.map(([value, text]) => `<button data-config="${key}" data-value="${value}" aria-pressed="${current === value}">${text}</button>`).join('')}</div>`
 const toggle = (key: keyof WidgetConfig, label: string, description: string, value: boolean) => `<label class="setting-row"><span><b>${label}</b>${description ? `<small>${description}</small>` : ''}</span><input class="switch" type="checkbox" data-toggle="${key}" ${value ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></label>`
 const slider = (key: string, label: string, min: number, max: number, value: number, unit: string) => `<label class="slider-setting"><span>${label}<output>${value}${unit}</output></span><input type="range" data-range="${key}" data-unit="${unit}" min="${min}" max="${max}" value="${value}" aria-label="${label}"></label>`
 const section = (label: string, inner: string, hint = '') => `<section class="editor-section"><div class="section-label">${label}${hint ? `<span>${hint}</span>` : ''}</div>${inner}</section>`
+const hint = (text: string, cls = '') => `<p class="setting-hint ${cls}">${text}</p>`
+const advanced = (id: string, inner: string, label = '고급') => `<details class="s-advanced" data-adv="${id}" ${openAdvanced.has(id) ? 'open' : ''}><summary>${icon('chev')}${label}</summary><div class="s-advanced-body">${inner}</div></details>`
 
+/* ---------- 탭 내용 ---------- */
 function designTab(c: WidgetConfig) {
-  return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '위젯 제목줄의 보기 버튼으로도 바꿀 수 있어요')
-    + section('분위기', segment('appearance', c.appearance || 'dark', [['light', '라이트'], ['dark', '다크'], ['system', '시스템']]))
-    + section('배경', `${state.acrylicSupported === false ? '' : toggle('useAcrylic', '아크릴', '창 뒤를 흐리게 비춰요. 끄면 흐림 없이 그대로 비쳐요.', c.useAcrylic !== false)}`
+  return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '위젯 제목줄의 보기 버튼으로도 바꿔요')
+    + section('테마', segment('appearance', c.appearance || 'dark', [['light', '라이트'], ['dark', '다크'], ['system', '시스템']], '테마') + hint('시스템은 Windows의 밝은·어두운 모드를 따라가요.'))
+    + section('배경', `${state.acrylicSupported === false ? '' : toggle('useAcrylic', '아크릴(흐림)', '창 뒤를 흐리게 비춰요. 끄면 흐림 없이 그대로 비쳐요.', c.useAcrylic !== false)}`
       + slider('opacity', '불투명도', 0, 100, c.opacity ?? 70, '%')
-      + `<p class="setting-hint">Windows Terminal과 같은 방식이에요. 100%는 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}</p>`)
-    + section('막대 색 스타일', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 우선해요')
-    + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 선택" data-color></label></div>`)
+      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`))
+    + section('막대 색', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 먼저예요')
+    + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
+    + section('서비스 아이콘', segment('iconStyle', c.iconStyle === 'monochrome' ? 'monochrome' : 'color', [['color', '브랜드 색'], ['monochrome', '단색']], '서비스 아이콘'))
     + section('크기와 간격', slider('fontScale', '글자 크기', 85, 130, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
-    + section('움직임', segment('motion', c.motion || 'subtle', [['off', '없음'], ['subtle', '은은하게'], ['expressive', '생동감 있게']]) + '<p class="setting-hint">시스템의 동작 줄이기 설정도 함께 적용합니다.</p>')
+    + section('움직임', segment('motion', c.motion || 'subtle', [['off', '없음'], ['subtle', '은은하게'], ['expressive', '생동감 있게']], '움직임') + hint('Windows의 애니메이션 효과 끄기 설정도 함께 따라요.'))
 }
+
 function displayTab(c: WidgetConfig) {
   const warn = c.warnPercent ?? 20
   const src = new Set(Object.values(c.valueSource || {}))
   const common: ValueSource | '' = src.size === 1 ? [...src][0] as ValueSource : src.size === 0 ? 'weekly' : ''
-  return section('큰 숫자 기준', `<div class="segmented" role="group">${(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => `<button data-source-all="${k}" aria-pressed="${common === k}">${SOURCE_LABEL[k]}</button>`).join('')}</div><p class="setting-hint">모든 카드에 적용합니다. 카드마다 다르게 하려면 위젯 카드의 기준 버튼(주간 ▾)을 쓰세요.${common ? '' : ' 지금은 카드마다 다르게 설정되어 있어요.'}</p>`)
-    + section('여유 부족 강조', slider('warnPercent', '주의 기준(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험 기준(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
-      + toggle('colorByUsage', '경고색 사용', '기준 아래로 내려가면 숫자와 그래프를 경고색으로 칠합니다.', c.colorByUsage !== false)
+  return section('큰 숫자', `<div class="segmented" role="group" aria-label="큰 숫자 기준">${(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => `<button data-source-all="${k}" aria-pressed="${common === k}">${SOURCE_LABEL[k]}</button>`).join('')}</div>${hint(`카드에 크게 보일 한도예요. 카드마다 다르게 하려면 카드의 기준 버튼(주간 ▾)을 누르세요.${common ? '' : ' 지금은 카드마다 다르게 설정되어 있어요.'}`)}`)
+    + section('여유가 적을 때', slider('warnPercent', '주의(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
+      + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
-      + '<p class="setting-hint">속도만으로는 리셋보다 주기의 15% 이상 먼저 바닥날 것으로 보이고 남은 양이 50% 이하일 때 주의로 표시합니다.</p>')
-    + section('표시할 정보', toggle('showUsedPercent', '사용한 양으로 표시', '끄면 남은 양을 표시합니다.', !!c.showUsedPercent)
-      + toggle('showPace', '페이스 눈금', '리셋 주기에서 지난 시간만큼이라면 남아 있어야 할 위치를 표시합니다.', c.showPace !== false)
+      + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
+    + section('보여 줄 정보', toggle('showUsedPercent', '쓴 양으로 표시', '끄면 남은 양으로 표시해요.', !!c.showUsedPercent)
+      + toggle('showPace', '페이스 눈금', '고르게 썼다면 지금 남아 있어야 할 위치에 흰 눈금을 그려요.', c.showPace !== false)
       + toggle('showResetTime', '리셋까지 남은 시간', '', c.showResetTime !== false))
-    + section('창 동작', toggle('alwaysOnTop', '항상 위에 표시', '다른 창 위에서 사용량을 확인합니다.', c.alwaysOnTop !== false)
-      + `<button class="secondary-button" data-action="dock">${icon('dock')}작업표시줄에 도킹</button><p class="setting-hint">위젯 제목줄을 화면 아래로 끌어도 도킹됩니다.</p>`)
+    + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
+      + `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`)
+}
+
+const visibilityOf = (a: AccountConfig) => a.hidden ? 'none' : a.hiddenInDock ? 'window' : 'all'
+function statusOf(a: AccountConfig, s: AppState): [string, string] {
+  const u = s.usages.find(u => u.id === a.id)
+  if (!a.enabled) return ['조회 꺼짐', 'off']
+  if (a.hidden) return ['숨김', 'off']
+  if (a.provider === 'custom') return ['직접 입력', 'ok']
+  return u?.status === 'ready' ? (u.isEstimated ? ['추정값', 'warn'] : ['연결됨', 'ok']) : u?.status === 'stale' ? ['갱신 지연', 'warn'] : u?.status === 'loading' ? ['확인 중', 'off'] : ['연결 안 됨', 'bad']
 }
 function servicesTab(s: AppState) {
-  return section('표시', toggle('hideDisconnected', '미연결 서비스 자동 숨김', '일시 오류는 마지막 확인 값을 유지합니다.', !!s.config.hideDisconnected)
-      + '<p class="setting-hint">눈 아이콘은 위젯 창과 작업 표시줄 모두에서, 작업 표시줄 아이콘은 작업 표시줄에서만 숨깁니다. 조회를 끄려면 스위치를 끄세요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.</p>')
-    + `<div class="service-manager">${s.accounts.map((a, index) => {
-      const u = s.usages.find(u => u.id === a.id)
-      const status = !a.enabled ? '조회 꺼짐' : a.hidden ? '수동 숨김' : u?.status === 'ready' ? '연결됨' : u?.status === 'stale' ? '갱신 지연' : u?.status === 'loading' ? '확인 중' : '연결 안 됨'
-      const name = escapeText(a.name)
-      // 모델 전용 주간 한도(Fable 등)가 있는 계정만 보기 스위치를 둔다.
-      const scopedNames = u?.scopedQuotas?.map(s => s.label) || u?.scopedHidden || []
-      return `<div class="managed-service">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span><b class="svc-name" data-name-of="${escapeText(a.id)}">${name}</b><small>${status}${u?.tier && a.orgUuid ? ` · ${escapeText(u.tier)}` : ''}</small>${scopedNames.length ? `<label class="scoped-toggle"><input type="checkbox" data-scoped="${escapeText(a.id)}" ${a.showScoped === false ? '' : 'checked'}><span>${escapeText(scopedNames.join('·'))} 한도 표시</span></label>` : ''}</span><button class="tool" data-rename="${escapeText(a.id)}" title="이름 바꾸기" aria-label="${name} 이름 바꾸기">${icon('pencil')}</button><div class="managed-order"><button class="tool" data-order="up" data-id="${escapeText(a.id)}" ${index === 0 ? 'disabled' : ''} aria-label="${name} 앞으로 이동">${icon('up')}</button><button class="tool" data-order="down" data-id="${escapeText(a.id)}" ${index === s.accounts.length - 1 ? 'disabled' : ''} aria-label="${name} 뒤로 이동">${icon('down')}</button></div><button class="tool ${a.hiddenInDock ? 'is-off' : ''}" data-dock-hide="${escapeText(a.id)}" aria-pressed="${!!a.hiddenInDock}" title="${a.hiddenInDock ? '작업 표시줄에서 숨김 중(위젯 창에는 보임)' : '작업 표시줄에도 표시'}" aria-label="${name} 작업 표시줄에서 ${a.hiddenInDock ? '다시 표시' : '숨기기'}">${icon('taskbar')}</button><button class="tool" data-hide="${escapeText(a.id)}" title="${a.hidden ? '숨김 중(위젯 창·작업 표시줄 모두)' : '위젯 창·작업 표시줄에 표시'}" aria-label="${name} ${a.hidden ? '다시 표시' : '숨기기'}" aria-pressed="${!!a.hidden}">${icon(a.hidden ? 'hidden' : 'eye')}</button><label class="mini-toggle"><input type="checkbox" class="switch" data-enabled="${escapeText(a.id)}" aria-label="${name} 조회" ${a.enabled ? 'checked' : ''}><span class="switch-track"></span></label></div>`
-    }).join('')}</div><button class="secondary-button" data-goto="accounts">계정 추가 · 감지 ${icon('arrow')}</button>`
+  const rows = s.accounts.map((a, index) => {
+    const u = s.usages.find(u => u.id === a.id), id = escapeText(a.id), name = escapeText(a.name)
+    const [status, tone] = statusOf(a, s), open = expanded === a.id
+    const sub = [status, a.orgUuid && u?.tier ? escapeText(u.tier) : ''].filter(Boolean).join(' · ')
+    const scopedNames = u?.scopedQuotas?.map(x => x.label) || u?.scopedHidden || []
+    const detail = open ? `<div class="svc-detail" id="svc-detail-${id}">
+        <label class="field"><span>이름</span><input type="text" class="text-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
+        <div class="field"><span>보일 곳</span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${visibilityOf(a) === v}" title="${d}">${t}</button>`).join('')}</div><small class="field-note">${visibilityOf(a) === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요.' : visibilityOf(a) === 'window' ? '작업 표시줄에 붙였을 때는 빼요.' : '어디에도 보이지 않아요. 사용량 조회는 계속해요.'}</small></div>
+        ${scopedNames.length ? `<label class="setting-row"><span><b>${escapeText(scopedNames.join('·'))} 한도 표시</b><small>팀 요금제의 모델 전용 주간 한도를 카드에 함께 보여 줘요.</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
+        <div class="field"><span>순서</span><div class="svc-actions"><button class="ghost-button" data-order="up" data-id="${id}" ${index === 0 ? 'disabled' : ''}>${icon('up')}앞으로</button><button class="ghost-button" data-order="down" data-id="${id}" ${index === s.accounts.length - 1 ? 'disabled' : ''}>${icon('down')}뒤로</button><button class="ghost-button danger" data-remove="${id}">${icon('close')}목록에서 빼기</button></div></div>
+      </div>` : ''
+    return `<div class="svc-item ${open ? 'open' : ''}" data-svc="${id}">
+      <div class="svc-row"><button class="svc-head" data-expand="${id}" aria-expanded="${open}" aria-controls="svc-detail-${id}">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span class="svc-text"><b>${name}</b><small><i class="dot ${tone}"></i>${sub}</small></span>${icon('chev')}</button>
+      <label class="mini-toggle" title="${a.enabled ? '사용량 조회 중' : '조회 꺼짐'}"><input type="checkbox" class="switch" data-enabled="${id}" aria-label="${name} 사용량 조회" ${a.enabled ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></label></div>
+      ${detail}</div>`
+  }).join('')
+  const added = new Set(s.accounts.map(a => a.id))
+  const found = (detected || []).map(app => `<div class="found-row">${renderAiIcon(app.provider, app.name, s.config.iconStyle, 22)}<span class="svc-text"><b>${escapeText(app.name)}</b><small>${app.running ? '실행 중' : app.installed ? '설치됨' : '찾을 수 있음'}</small></span>${added.has(app.id) ? '<span class="pill">추가됨</span>' : `<button class="ghost-button accent" data-add-app="${escapeText(app.id)}">${icon('plus')}추가</button>`}</div>`).join('')
+  const custom = addingCustom ? `<div class="custom-form">
+      <label class="field"><span>이름</span><input type="text" class="text-input" data-custom="name" maxlength="60" placeholder="예: 회사 Claude"></label>
+      <div class="field-row"><label class="field"><span>5시간 남은 양(%)</span><input type="number" class="text-input" data-custom="p5" min="0" max="100" value="100"></label><label class="field"><span>주간 남은 양(%)</span><input type="number" class="text-input" data-custom="pw" min="0" max="100" value="100"></label><label class="field narrow"><span>색</span><input type="color" class="color-input" data-custom="color" value="#8cbbff"></label></div>
+      <div class="svc-actions"><button class="primary-button" data-custom-save>추가</button><button class="ghost-button" data-custom-cancel>취소</button></div>
+    </div>` : `<button class="secondary-button" data-custom-open>${icon('plus')}숫자를 직접 넣는 카드 추가</button>`
+  return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
+    + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
+    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '로그인이 없거나 조회에 실패한 카드를 위젯에서 빼요. 잠깐의 오류는 마지막 값을 그대로 보여 줘요.', !!s.config.hideDisconnected)
+    + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
+    + advanced('services', `<button class="secondary-button danger" data-reset-defaults>기본 서비스 목록으로 되돌리기</button>${hint('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.')}`)
 }
 
 function alertsTab(s: AppState) {
@@ -179,15 +239,15 @@ function alertsTab(s: AppState) {
     return `<div class="alert-row"><span class="alert-name">${renderAiIcon(a.provider, a.name, c.iconStyle, 20)}<b>${escapeText(a.name)}</b></span>${[['5h', first], ['weekly', '주간']].map(([k, label]) => keys.some(x => x[0] === k)
       ? `<label class="alert-check"><input type="checkbox" data-mute="${escapeText(a.id)}:${k}" ${muted.has(`${a.id}:${k}`) ? '' : 'checked'} ${on ? '' : 'disabled'}><span>${label}</span></label>` : '<span class="alert-check none">—</span>').join('')}</div>`
   }).join('')
-  return section('Windows 알림', toggle('notifyEnabled', '알림 사용', '켜 두면 아래 조건에서 Windows 알림을 보냅니다.', on)
-      + `<button class="secondary-button" data-test-notify>테스트 알림 보내기</button><p class="setting-hint">Windows 설정에서 알림이 꺼져 있거나 방해 금지 모드이면 보이지 않을 수 있어요. 알림을 누르면 위젯이 나타납니다.</p>`)
+  return section('Windows 알림', toggle('notifyEnabled', '알림 받기', '아래 상황이 되면 Windows 알림으로 알려 줘요.', on)
+      + `<button class="secondary-button" data-test-notify>${icon('bell')}테스트 알림 보내기</button>${hint('알림이 안 보이면 Windows 설정의 알림이나 방해 금지 모드를 확인하세요. 알림을 누르면 위젯이 나타나요.')}`)
     + `<div class="${on ? '' : 'is-disabled'}">`
-    + section('알릴 때', toggle('notifyLow', '여유 부족', `남은 양이 주의 ${warn}%·위험 ${crit}%에 처음 닿을 때 한 번씩(기준은 표시 탭에서 바꿔요).`, c.notifyLow !== false)
-      + toggle('notifyPace', '소진 예상', '지금 속도면 리셋 전에 바닥날 것 같을 때(대시보드의 속도 주의와 같은 조건).', c.notifyPace !== false)
-      + toggle('notifyReset', '리셋', '빠듯했던 한도가 새로 채워졌을 때.', c.notifyReset === true)
-      + toggle('notifyUnused', '남는 주간 여유', '주간 리셋이 24시간 안에 다가왔는데 40% 이상 남았을 때.', c.notifyUnused !== false)
-      + '<p class="setting-hint">같은 리셋 주기 안에서는 종류마다 한 번만 알립니다. 앱을 다시 켜도 반복하지 않아요. 갱신이 지연된 값으로는 알리지 않습니다.</p>')
-    + section('서비스별', rows ? `<div class="alert-table">${rows}</div>` : '<p class="setting-hint">조회 중인 서비스가 없어요.</p>', '체크한 한도만 알려요')
+    + section('알릴 때', toggle('notifyLow', '여유가 적을 때', `남은 양이 주의 ${warn}%·위험 ${crit}%에 처음 닿을 때 한 번씩 (기준은 표시 탭에서 바꿔요)`, c.notifyLow !== false)
+      + toggle('notifyPace', '리셋 전에 바닥날 것 같을 때', '지금 속도가 이어지면 리셋보다 한참 먼저 소진될 때', c.notifyPace !== false)
+      + toggle('notifyReset', '한도가 다시 채워졌을 때', '빠듯했던 한도가 리셋됐을 때', c.notifyReset === true)
+      + toggle('notifyUnused', '주간 여유가 많이 남았을 때', '주간 리셋이 24시간 안인데 40% 넘게 남았을 때', c.notifyUnused !== false)
+      + hint('같은 리셋 주기 안에서는 종류마다 한 번만 알려요. 앱을 다시 켜도 반복하지 않고, 갱신이 늦어진 값으로는 알리지 않아요.'))
+    + section('서비스별', rows ? `<div class="alert-table">${rows}</div>` : hint('조회 중인 서비스가 없어요.'), '체크한 한도만 알려요')
     + '</div>'
 }
 
@@ -200,10 +260,10 @@ function historyServices() {
 function historyTab() {
   const list = historyServices()
   if (!list.some(u => u.id === histId)) histId = list[0]?.id || ''
-  if (!list.length) return section('사용 기록', '<p class="setting-hint">아직 기록이 없어요. 사용량을 조회할 때마다 이 PC에 쌓이고 30일 동안 보관합니다.</p>')
+  if (!list.length) return section('사용 기록', hint('아직 기록이 없어요. 사용량을 조회할 때마다 이 PC에 쌓이고 30일 동안 보관해요.'))
   return section('서비스', `<div class="chip-row">${list.map(u => `<button class="chip-btn" data-hist="${escapeText(u.id)}" aria-pressed="${u.id === histId}">${renderAiIcon(u.provider, u.name, state.config.iconStyle, 16)}${escapeText(u.name)}</button>`).join('')}</div>`)
-    + section('기간', `<div class="segmented" role="group"><button data-hrange="day" aria-pressed="${histRange === 'day'}">최근 24시간</button><button data-hrange="week" aria-pressed="${histRange === 'week'}">최근 7일</button></div>`)
-    + `<section class="editor-section"><div class="hist-chart" data-hist-chart><p class="setting-hint">불러오는 중…</p></div><p class="setting-hint">남은 양(%) 기준입니다. 사용량을 조회할 때마다 이 PC에만 기록하고 30일 동안 보관합니다.${usePreviewSample() ? ' 지금은 예시 기록을 보여 주고 있어요.' : ''}</p></section>`
+    + section('기간', `<div class="segmented" role="group" aria-label="기간"><button data-hrange="day" aria-pressed="${histRange === 'day'}">최근 24시간</button><button data-hrange="week" aria-pressed="${histRange === 'week'}">최근 7일</button></div>`)
+    + `<section class="editor-section"><div class="hist-chart" data-hist-chart>${hint('불러오는 중…')}</div>${hint(`남은 양(%)의 흐름이에요. 사용량을 조회할 때마다 이 PC에만 기록하고 30일 동안 보관해요.${usePreviewSample() ? ' 지금은 예시 기록이에요.' : ''}`)}</section>`
 }
 async function drawHistory() {
   const box = root.querySelector<HTMLElement>('[data-hist-chart]'); if (!box || !histId) return
@@ -211,8 +271,8 @@ async function drawHistory() {
   const u = historyServices().find(x => x.id === histId)!
   let pts: HistoryPoint[]
   try { pts = usePreviewSample() ? downsample(sampleHistory()[histId] || [], from, now, 200) : await window.api.getHistory(histId, from, now, 200) }
-  catch { box.innerHTML = '<p class="setting-hint">기록을 불러오지 못했어요.</p>'; return }
-  if (pts.length < 2) { box.innerHTML = '<p class="setting-hint">이 기간에는 기록이 아직 충분하지 않아요.</p>'; return }
+  catch { box.innerHTML = hint('기록을 불러오지 못했어요.'); return }
+  if (pts.length < 2) { box.innerHTML = hint('이 기간에는 기록이 아직 충분하지 않아요.'); return }
   const W = 300, H = 140, L = 26, B = 18
   const px = (t: number) => L + (t - from) / span * (W - L - 4), py = (v: number) => 4 + (1 - v / 100) * (H - B - 4)
   const line = (idx: 1 | 2) => { const ps = pts.filter(p => p[idx] !== null); return ps.length < 2 ? '' : ps.map((p, i) => `${i ? 'L' : 'M'}${px(p[0]).toFixed(1)} ${py(p[idx]!).toFixed(1)}`).join('') }
@@ -225,23 +285,34 @@ async function drawHistory() {
     + ticks.map(([t, label], i) => `<text x="${px(t)}" y="${H - 4}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}" font-size="8" fill="var(--dim)">${label}</text>`).join('')
     + (lw ? `<path d="${lw}" fill="none" stroke="${weekColor}" stroke-width="1.6" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>` : '')
     + (l5 ? `<path d="${l5}" fill="none" stroke="${brand}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>` : '')
-    + `</svg><div class="hist-legend">${l5 ? `<span><i style="background:${brand}"></i>5시간 · 최저 ${lows(1)}%</span>` : ''}${lw ? `<span><i class="dash" style="border-color:${weekColor}"></i>주간 · 최저 ${lows(2)}%</span>` : ''}</div>`
+    + `</svg><div class="hist-legend">${l5 ? `<span><i style="background:${brand}"></i>${u.primaryKind === 'monthly' ? '월간' : '5시간'} · 최저 ${lows(1)}%</span>` : ''}${lw ? `<span><i class="dash" style="border-color:${weekColor}"></i>주간 · 최저 ${lows(2)}%</span>` : ''}</div>`
 }
 
 const SHORTCUT_DEFAULTS = { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' }
 type ShortcutKey = keyof typeof SHORTCUT_DEFAULTS
-function convenienceTab(s: AppState) {
+function generalTab(s: AppState) {
   const c = s.config, sc = { ...SHORTCUT_DEFAULTS, ...c.shortcuts }, errors = s.shortcutErrors || []
   const saved = Object.keys(c.layoutsByMonitor || {}).length
-  const row = (k: ShortcutKey, label: string) => `<div class="sc-row"><span class="sc-label">${label}</span><input class="sc-input" data-shortcut="${k}" readonly value="${escapeText(sc[k] || '')}" placeholder="꺼짐" aria-label="${label} 단축키(눌러서 입력)"><button class="tool" data-sc-clear="${k}" title="끄기" aria-label="${label} 단축키 끄기">${icon('close')}</button><button class="sc-reset" data-sc-default="${k}" ${sc[k] === SHORTCUT_DEFAULTS[k] ? 'disabled' : ''}>기본값</button></div>`
-  return section('트레이', toggle('trayShowNumber', '트레이 아이콘에 숫자', '가장 빠듯한 서비스의 남은 %를 트레이 아이콘에 표시하고, 주의·위험이면 색으로 알려요. 위젯을 숨겨도 확인할 수 있어요.', c.trayShowNumber !== false))
-    + section('클릭 통과 잠금', toggle('clickThrough', '잠그기', '위젯 위 클릭이 뒤 창으로 지나가요. 자유 창에서만 동작하고, 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 풀어요.', !!c.clickThrough))
-    + section('전역 단축키', `<div class="sc-list">${row('toggle', '위젯 보이기/숨기기')}${row('lock', '클릭 통과 잠금/해제')}${row('cycle', '디자인 순환')}</div>
-      <p class="setting-hint">칸을 누른 뒤 원하는 조합(Ctrl·Alt·Shift + 글자)을 누르세요. Esc는 취소, Backspace는 끄기입니다.</p>
-      ${errors.length ? `<p class="setting-hint warn-text">등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.</p>` : ''}`)
-    + section('모니터별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
-      + `<p class="setting-hint">저장된 구성 ${saved}개</p>${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
-    + section('카드 동작', '<p class="setting-hint">위젯 카드를 두 번 누르면 그 서비스의 사용량 페이지(Claude·Codex)를 기본 브라우저로 열어요. 한 번 누르기는 끌어서 순서를 바꾸는 데 써요.</p>')
+  const interval = INTERVALS.some(i => i[0] === c.refreshIntervalSec) ? c.refreshIntervalSec : 60
+  const row = (k: ShortcutKey, label: string) => `<div class="sc-row"><span class="sc-label">${label}</span><input class="sc-input" data-shortcut="${k}" readonly value="${escapeText(sc[k] || '')}" placeholder="꺼짐" aria-label="${label} 단축키(누른 뒤 새 조합 입력)"><button class="tool" data-sc-clear="${k}" title="끄기" aria-label="${label} 단축키 끄기">${icon('close')}</button><button class="sc-reset" data-sc-default="${k}" ${sc[k] === SHORTCUT_DEFAULTS[k] ? 'disabled' : ''}>기본값</button></div>`
+  return section('시작과 갱신', toggle('openAtLogin', 'Windows를 켤 때 함께 시작', '', c.openAtLogin !== false)
+      + `<div class="field"><span>사용량 확인 간격</span><div class="segmented" role="group" aria-label="사용량 확인 간격">${INTERVALS.map(([v, t]) => `<button data-interval="${v}" aria-pressed="${interval === v}">${t}</button>`).join('')}</div></div>`
+      + hint('간격이 짧으면 숫자가 빨리 바뀌지만 서비스의 조회 제한에 걸릴 수 있어요. Claude는 간격과 관계없이 2분에 한 번만 물어봐요.'))
+    + section('트레이', toggle('trayShowNumber', '트레이 아이콘에 남은 % 표시', '가장 빠듯한 서비스의 남은 양을 보여 주고, 주의·위험이면 색이 바뀌어요. 위젯을 숨겨도 볼 수 있어요.', c.trayShowNumber !== false))
+    + section('클릭 통과', toggle('clickThrough', '위젯 클릭 통과 잠금', '위젯을 눌러도 뒤의 창이 눌려요. 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 푸세요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)', !!c.clickThrough))
+    + section('단축키', `<div class="sc-list">${row('toggle', '위젯 보이기·숨기기')}${row('lock', '클릭 통과 잠금·풀기')}${row('cycle', '다음 디자인')}</div>
+      ${hint('칸을 누르고 새 조합(Ctrl·Alt·Shift + 글자)을 누르세요. Esc는 취소, Backspace는 끄기예요.')}
+      ${errors.length ? hint(`등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.`, 'warn-text') : ''}`)
+    + advanced('general', section('모니터 구성별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
+        + `${hint(`저장된 구성 ${saved}개`)}${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
+      + section('작업 표시줄에 붙였을 때', toggle('doubleClickToOpenPopup', '두 번 눌러야 상세 보기 열기', '끄면 한 번만 눌러도 열려요.', !!c.doubleClickToOpenPopup)
+        + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
+        + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
+        + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.'))
+      + section('외부 디스플레이로 보내기', toggle('apiPushEnabled', '사용량 보내기', '확인할 때마다 아래 주소로 사용량을 HTTP POST로 보내요(책상 위 작은 화면 등).', !!c.apiPushEnabled)
+        + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>
+        <label class="field"><span>화면 번호</span><input type="number" class="text-input short" data-api-screen min="1" step="1" value="${c.apiScreen ?? 1}"></label>`), '고급 설정')
+    + section('정보', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}</p>${s.guideAvailable ? `<button class="secondary-button" data-open-guide>${icon('book')}사용 설명서 열기</button>` : ''}`)
 }
 function shortcutFromEvent(e: KeyboardEvent): string | null {
   const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[]
@@ -255,21 +326,30 @@ function shortcutFromEvent(e: KeyboardEvent): string | null {
 function notify(message: string) {
   const toast = root.querySelector<HTMLElement>('.toast'); if (!toast) return
   clearTimeout(toastTimer); toast.textContent = message; toast.classList.add('visible')
-  toastTimer = setTimeout(() => toast.classList.remove('visible'), 2200)
+  toastTimer = setTimeout(() => toast.classList.remove('visible'), 2400)
 }
 async function update(patch: Partial<WidgetConfig>) {
   try { draft = null; const next = await window.api.updateConfig(patch); renderSettings(next, true) }
   catch { notify('설정을 저장하지 못했어요. 다시 시도해 주세요.') }
 }
+async function detectApps() {
+  detecting = true
+  if (tab === 'services') renderSettings(state, true)
+  try { detected = await window.api.detectLocalApps() as DetectedApp[] } catch { detected = [] }
+  detecting = false
+  if (tab === 'services' && !typing()) renderSettings(state, true)
+}
+const run = (p: Promise<unknown>, fail: string) => { void p.catch(() => notify(fail)) }
+
 function bindEvents() {
   root.querySelectorAll<HTMLElement>('[data-tab]').forEach(el => el.onclick = () => { tab = el.dataset.tab as Tab; renderSettings(state, true) })
-  root.querySelectorAll<HTMLElement>('[data-goto]').forEach(el => el.onclick = () => { tab = el.dataset.goto as Tab; renderSettings(state, true) })
   root.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.onclick = () => { size = el.dataset.size as SizeKey; renderSettings(state, true) })
   root.querySelectorAll<HTMLElement>('[data-sample]').forEach(el => el.onclick = () => { sample = el.dataset.sample as 'real' | 'sample'; renderSettings(state, true) })
   const body = root.querySelector<HTMLElement>('[data-body]')!
-  if (tab === 'accounts' || tab === 'general' || tab === 'api') return // 이 탭들은 팝업 코드가 이벤트를 붙인다
+  body.querySelectorAll<HTMLDetailsElement>('[data-adv]').forEach(el => el.ontoggle = () => { if (el.open) openAdvanced.add(el.dataset.adv!); else openAdvanced.delete(el.dataset.adv!) })
   body.querySelectorAll<HTMLElement>('[data-config]').forEach(el => el.onclick = () => { void update({ [el.dataset.config!]: el.dataset.value }) })
   body.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach(el => el.onchange = () => { void update({ [el.dataset.toggle!]: el.checked }) })
+  body.querySelectorAll<HTMLElement>('[data-interval]').forEach(el => el.onclick = () => { void update({ refreshIntervalSec: Number(el.dataset.interval) }) })
   body.querySelectorAll<HTMLElement>('[data-source-all]').forEach(el => el.onclick = () => {
     const v = el.dataset.sourceAll as ValueSource, all: Record<string, ValueSource> = {}
     for (const a of state.accounts) all[a.id] = v
@@ -288,24 +368,38 @@ function bindEvents() {
   const colorInput = body.querySelector<HTMLInputElement>('[data-color]')
   if (colorInput) colorInput.onchange = () => { void update({ accentColor: colorInput.value }) }
   body.querySelectorAll<HTMLElement>('[data-action="dock"]').forEach(el => el.onclick = () => { void update({ placementMode: 'docked' }) })
+
+  // 단축키
   body.querySelectorAll<HTMLInputElement>('[data-shortcut]').forEach(el => {
     el.onkeydown = e => {
       e.preventDefault()
       const k = el.dataset.shortcut as ShortcutKey, cur = { ...SHORTCUT_DEFAULTS, ...config().shortcuts }
       if (e.key === 'Escape') { el.blur(); return }
-      if (e.key === 'Backspace' || e.key === 'Delete') { void update({ shortcuts: { ...cur, [k]: '' } }); return }
+      if (e.key === 'Tab') { el.blur(); return }
+      if (e.key === 'Backspace' || e.key === 'Delete') { el.blur(); void update({ shortcuts: { ...cur, [k]: '' } }); return }
       const accel = shortcutFromEvent(e)
-      if (!accel) { el.value = 'Ctrl 또는 Alt와 함께 눌러 주세요'; return }
+      if (!accel) { if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) el.value = 'Ctrl 또는 Alt와 함께 눌러 주세요'; return }
       if (Object.entries(cur).some(([other, v]) => other !== k && v === accel)) { notify('다른 동작에 이미 쓰는 조합이에요.'); return }
-      void update({ shortcuts: { ...cur, [k]: accel } })
+      el.blur(); void update({ shortcuts: { ...cur, [k]: accel } })
     }
     el.onblur = () => { el.value = ({ ...SHORTCUT_DEFAULTS, ...config().shortcuts })[el.dataset.shortcut as ShortcutKey] || '' }
   })
   body.querySelectorAll<HTMLElement>('[data-sc-clear]').forEach(el => el.onclick = () => { void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [el.dataset.scClear!]: '' } }) })
   body.querySelectorAll<HTMLElement>('[data-sc-default]').forEach(el => el.onclick = () => { const k = el.dataset.scDefault as ShortcutKey; void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [k]: SHORTCUT_DEFAULTS[k] } }) })
   body.querySelector<HTMLElement>('[data-clear-layouts]')?.addEventListener('click', () => { void update({ layoutsByMonitor: {} }) })
+
+  // 외부 디스플레이: 입력을 마칠 때(Enter·포커스 이동)만 저장한다.
+  const ep = body.querySelector<HTMLInputElement>('[data-api-endpoint]')
+  if (ep) ep.onchange = () => { const v = ep.value.trim(); if (/^https?:\/\/\S+$/i.test(v)) void update({ apiEndpoint: v }); else { notify('http:// 또는 https://로 시작하는 주소를 넣어 주세요.'); ep.value = state.config.apiEndpoint || 'http://localhost:8080/api/usage' } }
+  const scr = body.querySelector<HTMLInputElement>('[data-api-screen]')
+  if (scr) scr.onchange = () => { const v = parseInt(scr.value, 10); if (v >= 1) void update({ apiScreen: v }); else scr.value = String(state.config.apiScreen ?? 1) }
+  body.querySelector<HTMLElement>('[data-open-guide]')?.addEventListener('click', () => run(window.api.openGuide().then(ok => { if (!ok) notify('사용 설명서를 찾지 못했어요.') }), '사용 설명서를 열지 못했어요.'))
+
+  // 기록
   body.querySelectorAll<HTMLElement>('[data-hist]').forEach(el => el.onclick = () => { histId = el.dataset.hist!; renderSettings(state, true) })
   body.querySelectorAll<HTMLElement>('[data-hrange]').forEach(el => el.onclick = () => { histRange = el.dataset.hrange as 'day' | 'week'; renderSettings(state, true) })
+
+  // 알림
   body.querySelectorAll<HTMLInputElement>('[data-mute]').forEach(el => el.onchange = () => {
     const set = new Set(config().notifyMuted || [])
     if (el.checked) set.delete(el.dataset.mute!); else set.add(el.dataset.mute!)
@@ -315,35 +409,47 @@ function bindEvents() {
     try { notify(await window.api.testNotification() ? '테스트 알림을 보냈어요.' : '이 PC에서는 Windows 알림을 쓸 수 없어요.') }
     catch { notify('테스트 알림을 보내지 못했어요.') }
   })
-  body.querySelectorAll<HTMLElement>('[data-hide]').forEach(el => el.onclick = async () => {
-    const id = el.dataset.hide!, account = state.accounts.find(a => a.id === id)!
-    try { await window.api.hideAccount(id, !account.hidden) } catch { notify('표시 설정을 저장하지 못했어요.') }
+
+  // 서비스
+  body.querySelectorAll<HTMLElement>('[data-expand]').forEach(el => el.onclick = () => { expanded = expanded === el.dataset.expand ? '' : el.dataset.expand!; renderSettings(state, true) })
+  body.querySelectorAll<HTMLInputElement>('[data-enabled]').forEach(el => el.onchange = () => run(window.api.toggleAccount(el.dataset.enabled!, el.checked), '조회 설정을 저장하지 못했어요.'))
+  body.querySelectorAll<HTMLInputElement>('[data-name-input]').forEach(el => {
+    const save = () => { const id = el.dataset.nameInput!, name = el.value.trim(); if (name && name !== state.accounts.find(a => a.id === id)?.name) run(window.api.renameAccount(id, name), '이름을 저장하지 못했어요.') }
+    el.onchange = save
+    el.onkeydown = e => { if (e.key === 'Enter') el.blur(); else if (e.key === 'Escape') { el.value = state.accounts.find(a => a.id === el.dataset.nameInput)?.name || el.value; el.blur() } }
   })
-  body.querySelectorAll<HTMLElement>('[data-rename]').forEach(el => el.onclick = () => {
-    const id = el.dataset.rename!, b = body.querySelector<HTMLElement>(`[data-name-of="${CSS.escape(id)}"]`)
-    if (!b || b.querySelector('input')) return
-    const input = document.createElement('input')
-    input.className = 'rename-input'; input.value = b.textContent || ''; input.maxLength = 60
-    input.setAttribute('aria-label', '새 이름')
-    b.replaceChildren(input); input.focus(); input.select()
-    let done = false
-    const finish = (save: boolean) => {
-      if (done) return
-      done = true
-      const name = input.value.trim()
-      if (save && name && name !== state.accounts.find(a => a.id === id)?.name) void window.api.renameAccount(id, name).catch(() => notify('이름을 저장하지 못했어요.'))
-      else renderSettings(state, true)
-    }
-    input.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false) }
-    input.onblur = () => finish(true)
+  body.querySelectorAll<HTMLElement>('[data-visibility]').forEach(el => el.onclick = async () => {
+    const id = el.dataset.id!, a = state.accounts.find(x => x.id === id); if (!a) return
+    const v = el.dataset.visibility
+    try {
+      if ((v === 'none') !== !!a.hidden) await window.api.hideAccount(id, v === 'none')
+      if (v !== 'none' && (v === 'window') !== !!a.hiddenInDock) await window.api.setAccountDisplay(id, { hiddenInDock: v === 'window' })
+    } catch { notify('표시 설정을 저장하지 못했어요.') }
   })
-  body.querySelectorAll<HTMLElement>('[data-dock-hide]').forEach(el => el.onclick = () => {
-    const a = state.accounts.find(x => x.id === el.dataset.dockHide)
-    if (a) void window.api.setAccountDisplay(a.id, { hiddenInDock: !a.hiddenInDock }).catch(() => notify('표시 설정을 저장하지 못했어요.'))
+  body.querySelectorAll<HTMLInputElement>('[data-scoped]').forEach(el => el.onchange = () => run(window.api.setAccountDisplay(el.dataset.scoped!, { showScoped: el.checked }), '표시 설정을 저장하지 못했어요.'))
+  body.querySelectorAll<HTMLElement>('[data-order]').forEach(el => el.onclick = () => run(window.api.reorderAccount(el.dataset.id!, el.dataset.order as 'up' | 'down'), '순서를 저장하지 못했어요.'))
+  body.querySelectorAll<HTMLElement>('[data-remove]').forEach(el => el.onclick = () => {
+    const a = state.accounts.find(x => x.id === el.dataset.remove); if (!a) return
+    if (!confirm(`'${a.name}'을(를) 목록에서 뺄까요?\n다시 넣으려면 '서비스 추가'에서 추가하세요.`)) return
+    expanded = ''
+    run(window.api.removeAccount(a.id), '목록에서 빼지 못했어요.')
   })
-  body.querySelectorAll<HTMLInputElement>('[data-scoped]').forEach(el => el.onchange = () => { void window.api.setAccountDisplay(el.dataset.scoped!, { showScoped: el.checked }).catch(() => notify('표시 설정을 저장하지 못했어요.')) })
-  body.querySelectorAll<HTMLInputElement>('[data-enabled]').forEach(el => el.onchange = () => { void window.api.toggleAccount(el.dataset.enabled!, el.checked).catch(() => notify('조회 설정을 저장하지 못했어요.')) })
-  body.querySelectorAll<HTMLElement>('[data-order]').forEach(el => el.onclick = () => {
-    void window.api.reorderAccount(el.dataset.id!, el.dataset.order as 'up' | 'down').catch(() => notify('순서를 저장하지 못했어요.'))
+  body.querySelector<HTMLElement>('[data-redetect]')?.addEventListener('click', () => { void detectApps(); void window.api.refreshQuota() })
+  body.querySelectorAll<HTMLElement>('[data-add-app]').forEach(el => el.onclick = () => {
+    const app = detected?.find(x => x.id === el.dataset.addApp); if (app) run(window.api.restoreDetectedApp(app), '추가하지 못했어요.')
+  })
+  body.querySelector<HTMLElement>('[data-custom-open]')?.addEventListener('click', () => { addingCustom = true; renderSettings(state, true); body.querySelector<HTMLInputElement>('[data-custom="name"]')?.focus() })
+  body.querySelector<HTMLElement>('[data-custom-cancel]')?.addEventListener('click', () => { addingCustom = false; renderSettings(state, true) })
+  body.querySelector<HTMLElement>('[data-custom-save]')?.addEventListener('click', () => {
+    const val = (k: string) => body.querySelector<HTMLInputElement>(`[data-custom="${k}"]`)?.value || ''
+    const pct = (k: string) => { const n = Number(val(k)); return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : 100 }
+    const name = val('name').trim()
+    if (!name) { notify('이름을 넣어 주세요.'); return }
+    addingCustom = false
+    run(window.api.addCustomAccount({ name, provider: 'custom', customMock: { primaryPercent: 100 - pct('p5'), primaryReset: '', weeklyPercent: 100 - pct('pw'), weeklyReset: '', iconLetter: name.charAt(0).toUpperCase(), brandColor: val('color') } }), '추가하지 못했어요.')
+  })
+  body.querySelector<HTMLElement>('[data-reset-defaults]')?.addEventListener('click', () => {
+    if (!confirm('서비스 목록을 기본으로 되돌릴까요?\n직접 추가한 카드와 바꾼 이름이 사라져요.')) return
+    run(window.api.resetDefaultAccounts(), '되돌리지 못했어요.')
   })
 }

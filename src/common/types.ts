@@ -122,6 +122,8 @@ export type HistoryPoint = [number, number | null, number | null]
 
 export interface AppState {
   preview?: boolean
+  version?: string // 앱 버전(설정 창 '정보')
+  guideAvailable?: boolean // 사용 설명서 PDF를 열 수 있는지
   acrylicSupported?: boolean
   config: WidgetConfig
   accounts: AccountConfig[]

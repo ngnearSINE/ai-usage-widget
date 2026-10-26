@@ -8,6 +8,8 @@ import { evaluateNotifications, type NotifyState } from '../common/notify-rules.
 export class UsageNotifier {
   private state: NotifyState = {}
   private saveTimer: NodeJS.Timeout | undefined
+  // 표시 중인 알림을 붙잡아 둔다. 참조가 없으면 가비지 수집되어 알림을 눌러도 click이 오지 않는다(Electron 알려진 문제).
+  private readonly live = new Set<Notification>()
 
   constructor(private readonly file: string, private readonly icon: string | undefined, private readonly onClick: () => void) {
     try { if (fs.existsSync(file)) this.state = JSON.parse(fs.readFileSync(file, 'utf-8')) || {} }
@@ -31,20 +33,28 @@ export class UsageNotifier {
   private show(title: string, body: string) {
     if (!Notification.isSupported()) return false
     const n = new Notification({ title, body, icon: this.icon, silent: false })
-    n.on('click', this.onClick)
+    this.live.add(n)
+    n.on('click', () => { this.live.delete(n); this.onClick() })
+    n.on('close', () => this.live.delete(n))
     n.show()
     return true
   }
 
   private save() {
     clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      try {
-        fs.mkdirSync(path.dirname(this.file), { recursive: true })
-        const tmp = `${this.file}.tmp`
-        fs.writeFileSync(tmp, JSON.stringify(this.state), 'utf-8')
-        fs.renameSync(tmp, this.file)
-      } catch (err) { console.warn('[Notifier] 알림 기록을 저장하지 못했습니다:', err) }
-    }, 500)
+    this.saveTimer = setTimeout(() => this.flush(), 500)
+  }
+
+  /** 미뤄 둔 저장을 바로 한다(앱 종료 때). */
+  flush() {
+    if (!this.saveTimer) return
+    clearTimeout(this.saveTimer)
+    this.saveTimer = undefined
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true })
+      const tmp = `${this.file}.tmp`
+      fs.writeFileSync(tmp, JSON.stringify(this.state), 'utf-8')
+      fs.renameSync(tmp, this.file)
+    } catch (err) { console.warn('[Notifier] 알림 기록을 저장하지 못했습니다:', err) }
   }
 }

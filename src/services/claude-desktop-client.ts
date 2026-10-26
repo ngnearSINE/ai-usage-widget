@@ -109,7 +109,9 @@ export class ClaudeDesktopClient {
       }
     }
     if (this.lastLive && Date.now() - this.lastLiveAt < MAX_SAMPLE_AGE_MS) {
-      return { ...refreshCountdowns(this.lastLive), id: account.id, name: account.name }
+      // 호출 간격 때문에 아껴 쓰는 값은 그대로, 조회가 막혀 오래된 값은 '갱신 지연'으로 보여 준다(알림·기록에 쓰이지 않게).
+      const old = Date.now() - this.lastLiveAt > LIVE_MIN_INTERVAL_MS + 60_000
+      return { ...refreshCountdowns(this.lastLive), id: account.id, name: account.name, ...(old ? { status: 'stale' as const } : {}) }
     }
     return this.fetchUsage(account)
   }

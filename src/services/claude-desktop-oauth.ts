@@ -183,8 +183,10 @@ export function parseScopedLimits(limits: unknown): Array<{ label: string; quota
   const out: Array<{ label: string; quota: QuotaInfo }> = []
   for (const l of limits as Array<Record<string, any>>) {
     if (l?.kind !== 'weekly_scoped' || typeof l.percent !== 'number' || !Number.isFinite(l.percent)) continue
-    const label = l.scope?.model?.display_name || l.scope?.surface?.display_name
-    if (typeof label !== 'string' || !label) continue
+    const raw = l.scope?.model?.display_name || l.scope?.surface?.display_name
+    // 화면에 그대로 들어가는 이름이라 표시 문자만 남긴다(서버 응답을 HTML로 해석하지 않게).
+    const label = typeof raw === 'string' ? raw.replace(/[<>&"'`]/g, '').trim().slice(0, 24) : ''
+    if (!label) continue
     const used = Math.max(0, Math.min(100, Math.round(l.percent)))
     const resetTime = typeof l.resets_at === 'string' && Number.isFinite(Date.parse(l.resets_at)) ? l.resets_at : undefined
     out.push({ label, quota: { percentUsed: used, percentLeft: 100 - used, remainingFraction: (100 - used) / 100, resetTime, resetCountdown: formatCountdown(resetTime), isExhausted: used >= 100 } })

@@ -8,12 +8,15 @@ export interface ClaudeOrgSeen { orgUuid: string; label: string; fromCli: boolea
  *   기록·알림·숨김 설정이 카드 ID에 묶여 있어 새 카드를 만들지 않고 이어 쓴다.
  * - 처음 보는 조직은 카드로 추가한다. 한 번 추가했던 조직(seen)은 지운 뒤 다시 넣지 않는다.
  */
-export function syncClaudeOrgAccounts(accounts: AccountConfig[], seenList: string[], orgs: ClaudeOrgSeen[]) {
+export function syncClaudeOrgAccounts(accounts: AccountConfig[], seenList: string[], orgs: ClaudeOrgSeen[], cliExpired = false) {
   const seen = new Set(seenList)
   let next = [...accounts], changed = false
   if (!orgs.length) return { accounts: next, seen: [...seen], changed }
   const free = (o: ClaudeOrgSeen) => !next.some(a => a.orgUuid === o.orgUuid)
   const legacy = next.find(a => a.provider === 'claude' && !a.orgUuid && !a.customMock)
+  // CLI 로그인은 있는데 토큰이 만료돼 어느 조직인지 모르면, 조직이 여럿일 때 예전 카드를 엉뚱한 조직에 묶지 않도록 이번에는 미룬다
+  // (CLI를 다시 쓰면 토큰이 새로 고쳐져 맞는 조직에 묶인다). 그동안 예전 카드는 전처럼 CLI 경로로 보인다.
+  if (legacy && cliExpired && orgs.length > 1 && !orgs.some(o => o.fromCli)) return { accounts: next, seen: [...seen], changed }
   if (legacy) {
     const target = orgs.find(o => o.fromCli && free(o)) || orgs.find(free)
     if (target) {

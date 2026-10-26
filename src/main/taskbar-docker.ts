@@ -1,4 +1,4 @@
-import { spawn, execFile, execFileSync, type ChildProcess } from 'child_process'
+import { spawn, execFile, type ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import { promisify } from 'util'
@@ -17,6 +17,8 @@ type Pending = { resolve: (r: { code: number; out: string }) => void; onLine?: (
  * 도킹 넣기·빼기가 수백 ms씩 걸렸다. 한 프로세스를 띄워 두고 stdin 한 줄로 명령을 보내면 수 ms에 끝난다.
  * 상주 프로세스를 쓸 수 없으면 기존처럼 명령마다 실행한다.
  */
+const HELPER_TIMEOUT_MS = 4000
+
 class NativeHelper {
   private proc: ChildProcess | null = null
   private ready: Promise<boolean> | null = null
@@ -43,6 +45,8 @@ class NativeHelper {
         for (const p of this.pending.values()) p.resolve({ code: -1, out: '' })
         this.pending.clear()
       }
+      // 보안 프로그램이 실행 파일을 잡고 있는 등으로 READY가 오지 않으면 실패로 처리한다(모든 도킹 동작이 기다리며 멈추지 않게).
+      const readyTimer = setTimeout(() => { fail(); try { proc.kill() } catch {} }, 5000)
       proc.on('error', fail)
       proc.on('exit', fail)
       proc.stdin?.on('error', fail)
@@ -51,7 +55,7 @@ class NativeHelper {
         const lines = this.buffer.split(/\r?\n/)
         this.buffer = lines.pop() || ''
         for (const line of lines) {
-          if (line === 'READY') { resolve(true); continue }
+          if (line === 'READY') { clearTimeout(readyTimer); resolve(true); continue }
           const m = /^([RS]) (\d+) ?(.*)$/.exec(line)
           if (!m) continue
           const p = this.pending.get(m[2])
@@ -72,7 +76,14 @@ class NativeHelper {
     if (await this.start() && this.proc?.stdin?.writable) {
       const id = String(++this.seq)
       return new Promise(resolve => {
-        this.pending.set(id, { resolve, onLine })
+        // 탐색기가 멈춰 있으면 작업표시줄 창 호출이 돌아오지 않을 수 있다. 한 명령이 막히면 뒤 명령도 모두 막히므로
+        // 일정 시간 안에 답이 없으면 보조 프로그램을 다시 띄운다(계속 출력하는 명령은 끝이 정해져 있지 않아 제외).
+        const timer = onLine ? null : setTimeout(() => {
+          if (!this.pending.has(id)) return
+          console.warn('[TaskbarDocker] Helper command timed out, restarting helper:', args[0])
+          this.stop()
+        }, HELPER_TIMEOUT_MS)
+        this.pending.set(id, { resolve: r => { if (timer) clearTimeout(timer); resolve(r) }, onLine })
         this.proc!.stdin!.write(`${id} ${args.join(' ')}\n`)
       })
     }
@@ -92,6 +103,9 @@ class NativeHelper {
     try { this.proc?.stdin?.end(); this.proc?.kill() } catch {}
     this.proc = null
     this.ready = null
+    // 기다리던 명령은 실패로 돌려준다(프로세스를 먼저 비워 exit 처리가 건너뛰므로 여기서 직접).
+    for (const p of this.pending.values()) p.resolve({ code: -1, out: '' })
+    this.pending.clear()
   }
 }
 
@@ -181,7 +195,7 @@ export class TaskbarDocker {
 
     // 대상 모니터 영역 추출
     const display = screen.getDisplayMatching(win.getBounds()) || screen.getPrimaryDisplay()
-    const mon = display.bounds
+    const mon = screen.dipToScreenRect(null, display.bounds) // 보조 프로그램은 물리 픽셀로 모니터를 찾는다
     const monStr = `${mon.x},${mon.y},${mon.x + mon.width},${mon.y + mon.height}`
 
     const args = [
@@ -272,11 +286,6 @@ export class TaskbarDocker {
     }
   }
 
-  public static undockWindowSync(win: BrowserWindow): void {
-    if (!win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return
-    try { execFileSync(this.getDockerPath(), ['undock', this.getHwnd(win)], { windowsHide: true, timeout: 2000 }) } catch {}
-  }
-
   /** Windows 11 DWM 둥근 모서리. 아크릴 backdrop까지 함께 잘리는 유일한 경로다. */
   public static setCornerPreference(win: BrowserWindow, preference: 'round' | 'none'): void {
     if (process.platform !== 'win32' || !win || win.isDestroyed()) return
@@ -288,7 +297,7 @@ export class TaskbarDocker {
   }
 
   /**
-   * 팝업 앵커링을 위한 위젯의 실제 화면 절대 좌표(GetWindowRect) 조회
+   * 위젯의 실제 화면 좌표(GetWindowRect)를 DIP로 돌려준다. 보조 프로그램이 없으면 Electron 좌표(이미 DIP).
    */
   public static async getWidgetScreenRect(
     win: BrowserWindow
@@ -302,14 +311,8 @@ export class TaskbarDocker {
     try {
       const { out } = await this.helper.run(['getscreenrect', hwnd])
       const parts = out.trim().split(',')
-      if (parts.length === 4) {
-        return {
-          x: parseInt(parts[0], 10),
-          y: parseInt(parts[1], 10),
-          width: parseInt(parts[2], 10),
-          height: parseInt(parts[3], 10)
-        }
-      }
+      const n = parts.map(v => parseInt(v, 10))
+      if (n.length === 4 && n.every(Number.isFinite)) return screen.screenToDipRect(null, { x: n[0], y: n[1], width: n[2], height: n[3] })
     } catch (err) {
       console.warn('[TaskbarDocker] getscreenrect failed, falling back to win.getBounds():', err)
     }
@@ -348,12 +351,13 @@ export class TaskbarDocker {
 
         for (const line of lines) {
           const msg = line.trim()
+          if (this.dockWatchProcess !== proc) continue // 방금 멈춘 이전 워처의 남은 신호
           if (msg === 'CLICK') {
             console.log('[TaskbarDocker] Native click detected on docked HWND, toggling popup')
             onClick()
           } else if (msg === 'DRAG_START') {
             onDrag?.()
-          } else if (msg === 'DOCK_LOST' && this.dockWatchProcess === proc) {
+          } else if (msg === 'DOCK_LOST') {
             console.warn('[TaskbarDocker] Dock lost. Triggering re-dock repair...')
             this.dockWatchProcess = null
             onDockLost()
@@ -363,6 +367,13 @@ export class TaskbarDocker {
 
       proc.on('error', (err) => {
         console.warn('[TaskbarDocker] watch process error:', err)
+      })
+      // 우리가 멈춘 게 아닌데 끝났다면(충돌 등) 클릭·끌기를 더 받지 못하므로 다시 붙이는 경로로 보낸다.
+      proc.on('exit', () => {
+        if (this.dockWatchProcess !== proc) return
+        console.warn('[TaskbarDocker] Dock watcher exited unexpectedly')
+        this.dockWatchProcess = null
+        onDockLost()
       })
     } catch (err) {
       console.error('[TaskbarDocker] Failed to spawn watch:', err)

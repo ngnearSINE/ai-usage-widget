@@ -61,3 +61,11 @@ test('예전 Claude 카드는 CLI 조직에 이어 붙이고, 새 조직은 추�
   const renamed = syncClaudeOrgAccounts([{ ...accounts[0], name: '내 Claude' }], [], orgs)
   assert.equal(renamed.accounts[0].name, '내 Claude')
 })
+
+test('CLI 토큰이 만료돼 조직을 모르면 예전 카드를 묶지 않고 미룬다', async () => {
+  const { syncClaudeOrgAccounts } = await import('../src/common/claude-org-sync.js')
+  const acc = [{ id: 'claude-code', name: 'Claude Code', provider: 'claude' as const, enabled: true }]
+  const orgs = [{ orgUuid: 'team-1', label: 'Claude 팀', fromCli: false }, { orgUuid: 'me-1', label: 'Claude 개인', fromCli: false }]
+  assert.equal(syncClaudeOrgAccounts(acc, [], orgs, true).changed, false)
+  assert.equal(syncClaudeOrgAccounts(acc, [], orgs, false).accounts[0].orgUuid, 'team-1', '만료가 아니면 전처럼 묶는다')
+})

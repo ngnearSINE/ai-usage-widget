@@ -41,6 +41,15 @@ export function groupClaudeOrgs(found: Array<{ token: ClaudeToken; profile: Clau
   return [...byOrg.values()].sort((a, b) => Number(b.kind !== '개인') - Number(a.kind !== '개인') || a.label.localeCompare(b.label))
 }
 
+/** CLI 로그인 파일은 있는데 토큰이 만료된 상태(어느 조직인지 아직 모름). */
+export function cliTokenExpired(): boolean {
+  const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  try {
+    const oauth = JSON.parse(fs.readFileSync(path.join(dir, '.credentials.json'), 'utf-8')).claudeAiOauth
+    return typeof oauth?.accessToken === 'string' && typeof oauth.expiresAt === 'number' && oauth.expiresAt <= Date.now()
+  } catch { return false }
+}
+
 function readCliToken(): ClaudeToken | null {
   const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
   try {
@@ -109,7 +118,10 @@ export class ClaudeOrgs {
     if (!org) throw new Error('이 조직의 로그인 토큰이 없거나 만료됐어요. Claude 앱에서 이 조직으로 한 번 전환하거나 claude를 실행하세요')
     let lastStatus = 0
     for (const t of org.tokens) {
-      const res = await fetch(`${API}/usage`, { headers: headers(t.token), signal: AbortSignal.timeout(5000), redirect: 'error' })
+      // 한 토큰의 네트워크 오류(시간 초과 등)로 나머지 토큰을 건너뛰지 않는다.
+      let res: Response
+      try { res = await fetch(`${API}/usage`, { headers: headers(t.token), signal: AbortSignal.timeout(5000), redirect: 'error' }) }
+      catch { continue }
       if (res.status === 429) {
         await res.body?.cancel().catch(() => {})
         this.backoffUntil.set(orgUuid, Date.now() + parseRetryAfterMs(res.headers.get('retry-after')))

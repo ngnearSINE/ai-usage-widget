@@ -20,6 +20,8 @@ function sync(old: Node, next: Node): Node {
     if (old !== document.activeElement) old.value = next.value
     old.checked = next.checked
   }
+  // 자식을 따로 그리는 영역(data-keep)은 바깥 틀을 다시 맞출 때 비우지 않는다(카드가 매번 새로 만들어져 전환·애니메이션이 끊기지 않게).
+  if (next.hasAttribute('data-keep') && old.firstChild) return old
   let cursor: ChildNode | null = old.firstChild
   for (const child of Array.from(next.childNodes)) {
     const childKey = key(child)

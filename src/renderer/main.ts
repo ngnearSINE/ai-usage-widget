@@ -64,8 +64,7 @@ const appEl = document.getElementById('app')!
 if (viewType === 'popup') {
   document.body.classList.add('is-popup-view')
 } else if (viewType === 'settings') {
-  // 계정·일반·API 탭은 팝업 스타일을 그대로 쓰므로 팝업 색 변수도 함께 켠다.
-  document.body.classList.add('is-settings-view', 'is-popup-view')
+  document.body.classList.add('is-settings-view')
 } else {
   document.body.classList.add('is-widget-view')
 }

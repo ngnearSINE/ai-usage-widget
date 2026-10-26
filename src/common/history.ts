@@ -6,7 +6,7 @@ const SAME_VALUE_GAP = 10 * 60e3
 export type HistoryStore = Record<string, HistoryPoint[]>
 
 export function samplesOf(usages: AccountUsage[], now: number): Array<[string, HistoryPoint]> {
-  return usages.filter(u => u.status === 'ready').map(u => {
+  return usages.filter(u => u.status === 'ready' && !u.isEstimated).map(u => {
     const five = u.isWeeklyOnly ? null : Math.round(u.primaryQuota.percentLeft)
     const week = u.isWeeklyOnly ? Math.round(u.primaryQuota.percentLeft) : u.weeklyQuota ? Math.round(u.weeklyQuota.percentLeft) : null
     return [u.id, [now, five, week]] as [string, HistoryPoint]

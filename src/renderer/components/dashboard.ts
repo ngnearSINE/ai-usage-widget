@@ -9,6 +9,10 @@ const paths: Record<string, string> = {
   sliders: '<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8a7 7 0 0 1 11.6-2L20 9M4 15l2.3 3A7 7 0 0 0 18 16"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>',
+  book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/>',
+  expand: '<path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/>',
   minus: '<path d="M5 12h14"/>',
   grid: '<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/>',
   dock: '<path d="M4 15V5h16v10M3 19h18M9 11l3 3 3-3M12 7v7"/>',
@@ -100,7 +104,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
       <button class="tool" data-settings="design" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool" data-settings="services" title="서비스 관리" aria-label="서비스 관리 열기">${icon('grid')}</button>
       <button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button></header>
-    <main class="dashboard-content" data-grid-host><div class="service-grid"></div></main>
+    <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
     <div class="toast" role="status" aria-live="polite"></div>
     ${['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(edge => `<div class="resize-handle resize-${edge}" data-resize="${edge}" aria-hidden="true"></div>`).join('')}
   </div>`)

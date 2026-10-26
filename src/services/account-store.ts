@@ -93,6 +93,11 @@ function createDefaultAccounts(): AccountConfig[] {
   return structuredClone(DEFAULT_ACCOUNTS)
 }
 
+/** 읽지 못한 설정 파일은 기본값으로 덮어쓰기 전에 옆에 남겨 둔다(직접 되살릴 수 있게). */
+function keepCorruptCopy(file: string) {
+  try { if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.corrupt`) } catch {}
+}
+
 export class AccountStore {
   private configPath: string
   private accountsPath: string
@@ -154,6 +159,7 @@ export class AccountStore {
       }
     } catch (err) {
       console.error('[AccountStore] Failed to load config, using default', err)
+      keepCorruptCopy(this.configPath)
     }
     return { ...DEFAULT_CONFIG }
   }
@@ -175,6 +181,7 @@ export class AccountStore {
       }
     } catch (err) {
       console.error('[AccountStore] Failed to load accounts, using defaults', err)
+      keepCorruptCopy(this.accountsPath)
     }
     return createDefaultAccounts()
   }
@@ -183,7 +190,11 @@ export class AccountStore {
     const tmpPath = `${filePath}.${Date.now()}.tmp`
     try {
       fs.writeFileSync(tmpPath, content, 'utf-8')
-      fs.renameSync(tmpPath, filePath)
+      // Dropbox·백신이 대상 파일을 잠깐 잡고 있으면 바꾸기가 실패한다(EPERM/EBUSY). 잠시 뒤 몇 번 더 시도한다.
+      for (let i = 0; ; i++) {
+        try { fs.renameSync(tmpPath, filePath); break }
+        catch (e) { if (i >= 4) throw e; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25) }
+      }
     } catch (err) {
       try {
         fs.writeFileSync(filePath, content, 'utf-8')
@@ -243,6 +254,8 @@ export class AccountStore {
   public resetToDefaultAccounts(): void {
     this.accounts = createDefaultAccounts()
     this.saveAccounts(this.accounts)
+    // 기본으로 되돌리면 지웠던 Claude 조직 카드도 다시 찾아 넣는다.
+    this.saveConfig({ ...this.config, claudeOrgsSeen: [] })
   }
 
   public removeAccount(id: string): void {
@@ -281,8 +294,8 @@ export class AccountStore {
   }
 
   /** 발견된 Claude 조직을 계정 목록에 맞춘다(규칙은 syncClaudeOrgAccounts). 바뀌었으면 true. */
-  public syncClaudeOrgs(orgs: ClaudeOrgSeen[]): boolean {
-    const r = syncClaudeOrgAccounts(this.accounts, this.config.claudeOrgsSeen || [], orgs)
+  public syncClaudeOrgs(orgs: ClaudeOrgSeen[], cliExpired = false): boolean {
+    const r = syncClaudeOrgAccounts(this.accounts, this.config.claudeOrgsSeen || [], orgs, cliExpired)
     if (!r.changed) return false
     this.saveAccounts(r.accounts)
     this.saveConfig({ ...this.config, claudeOrgsSeen: r.seen })

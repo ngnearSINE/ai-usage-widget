@@ -52,7 +52,9 @@ export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now()
   const len = PERIOD_LEN[period]
   const parsed = q.resetTime ? Date.parse(q.resetTime) - now : q.timeUntilResetMs
   const resetMs = Number.isFinite(parsed) && parsed! >= 0 ? Math.min(parsed!, len) : null
-  const left = clampPct(q.percentLeft), used = 100 - left
+  // 리셋 시각이 이미 지났으면(조회가 오래 막힌 '갱신 지연' 값 등) 한도는 새로 채워졌다. 지난 주기의 숫자를 그대로 보이지 않는다.
+  const refilled = Number.isFinite(parsed) && parsed! < 0
+  const left = refilled ? 100 : clampPct(q.percentLeft), used = 100 - left
   const elapsed = resetMs === null ? null : Math.max(.02, Math.min(1, 1 - resetMs / len))
   const rate = elapsed === null ? 0 : used / (elapsed * len)
   const toEmptyMs = elapsed === null ? null : rate > 0 ? left / rate : Infinity

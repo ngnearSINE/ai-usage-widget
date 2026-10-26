@@ -31,12 +31,18 @@ export class UsageHistory {
 
   private save() {
     clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      try {
-        fs.mkdirSync(path.dirname(this.file), { recursive: true })
-        fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.store), 'utf-8')
-        fs.renameSync(`${this.file}.tmp`, this.file)
-      } catch (err) { console.warn('[History] 사용 기록을 저장하지 못했습니다:', err) }
-    }, 2000)
+    this.saveTimer = setTimeout(() => this.flush(), 2000)
+  }
+
+  /** 미뤄 둔 저장을 바로 한다(앱 종료 때). */
+  flush() {
+    if (!this.saveTimer) return
+    clearTimeout(this.saveTimer)
+    this.saveTimer = undefined
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true })
+      fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.store), 'utf-8')
+      fs.renameSync(`${this.file}.tmp`, this.file)
+    } catch (err) { console.warn('[History] 사용 기록을 저장하지 못했습니다:', err) }
   }
 }

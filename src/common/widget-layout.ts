@@ -57,6 +57,10 @@ export function retainedUsage(current: AccountUsage, previous?: AccountUsage): A
   if ((current.status === 'error' || current.status === 'unauthenticated') && previous && ['ready', 'stale'].includes(previous.status)) {
     return { ...previous, status: 'stale', errorMessage: current.errorMessage }
   }
+  // 실측이 잠깐 실패해 어림값(로컬 기록 추정)으로 바뀌면 마지막 실측을 '갱신 지연'으로 유지한다(숫자가 갑자기 튀지 않게).
+  if (current.isEstimated && previous && !previous.isEstimated && ['ready', 'stale'].includes(previous.status)) {
+    return { ...previous, status: 'stale' }
+  }
   return current
 }
 

@@ -2,7 +2,7 @@ import { AntigravityCliClient } from './antigravity-cli-client.js'
 import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
 import { GrokCliClient } from './grok-cli-client.js'
-import { ClaudeOrgs } from './claude-orgs.js'
+import { ClaudeOrgs, cliTokenExpired } from './claude-orgs.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { retainedUsage } from '../common/widget-layout.js'
@@ -119,7 +119,7 @@ export class QuotaManager {
       // Claude 조직(팀/개인)을 찾아 계정 목록에 맞춘다. 실패해도 나머지 조회는 계속한다.
       try {
         const orgs = await ClaudeOrgs.discover()
-        this.accountStore.syncClaudeOrgs(orgs.map(o => ({ orgUuid: o.orgUuid, label: o.label, fromCli: o.tokens.some(t => t.source === 'cli') })))
+        this.accountStore.syncClaudeOrgs(orgs.map(o => ({ orgUuid: o.orgUuid, label: o.label, fromCli: o.tokens.some(t => t.source === 'cli') })), cliTokenExpired())
       } catch (err) {
         console.warn('[QuotaManager] Claude 조직 확인 실패', err)
       }

@@ -14,6 +14,7 @@ import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
 import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
+import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
@@ -51,6 +52,22 @@ if (!gotTheLock) {
   app.quit()
   process.exit(0)
 }
+// 이미 실행 중일 때 시작 메뉴 등으로 다시 실행하면 숨겨 둔 위젯을 보여 준다(아무 반응이 없으면 실행이 안 된 줄 안다).
+app.on('second-instance', () => {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  widgetManuallyHidden = false
+  widgetHiddenForFullscreen = false
+  if (!widgetWindow.isVisible()) { widgetWindow.show(); void updateWidgetBounds() }
+  updateTrayMenu()
+})
+// 앱 화면은 모두 로컬 파일이다. 링크나 스크립트로 다른 주소로 이동하거나 새 창을 여는 것을 막는다(외부 페이지는 openExternal로만).
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  contents.on('will-navigate', (event, url) => {
+    const dev = process.env.VITE_DEV_SERVER_URL
+    if (!url.startsWith('file://') && !(dev && url.startsWith(dev))) event.preventDefault()
+  })
+})
 
 // 백그라운드 스로틀링 해제 (작업표시줄 상시 모니터링)
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
@@ -75,6 +92,11 @@ let popupRevealTimer: NodeJS.Timeout | null = null
 let lastDockedWidgetClickAt = 0
 const DOUBLE_CLICK_WINDOW_MS = 500
 
+function guidePath(): string | null {
+  return [path.join(path.dirname(app.getPath('exe')), '사용 설명서.pdf'), path.join(app.getAppPath(), 'docs/user-guide.pdf')].find(p => fs.existsSync(p)) || null
+}
+let guideKnown: boolean | undefined
+
 function getAppState(): AppState {
   const accounts = accountStore.getAccounts()
   const raw = isPreview ? previewUsages().filter(u => accounts.some(a => a.id === u.id && a.enabled)) : quotaManager.getUsages()
@@ -90,7 +112,9 @@ function getAppState(): AppState {
     isRefreshing: !isPreview && quotaManager.refreshing,
     lastRefreshedAt: usages.map(u => u.updatedAt).sort().at(-1) || '',
     history: history?.recent(),
-    shortcutErrors
+    shortcutErrors,
+    version: app.getVersion(),
+    guideAvailable: guideKnown ??= !!guidePath()
   }
 }
 
@@ -146,7 +170,7 @@ async function showTip(sender: Electron.WebContents, text: string, rect: { x: nu
   let origin = win.getContentBounds()
   if (win === widgetWindow && accountStore.getConfig().placementMode === 'docked') {
     const r = await TaskbarDocker.getWidgetScreenRect(win)
-    if (r) origin = { ...origin, ...screen.screenToDipPoint({ x: r.x, y: r.y }) }
+    if (r) origin = { ...origin, x: r.x, y: r.y }
   }
   await ensureTipWindow()
   if (seq !== tipSeq || !tipWindow || tipWindow.isDestroyed()) return
@@ -325,6 +349,7 @@ function rebuildSurfaces() {
     widgetWindow=null
     old.destroy()
     createWidgetWindow()
+    startFullscreenWatch()
   }
   if(popupWindow && !popupWindow.isDestroyed() && popupWindow.kind!==kind) {
     hidePopup(true)
@@ -336,8 +361,11 @@ function rebuildSurfaces() {
   if(settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.kind!==kind) {
     const old=settingsWindow, bounds=old.getNormalBounds()
     settingsWindow=null
-    old.destroy()
-    openSettingsWindow('design',bounds)
+    // 보던 탭을 그대로 연다(배경을 바꾸려고 디자인 탭이 아닌 곳에서 바꿨을 수 있다).
+    void old.webContents.executeJavaScript(`document.querySelector('[role=tab][aria-selected=true]')?.dataset.tab||''`).catch(()=>'').then((tab: string) => {
+      old.destroy()
+      openSettingsWindow((SETTINGS_TABS as readonly string[]).includes(tab) ? tab as SettingsTab : 'design',bounds)
+    })
   }
 }
 
@@ -364,6 +392,8 @@ function applyWindowTopmost(config: WidgetConfig) {
 let layoutQueue: Promise<void> = Promise.resolve()
 let dockRepairPending = false
 let dockRepairTimes: number[] = []
+let dockRetryTimer: ReturnType<typeof setTimeout> | undefined
+let dockRetryCount = 0
 
 function updateWidgetBounds(): Promise<void> {
   layoutQueue = layoutQueue
@@ -399,6 +429,8 @@ async function layoutWidget() {
   const res = await TaskbarDocker.dockWindow(widgetWindow, config, currentWidgetWidth, currentWidgetHeight)
   if (res.success) {
     dockRepairPending = false
+    dockRetryCount = 0
+    clearTimeout(dockRetryTimer)
     TaskbarDocker.startDockWatcher(
       widgetWindow,
       () => handleDockedWidgetClick(),
@@ -406,17 +438,28 @@ async function layoutWidget() {
         // 탐색기가 다시 시작되면 다시 붙인다. 붙여도 바로 또 풀리는 상태(작업표시줄 자식이 되지 못함)면 끝없이 반복되므로 5초에 3번까지만.
         const now = Date.now()
         dockRepairTimes = dockRepairTimes.filter(t => now - t < 5000).concat(now)
-        if (dockRepairTimes.length > 3) { console.warn('[Main] Dock keeps getting lost; stopping automatic re-dock'); TaskbarDocker.stopDockWatcher(); return }
+        if (dockRepairTimes.length > 3) {
+          // 붙이자마자 풀리기를 반복하면 잠시 쉬었다가 한 번 더 붙인다(클릭·끌기가 죽은 채로 남지 않게).
+          console.warn('[Main] Dock keeps getting lost; retrying in 30s')
+          TaskbarDocker.stopDockWatcher()
+          clearTimeout(dockRetryTimer)
+          dockRetryTimer = setTimeout(() => { dockRepairTimes = []; dockRepairPending = true; void updateWidgetBounds() }, 30000)
+          return
+        }
         console.log('[Main] Explorer restart or dock lost detected, re-docking widget...')
         dockRepairPending = true
         updateWidgetBounds()
       },
       () => { void beginWindowInteraction('move') }
     )
-  } else if (dockRepairPending) {
-    // Explorer 재시작 직후에는 작업표시줄이 아직 없을 수 있으므로 복구 중일 때만 재시도
-    setTimeout(() => updateWidgetBounds(), 3000)
+  } else if (dockRepairPending && dockRetryCount < 20) {
+    // Explorer 재시작 직후에는 작업표시줄이 아직 없을 수 있으므로 복구 중일 때만 재시도. 여러 곳에서 불려도 예약은 하나만, 1분까지.
+    dockRetryCount++
+    clearTimeout(dockRetryTimer)
+    dockRetryTimer = setTimeout(() => updateWidgetBounds(), 3000)
   } else {
+    dockRepairPending = false
+    dockRetryCount = 0
     console.warn('[Window] Dock unavailable, restoring floating window:', res.error)
     await TaskbarDocker.undockWindow(widgetWindow)
     accountStore.saveConfig({ ...accountStore.getConfig(), placementMode: 'floating' })
@@ -652,7 +695,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
     if (startedDocked) {
       const r = await TaskbarDocker.getWidgetScreenRect(win)
       const display = screen.getDisplayNearestPoint(origin)
-      const rect = r ? screen.screenToDipRect(null, r) : { x: origin.x - 100, y: 0, width: currentWidgetWidth, height: 0 }
+      const rect = r || { x: origin.x - 100, y: 0, width: currentWidgetWidth, height: 0 }
       slide = { grabDx: origin.x - rect.x, display, top: display.bounds.y + display.bounds.height - getTaskbarInfo(display).taskbarHeight, width: rect.width, offset: rect.x - display.bounds.x }
     } else if (kind === 'move') showDockPreview(false, origin, true, ghostWidth)
 
@@ -672,7 +715,13 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
     const toFloat = async (p: {x:number;y:number}) => {
       mode = 'converting'
       while (slideBusy) await new Promise(r => setTimeout(r, 5))
-      await setPlacement('floating')
+      try { await setPlacement('floating') }
+      catch (err) {
+        // 떼어 내지 못하면 작업표시줄에 붙은 채로 남는다. 끌기는 계속 작업표시줄 안에서 하고, 멈춘 클릭·끌기 감시는 다시 붙여 되살린다.
+        mode = 'slide'
+        void updateWidgetBounds()
+        throw err
+      }
       const restored = win.getBounds()
       win.setBounds({ ...restored, x: Math.round(p.x - Math.min(restored.width / 2, 160)), y: Math.round(p.y - 24) })
       start = win.getBounds()
@@ -832,7 +881,7 @@ function createPopupWindow() {
     skipTaskbar: true,
     resizable: false,
     show: false,
-    title: 'AI 사용량 · 고급 설정',
+    title: 'AI 사용량 · 상세',
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -1095,7 +1144,8 @@ function setupIpcHandlers() {
     return getAppState()
   })
 
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_event, patch: Partial<WidgetConfig>) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_event, rawPatch: unknown) => {
+    const patch = sanitizeConfigPatch(rawPatch)
     const prevConfig = accountStore.getConfig()
     // 배치 전환은 네이티브 부모 창 변경과 함께 수행한다. 일반 디자인 변경은 창 위치를 건드리지 않는다.
     const requestedMode = patch.placementMode
@@ -1141,12 +1191,23 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle(IPC_CHANNELS.ADD_CUSTOM_ACCOUNT, (_event, acc: Partial<AccountConfig>) => {
+    // 직접 입력 계정: id는 항상 새로 만들고(기존 계정과 겹치지 않게) 숫자는 0~100으로 맞춘다.
+    const pct = (v: unknown, d: number) => typeof v === 'number' && Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : d
+    const text = (v: unknown, d: string, max: number) => typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : d
+    const m = acc?.customMock
     const newAcc: AccountConfig = {
-      id: acc.id || `custom-${Date.now()}`,
-      name: acc.name || 'Custom Account',
-      provider: acc.provider || 'custom',
+      id: `custom-${Date.now()}`,
+      name: text(acc?.name, '직접 입력', 60),
+      provider: 'custom',
       enabled: true,
-      customMock: acc.customMock || {
+      customMock: m ? {
+        primaryPercent: pct(m.primaryPercent, 50),
+        primaryReset: text(m.primaryReset, '', 20),
+        weeklyPercent: pct(m.weeklyPercent, 30),
+        weeklyReset: text(m.weeklyReset, '', 20),
+        iconLetter: text(m.iconLetter, 'C', 2).toUpperCase(),
+        brandColor: /^#[\da-f]{6}$/i.test(m.brandColor || '') ? m.brandColor! : '#3B82F6'
+      } : {
         primaryPercent: 50,
         primaryReset: '2h 30m',
         weeklyPercent: 30,
@@ -1205,6 +1266,12 @@ function setupIpcHandlers() {
     return getAppState()
   })
   // 계정 표시 설정(모델 전용 한도 보기·작업표시줄에서만 숨김). 정해진 키만 받는다.
+  // 사용 설명서 PDF: 설치본은 실행 파일 옆 '사용 설명서.pdf', 개발 중에는 프로젝트의 docs/user-guide.pdf.
+  ipcMain.handle(IPC_CHANNELS.OPEN_GUIDE, async () => {
+    const file = guidePath()
+    if (!file) return false
+    return (await shell.openPath(file)) === ''
+  })
   ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown }) => {
     const clean: { showScoped?: boolean; hiddenInDock?: boolean } = {}
     if (typeof patch?.showScoped === 'boolean') clean.showScoped = patch.showScoped
@@ -1350,7 +1417,24 @@ app.whenReady().then(() => {
 
   if (!isPreview) quotaManager.startPolling(accountStore.getConfig().refreshIntervalSec)
 
-  TaskbarDocker.startFullscreenWatcher(widgetWindow!, (isFullscreen) => {
+  startFullscreenWatch()
+
+  // 디스플레이 해상도, 작업표시줄 크기 변화 또는 모니터 연결/해제 시 위젯 위치 재배치
+  let lastMonitorKey = monitorKey()
+  const onScreenChange = () => {
+    const key = monitorKey()
+    if (key !== lastMonitorKey) { lastMonitorKey = key; if (restoreLayout()) broadcastState() }
+    updateWidgetBounds()
+  }
+  screen.on('display-metrics-changed', onScreenChange)
+  screen.on('display-added', onScreenChange)
+  screen.on('display-removed', onScreenChange)
+})
+
+/** 전체 화면 앱이 뜨면 자유 창 위젯을 숨긴다. 위젯과 같은 모니터인지 보려고 창 핸들을 넘기므로 위젯 창을 새로 만들면 다시 건다. */
+function startFullscreenWatch() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  TaskbarDocker.startFullscreenWatcher(widgetWindow, (isFullscreen) => {
     if (!widgetWindow || widgetWindow.isDestroyed() || widgetManuallyHidden) return
     const cfg = accountStore.getConfig()
     if (cfg.placementMode === 'floating') {
@@ -1365,18 +1449,7 @@ app.whenReady().then(() => {
       }
     }
   })
-
-  // 디스플레이 해상도, 작업표시줄 크기 변화 또는 모니터 연결/해제 시 위젯 위치 재배치
-  let lastMonitorKey = monitorKey()
-  const onScreenChange = () => {
-    const key = monitorKey()
-    if (key !== lastMonitorKey) { lastMonitorKey = key; if (restoreLayout()) broadcastState() }
-    updateWidgetBounds()
-  }
-  screen.on('display-metrics-changed', onScreenChange)
-  screen.on('display-added', onScreenChange)
-  screen.on('display-removed', onScreenChange)
-})
+}
 
 app.on('window-all-closed', () => {
   // 트레이에 상주하므로 창이 닫혀도 앱 종료 방지
@@ -1384,8 +1457,23 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => globalShortcut.unregisterAll())
 
-app.on('before-quit', () => {
+// 작업표시줄에 붙은 채로 끝내면 먼저 떼어 낸다. 예전에는 동기 실행으로 떼어 냈는데, 보조 프로그램이 이 창에 보내는
+// 메시지를 창 스레드가 막혀 받지 못해 종료가 수 초 멈췄다(실측 약 6초). 비동기로 떼어 내고 길어도 1.5초 뒤에는 끝낸다.
+let quitReady = false, quitPending = false
+app.on('before-quit', (event) => {
+  if (!quitReady && widgetWindow && !widgetWindow.isDestroyed() && accountStore?.getConfig().placementMode === 'docked') {
+    event.preventDefault()
+    if (quitPending) return
+    quitPending = true
+    TaskbarDocker.stopDockWatcher()
+    const win = widgetWindow
+    void Promise.race([TaskbarDocker.undockWindow(win), new Promise(r => setTimeout(r, 1500))])
+      .finally(() => { quitReady = true; if (!win.isDestroyed()) win.hide(); app.quit() })
+    return
+  }
   clearTimeout(boundsSaveTimer)
+  history?.flush()
+  notifier?.flush()
   pointerProcess?.stop()
   tipWindow?.destroy()
   dockGhost?.destroy()
@@ -1399,11 +1487,6 @@ app.on('before-quit', () => {
   TaskbarDocker.stopStayTop()
   TaskbarDocker.stopFullscreenWatcher()
   TaskbarDocker.stopDockWatcher()
-  if (widgetWindow && !widgetWindow.isDestroyed()) {
-    const cfg = accountStore.getConfig()
-    // 종료 중에는 상주 보조 프로세스가 먼저 닫힐 수 있으므로 동기로 분리한다.
-    if (cfg.placementMode !== 'floating') TaskbarDocker.undockWindowSync(widgetWindow)
-  }
   TaskbarDocker.stopHelper()
   CodexAppServerClient.close()
   if (tray) {

@@ -49,13 +49,13 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 ## 개인정보
 
 - 로그인 정보는 이 PC 안에서 읽기만 하고, 각 서비스의 사용량 조회 주소로만 요청합니다. 로그인 정보를 만들거나 바꾸지 않으며, 사용 통계를 수집하지 않습니다.
-- 사용자가 API 탭에서 직접 켠 경우에만 지정한 주소로 사용량 숫자를 보냅니다.
+- 사용자가 설정의 일반 탭 → 고급 → 외부 디스플레이로 보내기를 직접 켠 경우에만 지정한 주소로 사용량 숫자를 보냅니다.
 - 설정·기록은 `%APPDATA%\ai-usage-taskbar-widget\`에 저장합니다.
 - Claude 모델 전용 한도와 Grok 사용량은 공식 문서에 없는 조회 방식입니다. 형식이 바뀌면 그 정보만 빠지고 나머지는 계속 표시됩니다.
 
 ## 외부 디스플레이 (GeekMagic SmallTV)
 
-설정 창 **API** 탭에서 사용량 보내기를 켜고 엔드포인트 URL(기본 `http://localhost:8080/api/usage`)과 화면 번호를 지정하면, 갱신할 때마다 사용량을 HTTP POST로 보냅니다. ESP8266 기반 SmallTV용 커스텀 펌웨어는 [`firmware/README.md`](firmware/README.md)를 참고하세요.
+설정 창 **일반** 탭 → **고급** → **외부 디스플레이로 보내기**에서 사용량 보내기를 켜고 엔드포인트 URL(기본 `http://localhost:8080/api/usage`)과 화면 번호를 지정하면, 갱신할 때마다 사용량을 HTTP POST로 보냅니다. ESP8266 기반 SmallTV용 커스텀 펌웨어는 [`firmware/README.md`](firmware/README.md)를 참고하세요.
 
 ![GeekMagic SmallTV 외부 디스플레이](img/02-smalltv.webp)
 

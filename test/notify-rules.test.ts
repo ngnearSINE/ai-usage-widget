@@ -58,3 +58,19 @@ test('전체 끄기·서비스별 끄기·갱신 지연 값은 알림을 만들�
   const muted = evaluateNotifications([usage(5, t0 + 2 * H)], cfg({ notifyEnabled: false }), {}, t0)
   assert.deepEqual(kinds(evaluateNotifications([usage(5, t0 + 2 * H)], cfg(), muted.state, t0 + 60e3)), [])
 })
+
+test('리셋 시각이 잠깐 빠졌다 돌아와도 같은 알림을 다시 보내지 않는다', () => {
+  const reset = t0 + 4 * H
+  let r = evaluateNotifications([usage(18, reset)], cfg(), {}, t0)
+  assert.deepEqual(kinds(r), ['warn'])
+  const noReset = usage(17, reset); delete noReset.primaryQuota.resetTime
+  r = evaluateNotifications([noReset], cfg(), r.state, t0 + 5 * 60e3)
+  assert.deepEqual(kinds(r), [], '리셋 시각이 빠진 조회')
+  r = evaluateNotifications([usage(16, reset)], cfg(), r.state, t0 + 10 * 60e3)
+  assert.deepEqual(kinds(r), [], '리셋 시각이 돌아온 조회')
+})
+
+test('추정 값으로는 알리지 않는다', () => {
+  const u = { ...usage(5, t0 + 2 * H), isEstimated: true }
+  assert.deepEqual(kinds(evaluateNotifications([u], cfg(), {}, t0)), [])
+})

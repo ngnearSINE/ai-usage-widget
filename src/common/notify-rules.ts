@@ -15,12 +15,16 @@ export type NotifyState = Record<string, WindowRecord>
 const PERIOD_SLACK = 30 * 60e3 // 리셋 시각이 조회마다 조금씩 흔들려도 같은 주기로 본다.
 
 function periodOf(w: QuotaWindow, now: number, prev?: WindowRecord): { resetAt: number | null; period: string } {
+  const len = PERIOD_LEN[w.period], bucket = `b${Math.floor(now / len)}`
   if (w.resetMs === null) {
+    // 리셋 시각이 잠깐 빠진 조회는 지난번 주기를 이어 간다(새 주기로 보면 같은 알림이 다시 나간다).
+    if (prev && (prev.resetAt === null ? prev.period === bucket : prev.resetAt > now)) return { resetAt: prev.resetAt, period: prev.period }
     // 리셋 시각을 모르면 주기 길이 단위로 나눈 칸을 주기로 쓴다.
-    const len = PERIOD_LEN[w.period]
-    return { resetAt: null, period: `b${Math.floor(now / len)}` }
+    return { resetAt: null, period: bucket }
   }
   const resetAt = now + w.resetMs
+  // 리셋 시각을 몰라 칸으로 이어 오던 주기에 시각이 다시 생기면 같은 주기로 이어 간다.
+  if (prev && prev.resetAt === null && prev.period === bucket) return { resetAt, period: prev.period }
   if (prev?.resetAt != null && Math.abs(resetAt - prev.resetAt) < PERIOD_SLACK) return { resetAt, period: prev.period }
   return { resetAt, period: `r${Math.round(resetAt / 60e3)}` }
 }
@@ -35,8 +39,8 @@ export function evaluateNotifications(usages: AccountUsage[], config: WidgetConf
   const muted = new Set(config.notifyMuted || [])
   for (const u of usages) {
     const m = serviceModel(u, now)
-    // 조회 실패·갱신 지연 값으로는 알리지 않는다(지난 값이 다시 알림을 만들지 않게).
-    if (u.status !== 'ready') continue
+    // 조회 실패·갱신 지연·추정 값으로는 알리지 않는다(지난 값이나 어림값이 알림을 만들지 않게).
+    if (u.status !== 'ready' || u.isEstimated) continue
     for (const w of windowsOf(m)) {
       const key = muteKey(u.id, w.key), old = state[key]
       const { resetAt, period } = periodOf(w, now, old)

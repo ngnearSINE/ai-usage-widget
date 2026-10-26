@@ -69,3 +69,10 @@ test('배치는 창 안에 들어가고, 들어가지 않으면 페이지로 나
   // 넓고 납작한 창(카드 높이 60)에서는 세 서비스를 가로로 나란히.
   assert.equal(chooseLayout(628, 62, 3, 'rich').cols, 3)
 })
+
+test('리셋 시각이 지난 한도는 새로 채워진 것으로 본다', () => {
+  const now = Date.parse('2026-10-26T12:00:00Z')
+  const w = quotaWindow({ remainingFraction: .03, percentLeft: 3, percentUsed: 97, resetCountdown: '', resetTime: '2026-10-26T11:00:00Z' }, '5h', now)
+  assert.equal(w.left, 100)
+  assert.equal(w.resetMs, null)
+})

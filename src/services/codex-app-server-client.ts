@@ -100,11 +100,17 @@ export class CodexAppServerClient {
   /**
    * codex app-server 프로세스 실행 및 JSON-RPC 연결
    */
-  private static async ensureConnected(): Promise<void> {
-    if (this.childProcess && this.isInitialized && !this.childProcess.killed) {
-      return
-    }
+  private static connecting: Promise<void> | null = null
+  private static quitHooked = false
 
+  // 여러 계정이 동시에 조회해도 프로세스는 하나만 띄운다(둘이 각자 띄우면 나중 것이 앞 것을 끈다).
+  private static ensureConnected(): Promise<void> {
+    if (this.childProcess && this.isInitialized && !this.childProcess.killed) return Promise.resolve()
+    this.connecting ||= this.connect().finally(() => { this.connecting = null })
+    return this.connecting
+  }
+
+  private static async connect(): Promise<void> {
     this.close()
 
     const executable = this.findCodexExecutable()
@@ -116,7 +122,7 @@ export class CodexAppServerClient {
       let settled = false
 
       try {
-        this.childProcess = spawn(executable, ['app-server'], {
+        const child = this.childProcess = spawn(executable, ['app-server'], {
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'ignore']
         })
@@ -135,24 +141,26 @@ export class CodexAppServerClient {
           this.handleLine(line)
         })
 
-        this.childProcess.on('error', (err) => {
+        // 이미 다른 프로세스로 바뀐 뒤 옛 프로세스가 끝나도 새 프로세스를 끄지 않는다.
+        child.on('error', (err) => {
           console.warn('[CodexAppServer] Process error:', err)
-          this.close()
+          if (this.childProcess === child) this.close()
           if (!settled) {
             settled = true
             reject(err)
           }
         })
 
-        this.childProcess.on('exit', () => {
-          this.close()
+        child.on('exit', () => {
+          if (this.childProcess === child) this.close()
         })
 
-        // 앱 종료 시 프로세스 확실한 정리
-        if (app) {
-          app.once('before-quit', () => this.close())
+        // 앱 종료 시 프로세스 확실한 정리(다시 띄울 때마다 쌓이지 않게 한 번만 건다)
+        if (!this.quitHooked) {
+          this.quitHooked = true
+          app?.once('before-quit', () => this.close())
+          process.once('exit', () => this.close())
         }
-        process.once('exit', () => this.close())
 
         // JSON-RPC 핸드셰이크: initialize -> initialized
         this.sendRequest('initialize', {
@@ -300,18 +308,15 @@ export class CodexAppServerClient {
       throw new Error('Codex 레이트리밋 정보가 비어 있습니다.')
     }
 
-    const isPro = planTypeRaw.toLowerCase() === 'pro' || String(rateLimits.planType).toLowerCase() === 'pro'
-
     const primaryLimit = rateLimits.primary
     const secondaryLimit = rateLimits.secondary
 
     const primaryWindowMins = Number(primaryLimit?.windowDurationMins) || 0
     const secondaryWindowMins = Number(secondaryLimit?.windowDurationMins) || 0
 
-    // Pro 플랜이거나, 5시간 세션 쿼터 없이 1주일(주간) 쿼터만 단독 제공되는 경우 판별
-    const isWeeklyOnly = isPro ||
-      (!primaryLimit && !!secondaryLimit) ||
-      (primaryWindowMins >= 1440)
+    // 5시간 세션 쿼터 없이 1주일(주간) 쿼터만 오는 경우. 요금제 이름이 아니라 실제 창 길이로 판단한다
+    // (Pro라도 5시간 창이 오면 보여 준다).
+    const isWeeklyOnly = (!primaryLimit && !!secondaryLimit) || (primaryWindowMins >= 1440)
 
     const models: ModelQuotaDetail[] = []
 
@@ -415,14 +420,15 @@ export class CodexAppServerClient {
         resetCountdown: sessionCountdown,
         isExhausted: sessionLeft <= 1
       },
-      weeklyQuota: {
+      // 주간 창이 오지 않았으면 비워 둔다(없는 한도를 '100% 남음'으로 지어내지 않게).
+      weeklyQuota: isWeeklyOnly || secondaryLimit ? {
         remainingFraction: weeklyLeft / 100,
         percentLeft: weeklyLeft,
         percentUsed: weeklyUsed,
         resetTime: weeklyResetIso,
         resetCountdown: weeklyCountdown,
         isExhausted: weeklyLeft <= 1
-      },
+      } : undefined,
       models,
       updatedAt: new Date().toISOString()
     }

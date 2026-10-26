@@ -73,3 +73,20 @@ test('최소 창 높이는 보이는 카드가 모두 들어가는 높이다(서
   // 한 줄에 다 들어가면 제목줄 없이도 110 미만이라 제목줄을 빼고 잰다
   assert.equal(minWindowHeight(600, 3), 68)
 })
+
+test('설정 변경은 아는 키와 올바른 형식만 받는다', async () => {
+  const { sanitizeConfigPatch } = await import('../src/common/config-schema.js')
+  assert.deepEqual(sanitizeConfigPatch({ opacity: 140, design: 'bars', evil: 1, useAcrylic: 'yes', apiEndpoint: 'javascript:alert(1)', cardGap: 7.4 }), { opacity: 100, design: 'bars', cardGap: 7 })
+  assert.deepEqual(sanitizeConfigPatch({ windowBounds: { x: 1, y: 2, width: 'a', height: 4 } }), {})
+  assert.deepEqual(sanitizeConfigPatch({ shortcuts: { toggle: 'Ctrl+Alt+U', lock: 5 } }), { shortcuts: { toggle: 'Ctrl+Alt+U' } })
+  assert.deepEqual(sanitizeConfigPatch(null), {})
+})
+
+test('어림값으로 바뀌면 마지막 실측을 갱신 지연으로 유지한다', () => {
+  const real = { ...previewUsages()[0], status: 'ready' as const }
+  const est = { ...real, isEstimated: true, primaryQuota: { ...real.primaryQuota, percentLeft: 95 } }
+  const kept = retainedUsage(est, real)
+  assert.equal(kept.status, 'stale')
+  assert.equal(kept.primaryQuota.percentLeft, real.primaryQuota.percentLeft)
+  assert.equal(retainedUsage(est, undefined), est, '실측이 없으면 어림값이라도 보여 준다')
+})
