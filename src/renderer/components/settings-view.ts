@@ -31,6 +31,11 @@ const config = () => draft || state.config
 
 export function initSettings(container: HTMLElement, initial: AppState, initialTab?: string) {
   root = container
+  root.addEventListener('click', e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-win]')
+    if (b) window.api.windowControl(b.dataset.win as 'minimize' | 'maximize' | 'close')
+  })
+  root.addEventListener('dblclick', e => { if ((e.target as HTMLElement).closest('.s-titlebar') && !(e.target as HTMLElement).closest('button')) window.api.windowControl('maximize') })
   if (TABS.some(t => t[0] === initialTab)) tab = initialTab as Tab
   renderSettings(initial)
   window.api.onSettingsTab?.(next => { if (TABS.some(t => t[0] === next)) { tab = next as Tab; renderSettings(state, true) } })
@@ -43,7 +48,7 @@ export function renderSettings(next: AppState, force = false) {
   applyAppearance(config())
   const scroll = root.querySelector('.s-body')?.scrollTop || 0
   updateMarkup(root, `<div class="dashboard settings-root">
-    <header class="s-titlebar"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량 설정</span><span class="s-saved">${icon('check')} 바꾸면 바로 저장되고 위젯에도 반영돼요</span></header>
+    <header class="s-titlebar"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량 설정</span><span class="s-saved">${icon('check')} 바꾸면 바로 저장되고 위젯에도 반영돼요</span><div class="s-winbtns"><button data-win="minimize" title="최소화" aria-label="최소화"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button><button data-win="maximize" title="최대화" aria-label="최대화"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button><button data-win="close" class="close" title="닫기" aria-label="닫기"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button></div></header>
     <div class="s-main">
       <section class="s-preview" aria-label="미리보기">
         <div class="s-preview-bar"><div class="segmented s-sizes" role="group" aria-label="미리보기 크기">${SIZES.map(([k, label]) => `<button data-size="${k}" aria-pressed="${size === k}">${label}</button>`).join('')}</div>
@@ -127,10 +132,12 @@ const section = (label: string, inner: string, hint = '') => `<section class="ed
 function designTab(c: WidgetConfig) {
   return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '위젯 제목줄의 보기 버튼으로도 바꿀 수 있어요')
     + section('분위기', segment('appearance', c.appearance || 'dark', [['light', '라이트'], ['dark', '다크'], ['system', '시스템']]))
-    + section('배경 소재', segment('backgroundEffect', c.backgroundEffect || 'acrylic', [['acrylic', '아크릴'], ['transparent', '투명'], ['solid', '단색']]) + `<p class="setting-hint">${state.acrylicSupported === false ? '이 Windows에서는 아크릴 대신 반투명 배경을 사용합니다.' : '아크릴은 창 뒤를 부드럽게 흐리게 합니다. 미리보기에는 흐림이 정확히 보이지 않을 수 있어요.'}</p>`)
+    + section('배경', `${state.acrylicSupported === false ? '' : toggle('useAcrylic', '아크릴', '창 뒤를 흐리게 비춰요. 끄면 흐림 없이 그대로 비쳐요.', c.useAcrylic !== false)}`
+      + slider('opacity', '불투명도', 0, 100, c.opacity ?? 70, '%')
+      + `<p class="setting-hint">Windows Terminal과 같은 방식이에요. 100%는 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}</p>`)
     + section('막대 색 스타일', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 우선해요')
     + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 선택" data-color></label></div>`)
-    + section('크기와 간격', slider('alphaPercent', '배경 불투명도', 30, 100, c.alphaPercent, '%') + slider('fontScale', '글자 크기', 85, 130, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
+    + section('크기와 간격', slider('fontScale', '글자 크기', 85, 130, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
     + section('움직임', segment('motion', c.motion || 'subtle', [['off', '없음'], ['subtle', '은은하게'], ['expressive', '생동감 있게']]) + '<p class="setting-hint">시스템의 동작 줄이기 설정도 함께 적용합니다.</p>')
 }
 function displayTab(c: WidgetConfig) {

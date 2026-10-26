@@ -66,7 +66,6 @@ export interface WidgetConfig {
   offsetPx: number // 트레이 또는 모서리로부터 떨어진 거리 (기본 16px)
   verticalOffsetPx: number // 작업표시줄 상하 미세조정 (기본 0px)
   refreshIntervalSec: number // 갱신 주기 (기본 60초)
-  alphaPercent: number // 투명도 (기본 20% -> 0.8 알파 or 투명 배경)
   showWeeklyLimit: boolean
   colorByUsage: boolean // 사용량에 따른 색상 변화 (안전:그린 -> 주의:오렌지 -> 위험:레드)
   showUsedPercent?: boolean // true: 소모량(%) 표시, false/미설정: 남은량(%) 표시 (작업표시줄 바)
@@ -89,7 +88,8 @@ export interface WidgetConfig {
   hideDisconnected?: boolean
   showResetTime?: boolean
   showServiceName?: boolean
-  backgroundEffect?: 'acrylic' | 'transparent' | 'solid'
+  opacity?: number // 모든 창 배경 불투명도 0~100 (Windows Terminal과 같은 뜻, 기본 70)
+  useAcrylic?: boolean // 배경 뒤를 흐리게(아크릴). 끄면 흐림 없이 비친다 (기본 켬)
   design?: 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
   valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
   warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)

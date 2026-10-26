@@ -1,4 +1,4 @@
-import { spawn, execFile, type ChildProcess } from 'child_process'
+import { spawn, execFile, execFileSync, type ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import { promisify } from 'util'
@@ -9,6 +9,91 @@ import { calculateWidgetPosition } from './taskbar-position.js'
 
 const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+type Pending = { resolve: (r: { code: number; out: string }) => void; onLine?: (line: string) => void }
+
+/**
+ * TaskbarDock.exe 상주 연결. 명령마다 프로세스를 띄우면 생성·.NET 기동에만 약 150ms가 들어
+ * 도킹 넣기·빼기가 수백 ms씩 걸렸다. 한 프로세스를 띄워 두고 stdin 한 줄로 명령을 보내면 수 ms에 끝난다.
+ * 상주 프로세스를 쓸 수 없으면 기존처럼 명령마다 실행한다.
+ */
+class NativeHelper {
+  private proc: ChildProcess | null = null
+  private ready: Promise<boolean> | null = null
+  private buffer = ''
+  private seq = 0
+  private pending = new Map<string, Pending>()
+
+  constructor(private exe: () => string) {}
+
+  private start(): Promise<boolean> {
+    if (this.ready) return this.ready
+    this.ready = new Promise<boolean>(resolve => {
+      let proc: ChildProcess
+      try { proc = spawn(this.exe(), ['serve'], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }) }
+      catch { this.ready = null; resolve(false); return }
+      this.proc = proc
+      this.buffer = ''
+      const fail = () => {
+        if (this.proc !== proc) return
+        this.proc = null
+        this.ready = null
+        resolve(false)
+        // 응답을 기다리던 명령은 실패로 돌려준다(다음 명령은 새 프로세스로).
+        for (const p of this.pending.values()) p.resolve({ code: -1, out: '' })
+        this.pending.clear()
+      }
+      proc.on('error', fail)
+      proc.on('exit', fail)
+      proc.stdin?.on('error', fail)
+      proc.stdout?.on('data', chunk => {
+        this.buffer += chunk.toString()
+        const lines = this.buffer.split(/\r?\n/)
+        this.buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line === 'READY') { resolve(true); continue }
+          const m = /^([RS]) (\d+) ?(.*)$/.exec(line)
+          if (!m) continue
+          const p = this.pending.get(m[2])
+          if (!p) continue
+          if (m[1] === 'S') { p.onLine?.(m[3]); continue }
+          const sp = m[3].indexOf(' ')
+          const code = Number(sp < 0 ? m[3] : m[3].slice(0, sp))
+          this.pending.delete(m[2])
+          p.resolve({ code, out: sp < 0 ? '' : m[3].slice(sp + 1).split('\u001e').join('\n') })
+        }
+      })
+    })
+    return this.ready
+  }
+
+  /** 명령을 실행하고 종료 코드와 출력을 돌려준다. */
+  async run(args: string[], onLine?: (line: string) => void): Promise<{ code: number; out: string }> {
+    if (await this.start() && this.proc?.stdin?.writable) {
+      const id = String(++this.seq)
+      return new Promise(resolve => {
+        this.pending.set(id, { resolve, onLine })
+        this.proc!.stdin!.write(`${id} ${args.join(' ')}\n`)
+      })
+    }
+    if (onLine) return { code: -1, out: '' }
+    try {
+      const { stdout } = await execFileAsync(this.exe(), args, { windowsHide: true })
+      return { code: 0, out: stdout.trim() }
+    } catch (err: any) {
+      return { code: typeof err?.code === 'number' ? err.code : -1, out: String(err?.stdout || '').trim() }
+    }
+  }
+
+  /** 앱 시작 때 미리 띄워 첫 도킹도 바로 응답하게 한다. */
+  warm() { void this.start() }
+
+  stop() {
+    try { this.proc?.stdin?.end(); this.proc?.kill() } catch {}
+    this.proc = null
+    this.ready = null
+  }
+}
 
 export interface DockResult {
   success: boolean
@@ -28,6 +113,12 @@ export class TaskbarDocker {
   private static dockWatchProcess: ChildProcess | null = null
   private static dockWatchKey = ''
   private static lastTaskbarHwnd: string | null = null
+  // Chromium이 child 창 client에서 빼는 프레임 높이. 한 번 재면 다음 도킹부터 바로 보상해 dock을 두 번 실행하지 않는다.
+  private static dockInset = 0
+  private static helper = new NativeHelper(() => TaskbarDocker.getDockerPath())
+
+  public static warmHelper(): void { if (process.platform === 'win32' && fs.existsSync(this.getDockerPath())) this.helper.warm() }
+  public static stopHelper(): void { this.helper.stop() }
 
   public static getDockerPath(): string {
     if (this.dockerExePath && fs.existsSync(this.dockerExePath)) return this.dockerExePath
@@ -70,7 +161,8 @@ export class TaskbarDocker {
     config: WidgetConfig,
     width: number,
     height: number,
-    contentPadding = 0
+    contentPadding = this.dockInset,
+    retry = true
   ): Promise<DockResult> {
     if (!win || win.isDestroyed()) {
       return { success: false, error: 'Window is destroyed or null' }
@@ -107,8 +199,7 @@ export class TaskbarDocker {
     console.log(`[TaskbarDocker] Docking HWND ${hwnd} with args:`, args.join(' '))
 
     try {
-      const { stdout } = await execFileAsync(exe, args, { windowsHide: true })
-      const out = stdout.trim()
+      const { out } = await this.helper.run(args)
       console.log(`[TaskbarDocker] Dock execution output:\n${out}`)
 
       if (out.includes('DOCKED_OK')) {
@@ -123,12 +214,14 @@ export class TaskbarDocker {
           this.lastTaskbarHwnd = taskbarMatch[1]
         }
 
-        if (contentPadding === 0) {
-          const taskbarHeight = Number(out.match(/Taskbar client = \d+x(\d+)/)?.[1])
-          const scale = Number(dpiMatch?.[1] || 96) / 96
-          const actualContentHeight = Math.round(win.getContentSize()[1] * scale)
-          const inset = taskbarHeight - actualContentHeight
-          if (inset > 0 && inset <= 128) return this.dockWindow(win, config, width, height, inset)
+        // 창 높이 = 작업표시줄 + 보상값, 실제 client = 창 높이 - 프레임. client가 작업표시줄과 같아지는 보상값을 구한다.
+        const taskbarHeight = Number(out.match(/Taskbar client = \d+x(\d+)/)?.[1])
+        const scale = Number(dpiMatch?.[1] || 96) / 96
+        const actualContentHeight = Math.round(win.getContentSize()[1] * scale)
+        const inset = taskbarHeight + contentPadding - actualContentHeight
+        if (retry && inset !== contentPadding && inset >= 0 && inset <= 128) {
+          this.dockInset = inset
+          return this.dockWindow(win, config, width, height, inset, false)
         }
 
         return {
@@ -170,13 +263,18 @@ export class TaskbarDocker {
 
     const hwnd = this.getHwnd(win)
     try {
-      const { stdout } = await execFileAsync(exe, ['undock', hwnd], { windowsHide: true })
+      const { out } = await this.helper.run(['undock', hwnd])
       this.lastTaskbarHwnd = null
-      return stdout.includes('UNDOCKED_OK')
+      return out.includes('UNDOCKED_OK')
     } catch (err) {
       console.warn('[TaskbarDocker] Undock failed:', err)
       return false
     }
+  }
+
+  public static undockWindowSync(win: BrowserWindow): void {
+    if (!win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return
+    try { execFileSync(this.getDockerPath(), ['undock', this.getHwnd(win)], { windowsHide: true, timeout: 2000 }) } catch {}
   }
 
   /** Windows 11 DWM 둥근 모서리. 아크릴 backdrop까지 함께 잘리는 유일한 경로다. */
@@ -184,8 +282,8 @@ export class TaskbarDocker {
     if (process.platform !== 'win32' || !win || win.isDestroyed()) return
     const exe = this.getDockerPath()
     if (!fs.existsSync(exe)) return
-    execFile(exe, ['corner', this.getHwnd(win), preference], { windowsHide: true }, err => {
-      if (err) console.warn('[TaskbarDocker] Corner preference failed:', err)
+    void this.helper.run(['corner', this.getHwnd(win), preference]).then(r => {
+      if (r.code !== 0) console.warn('[TaskbarDocker] Corner preference failed:', r.code)
     })
   }
 
@@ -202,8 +300,8 @@ export class TaskbarDocker {
 
     const hwnd = this.getHwnd(win)
     try {
-      const { stdout } = await execFileAsync(exe, ['getscreenrect', hwnd], { windowsHide: true })
-      const parts = stdout.trim().split(',')
+      const { out } = await this.helper.run(['getscreenrect', hwnd])
+      const parts = out.trim().split(',')
       if (parts.length === 4) {
         return {
           x: parseInt(parts[0], 10),
@@ -280,28 +378,34 @@ export class TaskbarDocker {
     }
   }
 
-  public static watchPointer(onMove: (p: { x: number; y: number }) => void, onEnd: (p?: { x: number; y: number }) => void): ChildProcess | null {
-    const exe = this.getDockerPath()
-    if (!fs.existsSync(exe)) { onEnd(); return null }
-    const proc = spawn(exe, ['pointerwatch'], { windowsHide: true })
-    let buffer = ''
+  /** 마우스 버튼을 놓을 때까지 포인터 좌표(DIP)를 보낸다. 반환값의 stop()은 이후 좌표를 무시한다. */
+  public static watchPointer(onMove: (p: { x: number; y: number }) => void, onEnd: (p?: { x: number; y: number }) => void): { stop(): void } | null {
+    if (!fs.existsSync(this.getDockerPath())) { onEnd(); return null }
     let ended = false
     const finish = (p?: { x: number; y: number }) => { if (!ended) { ended = true; onEnd(p) } }
-    proc.stdout?.on('data', chunk => {
-      buffer += chunk.toString()
-      const lines = buffer.split(/\r?\n/)
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        const m = /^(MOVE|END):(-?\d+),(-?\d+)$/.exec(line.trim())
-        if (!m) continue
-        const p = screen.screenToDipPoint({ x: Number(m[2]), y: Number(m[3]) })
-        if (m[1] === 'END') finish(p)
-        else if (!ended) onMove(p)
-      }
-    })
-    proc.on('error', () => finish())
-    proc.on('exit', () => finish())
-    return proc
+    void this.helper.run(['pointerwatch'], line => {
+      const m = /^(MOVE|END):(-?\d+),(-?\d+)$/.exec(line.trim())
+      if (!m || ended) return
+      const p = screen.screenToDipPoint({ x: Number(m[2]), y: Number(m[3]) })
+      if (m[1] === 'END') finish(p)
+      else onMove(p)
+    }).then(() => finish())
+    return { stop: () => { ended = true } }
+  }
+
+  /**
+   * 창 전체를 투명하게 숨기거나(true) 되돌린다(false). Electron setOpacity는 한 번 layered가 된 창을 되돌리지 않아
+   * 아크릴이 사라지므로 아크릴 창은 이 함수로 표시 직전 깜빡임을 가린다.
+   */
+  public static async setFaded(win: BrowserWindow, faded: boolean): Promise<boolean> {
+    if (process.platform !== 'win32' || !win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return false
+    return (await this.helper.run(['fade', this.getHwnd(win), faded ? '0' : 'off'])).code === 0
+  }
+
+  /** Windows 11은 활성 창에만 아크릴 흐림을 그리므로 비활성 창도 활성처럼 그리게 한다. */
+  public static keepBackdropActive(win: BrowserWindow): void {
+    if (process.platform !== 'win32' || !win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return
+    void this.helper.run(['ncactivate', this.getHwnd(win)])
   }
 
   /**

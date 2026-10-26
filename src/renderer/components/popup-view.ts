@@ -546,9 +546,9 @@ function renderSettingsTab(state: AppState): string {
       <div class="form-group">
         <div class="form-label">
           <span>${t('alphaLabel')}</span>
-          <span id="label-alpha">${cfg.alphaPercent}%</span>
+          <span id="label-alpha">${cfg.opacity ?? 70}%</span>
         </div>
-        <input type="range" class="range-slider" id="slider-alpha" min="10" max="100" value="${cfg.alphaPercent}" />
+        <input type="range" class="range-slider" id="slider-alpha" min="0" max="100" value="${cfg.opacity ?? 70}" />
       </div>
 
       <!-- 업데이트 주기 -->
@@ -810,7 +810,7 @@ function bindPopupEvents(container: HTMLElement, state: AppState) {
     })
     sliderAlpha.addEventListener('change', () => {
       const val = parseInt(sliderAlpha.value, 10)
-      window.api.updateConfig({ alphaPercent: val })
+      window.api.updateConfig({ opacity: val })
     })
   }
 

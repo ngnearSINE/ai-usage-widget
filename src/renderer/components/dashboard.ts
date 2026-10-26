@@ -42,9 +42,9 @@ export function applyAppearance(config: WidgetConfig) {
     ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : config.appearance || 'dark'
   document.documentElement.dataset.bar = config.barStyle || 'silk'
   document.documentElement.dataset.motion = config.motion || 'subtle'
-  document.documentElement.dataset.background = config.backgroundEffect || 'acrylic'
+  document.documentElement.dataset.acrylic = String(config.useAcrylic !== false)
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
-  document.documentElement.style.setProperty('--panel-alpha', String(number(config.alphaPercent, 30, 100, 94) / 100))
+  document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
   document.documentElement.style.setProperty('--font-scale', String(number(config.fontScale, 85, 130, 100) / 100))
   document.documentElement.style.setProperty('--card-gap', `${number(config.cardGap, 4, 16, 6)}px`)
   if (!mediaQuery) {

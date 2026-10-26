@@ -14,13 +14,13 @@ import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
 import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, visibleUsages } from '../common/widget-layout.js'
-import type { ChildProcess } from 'node:child_process'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
 import { UsageHistory } from './history-store.js'
 import { previewHistory } from '../common/history.js'
 import { DESIGNS } from '../common/usage-model.js'
+import { SurfaceWindow, surfaceKind } from './surface-window.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -55,9 +55,9 @@ if (!gotTheLock) {
 // 백그라운드 스로틀링 해제 (작업표시줄 상시 모니터링)
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 
-let widgetWindow: BrowserWindow | null = null
-let popupWindow: BrowserWindow | null = null
-let settingsWindow: BrowserWindow | null = null
+let widgetWindow: SurfaceWindow | null = null
+let popupWindow: SurfaceWindow | null = null
+let settingsWindow: SurfaceWindow | null = null
 let tray: Tray | null = null
 let accountStore: AccountStore
 let quotaManager: QuotaManager
@@ -186,19 +186,8 @@ function registerShortcuts() {
 /* ---------- 설정 창: 큰 미리보기 + 조절 항목. 위젯이 작아도 편하게 편집하고, 바꾸면 위젯에도 즉시 반영된다. ---------- */
 const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'history', 'convenience', 'accounts', 'general', 'api'] as const
 type SettingsTab = typeof SETTINGS_TABS[number]
-function settingsColors() {
-  const appearance = accountStore.getConfig().appearance || 'dark'
-  const dark = appearance === 'system' ? nativeTheme.shouldUseDarkColors : appearance !== 'light'
-  return dark ? { bg: '#121318', symbol: '#c8c8d4' } : { bg: '#f6f6f9', symbol: '#33333f' }
-}
-function applySettingsChrome() {
-  if (!settingsWindow || settingsWindow.isDestroyed()) return
-  const c = settingsColors()
-  settingsWindow.setBackgroundColor(c.bg)
-  // Windows 기본 최소화·최대화·닫기 버튼을 화면 색에 맞춘다.
-  try { settingsWindow.setTitleBarOverlay({ color: c.bg, symbolColor: c.symbol, height: 40 }) } catch { /* 지원하지 않는 환경 */ }
-}
-function openSettingsWindow(tab: SettingsTab = 'design') {
+// 설정 창도 위젯과 같은 배경(불투명도·아크릴)을 쓰도록 테두리 없는 공통 창으로 만들고, 창 단추는 화면이 그린다.
+function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Rectangle) {
   if (!SETTINGS_TABS.includes(tab)) tab = 'design'
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.webContents.send(IPC_CHANNELS.SETTINGS_TAB, tab)
@@ -210,16 +199,14 @@ function openSettingsWindow(tab: SettingsTab = 'design') {
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
   const area = screen.getDisplayMatching(anchor).workArea
   const width = Math.min(1000, area.width - 40), height = Math.min(680, area.height - 40)
-  const c = settingsColors()
-  settingsWindow = new BrowserWindow({
-    x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
-    minWidth: 760, minHeight: 520, show: false, title: 'AI 사용량 설정', backgroundColor: c.bg,
-    titleBarStyle: 'hidden', titleBarOverlay: { color: c.bg, symbolColor: c.symbol, height: 40 }, autoHideMenuBar: true,
+  const win = settingsWindow = new SurfaceWindow({
+    ...(bounds || { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height }),
+    minWidth: 760, minHeight: 520, show: false, title: 'AI 사용량 설정', resizable: true, maximizable: true, autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
-  })
-  settingsWindow.on('page-title-updated', event => event.preventDefault())
-  settingsWindow.once('ready-to-show', () => settingsWindow?.show())
-  settingsWindow.on('closed', () => { settingsWindow = null })
+  }, currentSurfaceKind())
+  win.on('page-title-updated', event => event.preventDefault())
+  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.on('closed', () => { if (settingsWindow === win) settingsWindow = null })
   if (process.env.VITE_DEV_SERVER_URL) void settingsWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=settings&tab=${tab}`)
   else void settingsWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'settings', tab } })
 }
@@ -232,6 +219,8 @@ function applyWindowShape(win: BrowserWindow, radius: number | 'native') {
   const [width,height]=win.getSize()
   const key=radius==='native' ? 'native' : `${width}:${height}:${radius}`
   if(shapeKeys.get(win)===key) return
+  // setShape는 그 자리에서 resize 이벤트를 다시 일으키므로 먼저 기록해 재귀 호출을 막는다.
+  shapeKeys.set(win,key)
   if(radius==='native') {
     win.setShape([])
     TaskbarDocker.setCornerPreference(win,'round')
@@ -240,21 +229,55 @@ function applyWindowShape(win: BrowserWindow, radius: number | 'native') {
     win.setShape(radius>0 ? roundedWindowShape(width,height,radius) : [{x:0,y:0,width,height:dockHeight}])
     if(radius===0) TaskbarDocker.setCornerPreference(win,'none')
   }
-  shapeKeys.set(win,key)
 }
 
-function applyWindowMaterial() {
+const currentSurfaceKind = () => surfaceKind(accountStore.getConfig(), acrylicSupported)
+
+// 창 모양·아크릴 유지를 다시 맞춘다. 배경 종류(흐림 가능/흐림 없는 투명)가 바뀌었으면 창을 다시 만든다.
+function applySurface() {
   const config=accountStore.getConfig()
   nativeTheme.themeSource=config.appearance || 'dark'
+  const kind=currentSurfaceKind()
+  if([widgetWindow,popupWindow,settingsWindow].some(w=>w && !w.isDestroyed() && w.kind!==kind)) { scheduleSurfaceRebuild(); return }
   for(const win of [widgetWindow,popupWindow]) {
     if(!win || win.isDestroyed()) continue
-    const acrylic=acrylicSupported && (config.backgroundEffect || 'acrylic') === 'acrylic'
-      && (win !== widgetWindow || config.placementMode === 'floating')
-    try { win.setBackgroundMaterial(acrylic ? 'acrylic' : 'none') }
-    catch(err) { console.warn('[Window] Background material unavailable:',err) }
     // CSS만 둥글게 하면 DWM 아크릴은 사각형으로 남는다. 실제 그리기·히트 테스트 영역도 맞춘다.
     shapeKeys.delete(win)
     applyWindowShape(win,win===widgetWindow && config.placementMode==='docked' ? 0 : 'native')
+    win.keepBackdrop()
+  }
+}
+
+// 슬라이더를 끄는 동안 창이 여러 번 바뀌지 않게, 조작이 멈춘 뒤 한 번만 다시 만든다.
+let surfaceRebuildTimer: NodeJS.Timeout | undefined
+function scheduleSurfaceRebuild() {
+  clearTimeout(surfaceRebuildTimer)
+  surfaceRebuildTimer=setTimeout(rebuildSurfaces,450)
+}
+function rebuildSurfaces() {
+  if(interacting) { scheduleSurfaceRebuild(); return }
+  const kind=currentSurfaceKind()
+  if(widgetWindow && !widgetWindow.isDestroyed() && widgetWindow.kind!==kind) {
+    const old=widgetWindow
+    if(accountStore.getConfig().placementMode==='floating') accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: old.getBounds() })
+    TaskbarDocker.stopDockWatcher()
+    TaskbarDocker.stopStayTop()
+    widgetWindow=null
+    old.destroy()
+    createWidgetWindow()
+  }
+  if(popupWindow && !popupWindow.isDestroyed() && popupWindow.kind!==kind) {
+    hidePopup(true)
+    const old=popupWindow
+    popupWindow=null
+    old.destroy()
+    createPopupWindow()
+  }
+  if(settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.kind!==kind) {
+    const old=settingsWindow, bounds=old.getNormalBounds()
+    settingsWindow=null
+    old.destroy()
+    openSettingsWindow('design',bounds)
   }
 }
 
@@ -350,13 +373,11 @@ function createWidgetWindow() {
 
   console.log(`[Widget] Creating widget window at (${x}, ${y}) size ${currentWidgetWidth}x${currentWidgetHeight} mode=${config.placementMode || 'docked'}`)
 
-  widgetWindow = new BrowserWindow({
+  const win = widgetWindow = new SurfaceWindow({
     x,
     y,
     width: currentWidgetWidth,
     height: currentWidgetHeight,
-    frame: false,
-    transparent: true,
     alwaysOnTop: isFloating && (config.alwaysOnTop !== false),
     skipTaskbar: true,
     resizable: false, // 투명 HWND의 기본 리사이즈 충돌을 피하고 8방향 사용자 핸들로 조절한다.
@@ -370,7 +391,7 @@ function createWidgetWindow() {
       contextIsolation: true,
       backgroundThrottling: false
     }
-  })
+  }, currentSurfaceKind())
 
   if (isFloating && config.alwaysOnTop !== false) {
     widgetWindow.setAlwaysOnTop(true, 'floating')
@@ -390,7 +411,7 @@ function createWidgetWindow() {
     await updateWidgetBounds()
     if (widgetWindow) {
       applyWindowTopmost(accountStore.getConfig())
-      applyWindowMaterial()
+      applySurface()
       applyClickThrough()
     }
     // 첫 드래그에서 안내 창 생성·로드가 끊김을 만들지 않도록 유휴 시간에 미리 만든다.
@@ -404,7 +425,7 @@ function createWidgetWindow() {
   }
 
   widgetWindow.on('closed', () => {
-    widgetWindow = null
+    if (widgetWindow === win) widgetWindow = null
   })
   widgetWindow.on('resized', saveFloatingBounds)
   widgetWindow.on('moved', saveFloatingBounds)
@@ -419,7 +440,7 @@ function floatingBounds(config: WidgetConfig) {
 }
 
 let boundsSaveTimer: NodeJS.Timeout | undefined
-let pointerProcess: ChildProcess | null = null
+let pointerProcess: { stop(): void } | null = null
 let interacting = false
 let endInteraction: ((p?: {x:number;y:number}) => Promise<void>) | null = null
 let dockHint: BrowserWindow | null = null
@@ -489,12 +510,12 @@ async function setPlacement(mode: 'floating' | 'docked') {
     TaskbarDocker.stopStayTop()
     widgetWindow.setAlwaysOnTop(false)
     currentWidgetWidth = dockWidth()
-    currentWidgetHeight = getTaskbarInfo(screen.getDisplayMatching(widgetWindow.getBounds())).taskbarHeight
+    currentWidgetHeight = Math.min(44, getTaskbarInfo(screen.getDisplayMatching(widgetWindow.getBounds())).taskbarHeight)
   }
   accountStore.saveConfig({ ...previous, placementMode: mode })
   await updateWidgetBounds()
   applyWindowTopmost(accountStore.getConfig())
-  applyWindowMaterial()
+  applySurface()
   applyClickThrough()
   updateTrayMenu()
   hidePopup(true)
@@ -557,7 +578,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
       interacting = false
       endInteraction = null
       interactionMove = null
-      pointerProcess?.kill()
+      pointerProcess?.stop()
       pointerProcess = null
       if (!widgetWindow || widgetWindow.isDestroyed()) return
       const display = screen.getDisplayNearestPoint(last)
@@ -638,13 +659,11 @@ function createPopupWindow() {
   const actualWidgetY = (widgetWindow && !widgetWindow.isDestroyed()) ? widgetWindow.getBounds().y : widgetPos.y
   const popupPos = calculatePopupPosition(widgetPos.x, currentWidgetWidth, POPUP_WIDTH, POPUP_HEIGHT, actualWidgetY)
 
-  popupWindow = new BrowserWindow({
+  const win = popupWindow = new SurfaceWindow({
     x: popupPos.x,
     y: popupPos.y,
     width: POPUP_WIDTH,
     height: POPUP_HEIGHT,
-    frame: false,
-    transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
@@ -655,7 +674,7 @@ function createPopupWindow() {
       nodeIntegration: false,
       contextIsolation: true
     }
-  })
+  }, currentSurfaceKind())
   popupWindow.on('page-title-updated', event => event.preventDefault())
   popupWindow.on('resize',()=>{if(popupWindow)applyWindowShape(popupWindow,'native')})
 
@@ -674,7 +693,7 @@ function createPopupWindow() {
   })
 
   popupWindow.on('closed', () => {
-    popupWindow = null
+    if (popupWindow === win) popupWindow = null
   })
 }
 
@@ -697,7 +716,10 @@ async function showPopup(focus = false, lock = false) {
     // 숨긴 창을 다시 show하면 숨기기 직전의 마지막 프레임(완전히 열린 팝업)이 잠깐 보인 뒤
     // 등장 애니메이션이 처음부터 재생되어 두 번 열리는 것처럼 보임. 투명하게 띄워두고
     // 렌더러가 애니메이션 첫 프레임을 그렸다고 알려오면(POPUP_READY) 불투명으로 전환한다.
-    popupWindow.setOpacity(0)
+    // 아크릴 창은 setOpacity를 쓰면 layered 창으로 남아 흐림이 사라지므로 보조 프로그램으로 가렸다가 되돌린다.
+    const win = popupWindow
+    if (win.kind !== 'backdrop' || !await TaskbarDocker.setFaded(win, true)) win.setOpacity(0)
+    if (popupWindow !== win || win.isDestroyed()) return
     if (popupRevealTimer) clearTimeout(popupRevealTimer)
     popupRevealTimer = setTimeout(revealPopup, 300) // 렌더러 응답이 없어도 팝업이 안 보이는 일은 없도록
 
@@ -719,7 +741,8 @@ function revealPopup() {
     popupRevealTimer = null
   }
   if (popupWindow && !popupWindow.isDestroyed()) {
-    popupWindow.setOpacity(1)
+    if (popupWindow.getOpacity() < 1) popupWindow.setOpacity(1)
+    if (popupWindow.kind === 'backdrop') { const win = popupWindow; void TaskbarDocker.setFaded(win, false).then(() => win.keepBackdrop()) }
   }
 }
 
@@ -933,8 +956,7 @@ function setupIpcHandlers() {
     if (requestedMode && requestedMode !== prevConfig.placementMode) await setPlacement(requestedMode)
     else if (nextConfig.placementMode === 'docked' && ['offsetPx', 'alignment', 'verticalOffsetPx'].some(k => k in patch)) await updateWidgetBounds()
     if (patch.alwaysOnTop !== undefined) applyWindowTopmost(accountStore.getConfig())
-    if (patch.appearance !== undefined || patch.backgroundEffect !== undefined) applyWindowMaterial()
-    if (patch.appearance !== undefined) applySettingsChrome()
+    if (patch.appearance !== undefined || patch.useAcrylic !== undefined || patch.opacity !== undefined) applySurface()
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
     if (patch.shortcuts !== undefined) { registerShortcuts(); updateTrayMenu() }
@@ -1058,13 +1080,23 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.RESIZE_WIDGET, async (_event, width: number, height: number) => {
     if (accountStore.getConfig().placementMode !== 'docked') return
     if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
-      currentWidgetWidth = Math.max(80, Math.min(screen.getPrimaryDisplay().bounds.width, Math.round(width)))
-      currentWidgetHeight = Math.min(44, Math.round(height))
+      const w = Math.max(80, Math.min(screen.getPrimaryDisplay().bounds.width, Math.round(width))), h = Math.min(44, Math.round(height))
+      // 같은 크기면 다시 도킹하지 않는다(도킹 직후 렌더러가 같은 크기를 알려 오는 경우).
+      if (w === currentWidgetWidth && h === currentWidgetHeight) return
+      currentWidgetWidth = w
+      currentWidgetHeight = h
       await updateWidgetBounds()
     }
   })
 
   ipcMain.handle(IPC_CHANNELS.TEST_NOTIFICATION, () => notifier?.test() ?? false)
+  ipcMain.on(IPC_CHANNELS.WINDOW_CONTROL, (event, action: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win !== settingsWindow) return
+    if (action === 'minimize') win.minimize()
+    else if (action === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize() }
+    else if (action === 'close') win.close()
+  })
   ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_PAGE, async (_event, accountId: string) => {
     const url = servicePageUrl(String(accountId))
     if (!url) return false
@@ -1125,11 +1157,12 @@ app.whenReady().then(() => {
     }
   })
 
+  TaskbarDocker.warmHelper()
   setupIpcHandlers()
   restoreLayout()
   createWidgetWindow()
   createPopupWindow()
-  applyWindowMaterial()
+  applySurface()
   createTray()
   registerShortcuts()
   if (!isPreview) applyAutoLaunch(accountStore.getConfig().openAtLogin ?? true)
@@ -1172,7 +1205,7 @@ app.on('will-quit', () => globalShortcut.unregisterAll())
 
 app.on('before-quit', () => {
   clearTimeout(boundsSaveTimer)
-  pointerProcess?.kill()
+  pointerProcess?.stop()
   dockHint?.destroy()
   dockGhost?.destroy()
   if (widgetWindow && !widgetWindow.isDestroyed() && accountStore?.getConfig().placementMode === 'floating') {
@@ -1187,10 +1220,10 @@ app.on('before-quit', () => {
   TaskbarDocker.stopDockWatcher()
   if (widgetWindow && !widgetWindow.isDestroyed()) {
     const cfg = accountStore.getConfig()
-    if (cfg.placementMode !== 'floating') {
-      TaskbarDocker.undockWindow(widgetWindow)
-    }
+    // 종료 중에는 상주 보조 프로세스가 먼저 닫힐 수 있으므로 동기로 분리한다.
+    if (cfg.placementMode !== 'floating') TaskbarDocker.undockWindowSync(widgetWindow)
   }
+  TaskbarDocker.stopHelper()
   CodexAppServerClient.close()
   if (tray) {
     try {

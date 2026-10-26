@@ -28,6 +28,7 @@ export const IPC_CHANNELS = {
   GET_HISTORY: 'app:get-history',
   SET_TRAY_IMAGE: 'tray:set-image',
   OPEN_SERVICE_PAGE: 'app:open-service-page',
+  WINDOW_CONTROL: 'window:control',
   DETECT_LOCAL_APPS: 'app:detect-local-apps',
   SCHEDULE_HIDE_POPUP: 'window:schedule-hide-popup',
   CANCEL_HIDE_POPUP: 'window:cancel-hide-popup',

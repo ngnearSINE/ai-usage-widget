@@ -72,8 +72,8 @@ let lastWidgetHtml = ''
 let lastSentWidth = 0
 let lastSentHeight = 0
 
-function updateRootAlpha(alphaPercent: number) {
-  const alpha = Math.max(0.1, Math.min(1.0, alphaPercent / 100))
+function updateRootAlpha(opacity: number) {
+  const alpha = Math.max(0, Math.min(1.0, opacity / 100))
   document.documentElement.style.setProperty('--bg-alpha', alpha.toString())
 }
 
@@ -108,7 +108,7 @@ function renderWidget(state: AppState) {
     renderDashboard(appEl, state)
     return
   }
-  updateRootAlpha(state.config.alphaPercent)
+  updateRootAlpha(state.config.opacity ?? 70)
   updateVerticalOffset(state.config.verticalOffsetPx)
 
   const activeUsages = visibleUsages(state.usages, state.accounts, state.config)
@@ -180,7 +180,8 @@ if (!(window as any).api) {
       offsetPx: 20,
       verticalOffsetPx: 0,
       refreshIntervalSec: 60,
-      alphaPercent: 85,
+      opacity: 70,
+      useAcrylic: true,
       showWeeklyLimit: true,
       colorByUsage: true,
       showCardBackground: false,

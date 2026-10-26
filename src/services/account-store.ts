@@ -14,7 +14,6 @@ const DEFAULT_CONFIG: WidgetConfig = {
   offsetPx: 20,
   verticalOffsetPx: 0,
   refreshIntervalSec: 60,
-  alphaPercent: 85,
   showWeeklyLimit: true,
   colorByUsage: true,
   showCardBackground: true,
@@ -26,7 +25,7 @@ const DEFAULT_CONFIG: WidgetConfig = {
   apiPushEnabled: false,
   apiEndpoint: DEFAULT_API_ENDPOINT,
   apiScreen: 1,
-  uiVersion: 3,
+  uiVersion: 4,
   appearance: 'dark',
   barStyle: 'silk',
   motion: 'subtle',
@@ -36,7 +35,8 @@ const DEFAULT_CONFIG: WidgetConfig = {
   hideDisconnected: true,
   showResetTime: true,
   showServiceName: true,
-  backgroundEffect: 'acrylic',
+  opacity: 70,
+  useAcrylic: true,
   design: 'rich',
   valueSource: {},
   warnPercent: 20,
@@ -125,6 +125,15 @@ export class AccountStore {
         if (!saved.uiVersion || saved.uiVersion < 3) {
           if (saved.cardGap === undefined || saved.cardGap === 12) config.cardGap = DEFAULT_CONFIG.cardGap
         }
+        // 배경 소재(아크릴/투명/단색) + 불투명도 두 설정을 Windows Terminal식 '불투명도 + 아크릴' 하나로 합쳤다(uiVersion 4).
+        if (!saved.uiVersion || saved.uiVersion < 4) {
+          const effect = saved.backgroundEffect || 'acrylic', alpha = Math.max(0, Math.min(100, Number(saved.alphaPercent ?? 85)))
+          config.useAcrylic = effect === 'acrylic'
+          // 예전 아크릴 틴트는 불투명도에 0.72를 곱해 칠했으므로 보이는 정도가 같게 옮긴다.
+          config.opacity = effect === 'solid' ? 100 : effect === 'acrylic' ? Math.round(alpha * .72) : alpha
+        }
+        delete (config as any).backgroundEffect
+        delete (config as any).alphaPercent
         config.uiVersion = DEFAULT_CONFIG.uiVersion
         return config
       }

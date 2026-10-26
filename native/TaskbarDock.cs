@@ -313,6 +313,72 @@ namespace FluentFlyoutDocker
                 && GetAncestor(WindowFromPoint(p), GA_ROOT) == taskbar;
         }
 
+
+        // serve 모드에서는 명령마다 출력을 모아 한 줄 응답으로 보낸다(스레드별 출력 대상).
+        [ThreadStatic] static StringBuilder captured;
+        [ThreadStatic] static string streamTag;
+        static readonly object outLock = new object();
+        static IntPtr desktopHandle = IntPtr.Zero;
+
+        static void Emit(string line)
+        {
+            if (captured != null) { captured.Append(line.Replace('\n', ' ').Replace('\r', ' ')).Append('\u001e'); return; }
+            if (streamTag != null) { WriteLocked("S " + streamTag + " " + line); return; }
+            Console.WriteLine(line);
+        }
+        static void EmitFlush() { if (captured == null && streamTag == null) Console.Out.Flush(); }
+        static void WriteLocked(string line)
+        {
+            lock (outLock) { Console.Out.WriteLine(line); Console.Out.Flush(); }
+        }
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+        const uint WM_NCACTIVATE = 0x0086;
+        [DllImport("user32.dll")]
+        static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+        const int WS_EX_LAYERED = 0x00080000;
+        const uint LWA_ALPHA = 0x2;
+
+        // 상주 모드: 프로세스 생성(약 150ms)을 명령마다 반복하지 않도록 stdin으로 명령을 받는다.
+        // 입력: "<id> <action> <args...>"  출력: "R <id> <exitCode> <출력 줄들을 0x1E로 이은 것>"
+        // pointerwatch처럼 계속 출력하는 명령은 별도 스레드에서 "S <id> <줄>"을 보낸 뒤 R로 끝낸다.
+        static int Serve()
+        {
+            WriteLocked("READY");
+            string line;
+            while ((line = Console.In.ReadLine()) != null)
+            {
+                string[] parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2) continue;
+                string id = parts[0];
+                string[] cmd = new string[parts.Length - 1];
+                Array.Copy(parts, 1, cmd, 0, cmd.Length);
+                if (cmd[0] == "pointerwatch")
+                {
+                    Thread t = new Thread(delegate ()
+                    {
+                        if (desktopHandle != IntPtr.Zero) SetThreadDesktop(desktopHandle);
+                        streamTag = id;
+                        int code;
+                        try { code = RunAction(cmd); } catch { code = 99; }
+                        WriteLocked("R " + id + " " + code + " ");
+                    });
+                    t.IsBackground = true;
+                    t.Start();
+                    continue;
+                }
+                captured = new StringBuilder();
+                int exit;
+                try { exit = RunAction(cmd); }
+                catch (Exception ex) { captured.Append("ERROR: " + ex.Message); exit = 99; }
+                string output = captured.ToString().TrimEnd('\u001e');
+                captured = null;
+                WriteLocked("R " + id + " " + exit + " " + output);
+            }
+            return 0;
+        }
+
         static int RunAction(string[] args)
         {
             try
@@ -330,6 +396,40 @@ namespace FluentFlyoutDocker
             {
                 int preference = args[2] == "round" ? 2 : 1;
                 return DwmSetWindowAttribute(ParseHwnd(args[1]), DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, 4) == 0 ? 0 : 1;
+            }
+
+            // ncactivate <hwnd>: Windows 11은 활성 창에만 아크릴 흐림을 그린다. 비활성 상태에서도 활성처럼 그리게 한다.
+            if (action == "ncactivate" && args.Length >= 2)
+            {
+                IntPtr hwnd = ParseHwnd(args[1]);
+                if (!IsWindow(hwnd)) return 4;
+                SendMessage(hwnd, WM_NCACTIVATE, new IntPtr(1), IntPtr.Zero);
+                return 0;
+            }
+
+            // backdrop <hwnd> <none|acrylic>: DWM 시스템 backdrop만 바꾼다. 프레임 확장은 그대로라 none이면 흐림 없이 비친다.
+            if (action == "backdrop" && args.Length >= 3)
+            {
+                IntPtr hwnd = ParseHwnd(args[1]);
+                if (!IsWindow(hwnd)) return 4;
+                int type = args[2] == "acrylic" ? 3 : 1;
+                return DwmSetWindowAttribute(hwnd, 38, ref type, 4) == 0 ? 0 : 1;
+            }
+
+            // fade <hwnd> <0-255|off>: 창 전체 투명도. Electron setOpacity는 한 번 layered가 된 창을 되돌리지 않아
+            // 아크릴이 사라지므로, 다 보이게 할 때는 layered 속성 자체를 뗀다(DWM cloak은 다른 프로세스 창에 쓸 수 없다).
+            if (action == "fade" && args.Length >= 3)
+            {
+                IntPtr hwnd = ParseHwnd(args[1]);
+                if (!IsWindow(hwnd)) return 4;
+                int ex = GetWindowLong(hwnd, GWL_EXSTYLE);
+                if (args[2] == "off")
+                {
+                    SetWindowLong(hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
+                    return 0;
+                }
+                SetWindowLong(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+                return SetLayeredWindowAttributes(hwnd, 0, (byte)Math.Max(0, Math.Min(255, int.Parse(args[2]))), LWA_ALPHA) ? 0 : 1;
             }
 
             if (action == "inspect" && args.Length >= 2)
@@ -350,7 +450,7 @@ namespace FluentFlyoutDocker
                     GetClientRect(hwnd,out client);
                     RECT clip;
                     GetRgnBox(region,out clip);
-                    Console.WriteLine(string.Format("WINDOW screen:{0},{1},{2},{3} region:{4} corner:{5} center:{6} backdrop:{7} parent:{8} client:{9},{10} style:{11:X} clip:{12},{13}",
+                    Emit(string.Format("WINDOW screen:{0},{1},{2},{3} region:{4} corner:{5} center:{6} backdrop:{7} parent:{8} client:{9},{10} style:{11:X} clip:{12},{13}",
                         r.Left,r.Top,width,height,kind,kind==0 || PtInRegion(region,0,0),kind==0 || PtInRegion(region,width/2,height/2),backdrop,parentName,client.Right,client.Bottom,GetWindowLong(hwnd,GWL_STYLE),clip.Right-clip.Left,clip.Bottom-clip.Top));
                     return 0;
                 }
@@ -366,7 +466,7 @@ namespace FluentFlyoutDocker
                 IntPtr childHwnd = ParseHwnd(args[1]);
                 if (!IsWindow(childHwnd))
                 {
-                    Console.WriteLine("INVALID_CHILD_HWND");
+                    Emit("INVALID_CHILD_HWND");
                     return 4;
                 }
 
@@ -394,7 +494,7 @@ namespace FluentFlyoutDocker
                 IntPtr taskbarHwnd = FindTargetTaskbar(targetMonitorRect);
                 if (taskbarHwnd == IntPtr.Zero || !IsWindow(taskbarHwnd))
                 {
-                    Console.WriteLine("TASKBAR_NOT_FOUND");
+                    Emit("TASKBAR_NOT_FOUND");
                     return 2;
                 }
 
@@ -407,7 +507,7 @@ namespace FluentFlyoutDocker
                 RECT tbClientRect;
                 if (!GetClientRect(taskbarHwnd, out tbClientRect))
                 {
-                    Console.WriteLine("TASKBAR_CLIENT_RECT_FAILED");
+                    Emit("TASKBAR_CLIENT_RECT_FAILED");
                     return 3;
                 }
 
@@ -499,7 +599,7 @@ namespace FluentFlyoutDocker
                 if (!posOk)
                 {
                     int err = Marshal.GetLastWin32Error();
-                    Console.WriteLine(string.Format("POSITION_FAILED:{0}", err));
+                    Emit(string.Format("POSITION_FAILED:{0}", err));
                     return 6;
                 }
 
@@ -511,16 +611,16 @@ namespace FluentFlyoutDocker
                 string parentClassName = parentClassBuf.ToString();
 
                 // 디버깅 로그 출력
-                Console.WriteLine(string.Format("Taskbar client = {0}x{1}", taskbarClientWidth, taskbarClientHeight));
-                Console.WriteLine(string.Format("taskbarDpi = {0}", dpi));
-                Console.WriteLine(string.Format("Electron HWND rect before docking = {0},{1} {2}x{3}",
+                Emit(string.Format("Taskbar client = {0}x{1}", taskbarClientWidth, taskbarClientHeight));
+                Emit(string.Format("taskbarDpi = {0}", dpi));
+                Emit(string.Format("Electron HWND rect before docking = {0},{1} {2}x{3}",
                     origRect.Left, origRect.Top, origRect.Right - origRect.Left, origRect.Bottom - origRect.Top));
-                Console.WriteLine(string.Format("Electron HWND rect after docking = {0},{1} {2}x{3}",
+                Emit(string.Format("Electron HWND rect after docking = {0},{1} {2}x{3}",
                     afterRect.Left, afterRect.Top, afterRect.Right - afterRect.Left, afterRect.Bottom - afterRect.Top));
-                Console.WriteLine(string.Format("TaskbarHeight={0} WidgetHeight={1} FinalY={2} DPI={3}",
+                Emit(string.Format("TaskbarHeight={0} WidgetHeight={1} FinalY={2} DPI={3}",
                     taskbarClientHeight, widgetHeightPx, widgetY, dpi));
-                Console.WriteLine(string.Format("Parent={0}", parentClassName));
-                Console.WriteLine(string.Format("DOCKED_OK taskbar:0x{0:X} widget:0x{1:X} client:{2},{3},{4},{5} screen:{6},{7},{8},{9} dpi:{10}",
+                Emit(string.Format("Parent={0}", parentClassName));
+                Emit(string.Format("DOCKED_OK taskbar:0x{0:X} widget:0x{1:X} client:{2},{3},{4},{5} screen:{6},{7},{8},{9} dpi:{10}",
                     taskbarHwnd.ToInt64(), childHwnd.ToInt64(), widgetX, widgetY, widgetWidthPx, widgetHeightPx,
                     afterRect.Left, afterRect.Top, afterRect.Right - afterRect.Left, afterRect.Bottom - afterRect.Top, dpi));
 
@@ -536,7 +636,7 @@ namespace FluentFlyoutDocker
                 IntPtr childHwnd = ParseHwnd(args[1]);
                 if (!IsWindow(childHwnd))
                 {
-                    Console.WriteLine("INVALID_CHILD_HWND");
+                    Emit("INVALID_CHILD_HWND");
                     return 4;
                 }
 
@@ -559,7 +659,7 @@ namespace FluentFlyoutDocker
                 SetWindowPos(childHwnd, IntPtr.Zero, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
-                Console.WriteLine("UNDOCKED_OK");
+                Emit("UNDOCKED_OK");
                 return 0;
             }
 
@@ -572,18 +672,18 @@ namespace FluentFlyoutDocker
                 IntPtr hwnd = ParseHwnd(args[1]);
                 if (!IsWindow(hwnd))
                 {
-                    Console.WriteLine("INVALID_HWND");
+                    Emit("INVALID_HWND");
                     return 1;
                 }
 
                 RECT r;
                 if (!GetWindowRect(hwnd, out r))
                 {
-                    Console.WriteLine("GET_RECT_FAILED");
+                    Emit("GET_RECT_FAILED");
                     return 2;
                 }
 
-                Console.WriteLine(string.Format("{0},{1},{2},{3}", r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top));
+                Emit(string.Format("{0},{1},{2},{3}", r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top));
                 return 0;
             }
 
@@ -595,7 +695,7 @@ namespace FluentFlyoutDocker
                 IntPtr childHwnd = ParseHwnd(args[1]);
                 if (!IsWindow(childHwnd))
                 {
-                    Console.WriteLine("INVALID_CHILD_HWND");
+                    Emit("INVALID_CHILD_HWND");
                     return 4;
                 }
 
@@ -604,7 +704,7 @@ namespace FluentFlyoutDocker
                 if (interval < 50) interval = 50;
 
                 SetWindowPos(childHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                Console.WriteLine("STAYTOP_STARTED");
+                Emit("STAYTOP_STARTED");
 
                 while (IsWindow(childHwnd))
                 {
@@ -633,8 +733,8 @@ namespace FluentFlyoutDocker
                     bool current = IsForegroundFullscreen(widgetHwnd);
                     if (first || current != lastState)
                     {
-                        Console.WriteLine(current ? "1" : "0");
-                        Console.Out.Flush();
+                        Emit(current ? "1" : "0");
+                        EmitFlush();
                         lastState = current;
                         first = false;
                     }
@@ -660,8 +760,8 @@ namespace FluentFlyoutDocker
                     bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
                     if (!down || p.X != lastX || p.Y != lastY)
                     {
-                        Console.WriteLine(string.Format("{0}:{1},{2}", down ? "MOVE" : "END", p.X, p.Y));
-                        Console.Out.Flush();
+                        Emit(string.Format("{0}:{1},{2}", down ? "MOVE" : "END", p.X, p.Y));
+                        EmitFlush();
                         lastX = p.X; lastY = p.Y;
                     }
                     if (!down) return 0;
@@ -681,8 +781,8 @@ namespace FluentFlyoutDocker
                 {
                     if (!IsWindow(taskbar) || GetParent(widget) != taskbar)
                     {
-                        Console.WriteLine("DOCK_LOST");
-                        Console.Out.Flush();
+                        Emit("DOCK_LOST");
+                        EmitFlush();
                         return 0;
                     }
 
@@ -696,8 +796,8 @@ namespace FluentFlyoutDocker
                         if (down) { pressedOnWidget = onWidget; dragging = false; GetCursorPos(out pressPoint); }
                         else if (pressedOnWidget && onWidget && !dragging)
                         {
-                            Console.WriteLine("CLICK");
-                            Console.Out.Flush();
+                            Emit("CLICK");
+                            EmitFlush();
                         }
                     }
 
@@ -706,8 +806,8 @@ namespace FluentFlyoutDocker
                         && (Math.Abs(cursor.X - pressPoint.X) > 6 || Math.Abs(cursor.Y - pressPoint.Y) > 6))
                     {
                         dragging = true;
-                        Console.WriteLine("DRAG_START");
-                        Console.Out.Flush();
+                        Emit("DRAG_START");
+                        EmitFlush();
                     }
 
                     previousDown = down;
@@ -747,7 +847,14 @@ namespace FluentFlyoutDocker
                     hDesk = OpenDesktop("default", 0, false, 0x000F01FF);
                 }
 
-                if (hDesk != IntPtr.Zero)
+                desktopHandle = hDesk;
+                if (args.Length >= 1 && args[0] == "serve")
+                {
+                    if (hDesk != IntPtr.Zero) SetThreadDesktop(hDesk);
+                    try { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); } catch { }
+                    exitCode = Serve();
+                }
+                else if (hDesk != IntPtr.Zero)
                 {
                     Thread t = new Thread(delegate ()
                     {

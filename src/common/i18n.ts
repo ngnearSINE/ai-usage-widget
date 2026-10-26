@@ -96,7 +96,7 @@ const dict = {
   alignLeftDocked: { ko: '좌측 정렬 (작업표시줄 왼쪽)', en: 'Left (taskbar left edge)' },
   offsetLabel: { ko: '위치 오프셋 간격', en: 'Offset Distance' },
   verticalOffsetLabel: { ko: '세로 위치 미세조정', en: 'Vertical Position' },
-  alphaLabel: { ko: '작업표시줄 배경 투명도', en: 'Taskbar Background Opacity' },
+  alphaLabel: { ko: '배경 불투명도', en: 'Background Opacity' },
   refreshIntervalLabel: { ko: '데이터 갱신 주기', en: 'Refresh Interval' },
   interval15: { ko: '15초', en: '15s' },
   interval30: { ko: '30초', en: '30s' },

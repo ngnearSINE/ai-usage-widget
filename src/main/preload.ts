@@ -29,6 +29,7 @@ export const api = {
   unlockPopup: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.UNLOCK_POPUP),
   resizeWidget: (width: number, height: number): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.RESIZE_WIDGET, width, height),
   openSettings: (tab?: 'design' | 'display' | 'services' | 'alerts' | 'history' | 'convenience' | 'accounts' | 'general' | 'api'): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SETTINGS, tab),
+  windowControl: (action: 'minimize' | 'maximize' | 'close'): void => ipcRenderer.send(IPC_CHANNELS.WINDOW_CONTROL, action),
   testNotification: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.TEST_NOTIFICATION),
   openServicePage: (accountId: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_PAGE, accountId),
   setTrayImage: (dataUrl: string | null, tooltip: string): void => ipcRenderer.send(IPC_CHANNELS.SET_TRAY_IMAGE, dataUrl, tooltip),
