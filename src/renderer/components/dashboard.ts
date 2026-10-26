@@ -59,10 +59,14 @@ export function applyAppearance(config: WidgetConfig) {
 function miniSummary(u: AccountUsage, config: WidgetConfig) {
   const available = ['ready', 'stale'].includes(u.status)
   const quotas: Array<QuotaInfo | undefined> = [u.isWeeklyOnly ? undefined : u.primaryQuota, u.isWeeklyOnly ? u.primaryQuota : u.weeklyQuota]
-  return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas">${quotas.map((q, i) => {
+  // 모델 전용 주간 한도(Fable 등)를 보기로 둔 계정은 작업표시줄에도 세 번째 줄로 보인다(숨긴 계정은 상태에서 이미 빠져 있다).
+  const scoped = u.scopedQuotas || []
+  const rows = [...quotas, ...scoped.map(s => s.quota)]
+  return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
     const value = available && q ? clamp(config.showUsedPercent ? q.percentUsed : q.percentLeft) : null
-    const label = `${i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : '전체(주간)'} ${config.showUsedPercent ? '사용한 양' : '남은 양'}`
-    return `<div class="mini-quota ${i === 1 ? 'secondary' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
+    const name = i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
+    const label = `${name} ${config.showUsedPercent ? '사용한 양' : '남은 양'}`
+    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
   }).join('')}</div></div>`
 }
 export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {

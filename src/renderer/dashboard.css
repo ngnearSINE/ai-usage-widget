@@ -508,3 +508,9 @@ body.is-dock-preview.dock-enter #app { animation:dock-enter .18s cubic-bezier(.2
 .dashboard .tool.is-off svg { text-decoration:line-through; }
 .scoped-toggle { display:inline-flex; align-items:center; gap:5px; margin-top:4px; font-size:10.5px; color:var(--muted); cursor:pointer; }
 .scoped-toggle input { accent-color:var(--accent); margin:0; width:12px; height:12px; }
+
+/* 작업표시줄: 모델 전용 한도(Fable 등)까지 세 줄일 때는 간격·글자를 줄여 높이 안에 맞춘다 */
+.docked-service .mini-quotas.three { gap:3px; }
+.docked-service .mini-quotas.three .mini-value { font-size:10px; }
+.docked-service .mini-quotas.three .meter { height:3px; }
+.mini-quota.scoped .meter-fill { background:color-mix(in srgb,var(--brand,var(--accent)) 30%,var(--muted)); }
