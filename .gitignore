@@ -44,6 +44,7 @@ docs/superpowers/
 scratch/
 scripts/
 *.ps1
+!local-build.ps1
 *.dump
 *.dump.json
 dump_*.json

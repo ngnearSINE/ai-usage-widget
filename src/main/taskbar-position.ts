@@ -8,14 +8,13 @@ export interface TaskbarBounds {
   position: 'bottom' | 'top' | 'left' | 'right'
 }
 
-export function getTaskbarInfo(): TaskbarBounds {
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { bounds, workArea } = primaryDisplay
+export function getTaskbarInfo(display = screen.getPrimaryDisplay()): TaskbarBounds {
+  const { bounds, workArea } = display
 
   // 하단 작업표시줄 감지 (Windows 기본)
   if (workArea.y === bounds.y && workArea.height < bounds.height) {
     return {
-      taskbarY: workArea.height,
+      taskbarY: workArea.y + workArea.height,
       taskbarHeight: bounds.height - workArea.height,
       taskbarWidth: bounds.width,
       position: 'bottom'
@@ -34,7 +33,7 @@ export function getTaskbarInfo(): TaskbarBounds {
 
   // 기본값 (일반적인 Windows 11 하단 48px)
   return {
-    taskbarY: bounds.height - 48,
+    taskbarY: bounds.y + bounds.height - 48,
     taskbarHeight: 48,
     taskbarWidth: bounds.width,
     position: 'bottom'
@@ -46,9 +45,9 @@ export function calculateWidgetPosition(
   widgetWidth: number,
   widgetHeight: number
 ): { x: number; y: number } {
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { bounds } = primaryDisplay
-  const taskbar = getTaskbarInfo()
+  const display = config.windowBounds ? screen.getDisplayMatching(config.windowBounds) : screen.getPrimaryDisplay()
+  const { bounds } = display
+  const taskbar = getTaskbarInfo(display)
   const trayWidth = 220
   const offset = Math.max(0, config.offsetPx !== undefined ? config.offsetPx : 20)
   const isFloating = config.placementMode === 'floating'
@@ -90,9 +89,9 @@ export function calculatePopupPosition(
   popupHeight: number,
   widgetY?: number
 ): { x: number; y: number } {
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { workArea } = primaryDisplay
-  const taskbar = getTaskbarInfo()
+  const display = screen.getDisplayNearestPoint({x:Math.round(widgetX+widgetWidth/2),y:Math.round(widgetY ?? screen.getPrimaryDisplay().workArea.height)})
+  const { workArea } = display
+  const taskbar = getTaskbarInfo(display)
 
   // 위젯 가로 중앙에 팝업 가로 중앙 정렬
   let x = Math.round(widgetX + (widgetWidth / 2) - (popupWidth / 2))

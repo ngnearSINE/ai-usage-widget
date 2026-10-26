@@ -3,6 +3,7 @@ import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
+import { retainedUsage } from '../common/widget-layout.js'
 
 export class QuotaManager {
   private usages: Map<string, AccountUsage> = new Map()
@@ -43,6 +44,8 @@ export class QuotaManager {
     }
     return result
   }
+
+  public get refreshing(): boolean { return this.isRefreshing }
 
   /**
    * customMock 이 정직한 데이터 소스인 계정인지.
@@ -130,38 +133,9 @@ export class QuotaManager {
             if (acc.provider === 'antigravity' || acc.isLocalIde) {
               // agy CLI가 기존 로그인 세션으로 조회 (RPC 포트/CSRF/토큰을 다루지 않음)
               usage = await AntigravityCliClient.fetchUsage(acc)
-              // 목업 대신 정직한 상태: 마지막 실측값(시각 유지) 또는 에러 안내
-              if (usage.status === 'ready') {
-                this.lastGood.set(acc.id, usage)
-              } else {
-                const last = this.lastGood.get(acc.id)
-                // status/updatedAt 을 그대로 두면 끊긴 갱신이 정상값으로 보인다. stale 로 낮추고 실측 시각은 유지
-                if (last) {
-                  usage = {
-                    ...last,
-                    status: 'stale',
-                    errorMessage: usage.errorMessage,
-                    tier: `${last.tier ?? ''} (마지막 실측)`.trim()
-                  }
-                }
-              }
-              this.usages.set(acc.id, usage)
-              return
+              // 다른 공급자와 같은 stale 보존 규칙을 아래에서 적용한다.
             } else if (acc.provider === 'claude') {
               usage = await fetchClaudeUsage(acc)
-              if (usage.status === 'ready' || usage.status === 'stale') {
-                this.lastGood.set(acc.id, usage)
-              } else {
-                const last = this.lastGood.get(acc.id)
-                if (last) {
-                  usage = {
-                    ...last,
-                    status: 'stale',
-                    errorMessage: usage.errorMessage,
-                    tier: `${last.tier ?? ''} (마지막 실측)`.trim()
-                  }
-                }
-              }
             } else if (acc.provider === 'codex') {
               usage = await CodexLocalClient.fetchUsage(acc)
             } else if (QuotaManager.isManualAccount(acc)) {
@@ -176,12 +150,13 @@ export class QuotaManager {
               }
             }
 
+            usage = retainedUsage(usage, this.lastGood.get(acc.id))
+            if (usage.status === 'ready' || usage.status === 'stale') this.lastGood.set(acc.id, usage)
             this.usages.set(acc.id, usage)
           } catch (err) {
             console.error(`[QuotaManager] Error fetching usage for ${acc.name}:`, err)
-            const fallback = this.usages.get(acc.id) || this.createInitialUsage(acc)
-            fallback.status = 'error'
-            fallback.errorMessage = err instanceof Error ? err.message : String(err)
+            const fallback = retainedUsage({ ...(this.usages.get(acc.id) || this.createInitialUsage(acc)),
+              status: 'error', errorMessage: err instanceof Error ? err.message : String(err) }, this.lastGood.get(acc.id))
             this.usages.set(acc.id, fallback)
           }
         })

@@ -46,6 +46,7 @@ export interface AccountConfig {
   name: string
   provider: ProviderType
   enabled: boolean
+  hidden?: boolean
   isLocalIde?: boolean
   customMock?: {
     primaryPercent: number
@@ -77,12 +78,48 @@ export interface WidgetConfig {
   apiPushEnabled?: boolean // 쿼터 갱신 시 사용량을 apiEndpoint 로 POST (기본 false)
   apiEndpoint?: string // 기본 http://localhost:8080/api/usage
   apiScreen?: number // 페이로드의 screen 번호 (기본 1)
+  uiVersion?: number
+  windowBounds?: { x: number; y: number; width: number; height: number }
+  appearance?: 'dark' | 'light' | 'system'
+  barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
+  motion?: 'off' | 'subtle' | 'expressive'
+  accentColor?: string
+  fontScale?: number
+  cardGap?: number
+  hideDisconnected?: boolean
+  showResetTime?: boolean
+  showServiceName?: boolean
+  backgroundEffect?: 'acrylic' | 'transparent' | 'solid'
+  design?: 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
+  valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
+  warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)
+  critPercent?: number // 남은 양이 이 값 이하이면 위험 (기본 10)
+  showPace?: boolean // 막대·링의 페이스 눈금
+  sortLowFirst?: boolean // 여유가 적은 서비스를 앞으로
+  notifyEnabled?: boolean // Windows 알림 전체 (기본 켬)
+  notifyLow?: boolean // 주의·위험 기준 도달 알림 (기본 켬)
+  notifyPace?: boolean // 리셋 전 소진 예상 알림 (기본 켬)
+  notifyReset?: boolean // 빠듯했던 한도가 새로 채워지면 알림 (기본 끔)
+  notifyMuted?: string[] // 알리지 않을 '계정ID:5h|weekly' 목록
+  notifyUnused?: boolean // 주간 리셋이 임박했는데 많이 남았을 때 안내 (기본 켬)
+  trayShowNumber?: boolean // 트레이 아이콘에 가장 빠듯한 남은 % 표시 (기본 켬)
+  clickThrough?: boolean // 클릭 통과 잠금: 위젯 위 클릭이 뒤 창으로 간다 (자유 창 전용)
+  shortcuts?: { toggle?: string; lock?: string; cycle?: string } // 전역 단축키(빈 문자열 = 끔)
+  rememberPerMonitor?: boolean // 모니터 구성마다 위치·크기·디자인 기억 (기본 켬)
+  layoutsByMonitor?: Record<string, { windowBounds?: { x: number; y: number; width: number; height: number }; design?: WidgetConfig['design'] }>
 }
 
+/** 사용 기록 한 점: [시각(ms), 5시간 남은 %, 주간 남은 %]. 없는 한도는 null. */
+export type HistoryPoint = [number, number | null, number | null]
+
 export interface AppState {
+  preview?: boolean
+  acrylicSupported?: boolean
   config: WidgetConfig
   accounts: AccountConfig[]
   usages: AccountUsage[]
   isRefreshing: boolean
   lastRefreshedAt: string
+  history?: Record<string, HistoryPoint[]> // 최근 24시간(카드 추이선용, 줄여서 보냄)
+  shortcutErrors?: string[] // 등록하지 못한 단축키(다른 앱이 사용 중 등)
 }

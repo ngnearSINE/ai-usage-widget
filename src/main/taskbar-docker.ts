@@ -69,7 +69,8 @@ export class TaskbarDocker {
     win: BrowserWindow,
     config: WidgetConfig,
     width: number,
-    height: number
+    height: number,
+    contentPadding = 0
   ): Promise<DockResult> {
     if (!win || win.isDestroyed()) {
       return { success: false, error: 'Window is destroyed or null' }
@@ -99,7 +100,8 @@ export class TaskbarDocker {
       align,
       String(offset),
       String(vOffset),
-      monStr
+      monStr,
+      String(contentPadding)
     ]
 
     console.log(`[TaskbarDocker] Docking HWND ${hwnd} with args:`, args.join(' '))
@@ -119,6 +121,14 @@ export class TaskbarDocker {
 
         if (taskbarMatch) {
           this.lastTaskbarHwnd = taskbarMatch[1]
+        }
+
+        if (contentPadding === 0) {
+          const taskbarHeight = Number(out.match(/Taskbar client = \d+x(\d+)/)?.[1])
+          const scale = Number(dpiMatch?.[1] || 96) / 96
+          const actualContentHeight = Math.round(win.getContentSize()[1] * scale)
+          const inset = taskbarHeight - actualContentHeight
+          if (inset > 0 && inset <= 128) return this.dockWindow(win, config, width, height, inset)
         }
 
         return {
@@ -169,6 +179,16 @@ export class TaskbarDocker {
     }
   }
 
+  /** Windows 11 DWM 둥근 모서리. 아크릴 backdrop까지 함께 잘리는 유일한 경로다. */
+  public static setCornerPreference(win: BrowserWindow, preference: 'round' | 'none'): void {
+    if (process.platform !== 'win32' || !win || win.isDestroyed()) return
+    const exe = this.getDockerPath()
+    if (!fs.existsSync(exe)) return
+    execFile(exe, ['corner', this.getHwnd(win), preference], { windowsHide: true }, err => {
+      if (err) console.warn('[TaskbarDocker] Corner preference failed:', err)
+    })
+  }
+
   /**
    * 팝업 앵커링을 위한 위젯의 실제 화면 절대 좌표(GetWindowRect) 조회
    */
@@ -203,7 +223,7 @@ export class TaskbarDocker {
    * 도킹 모드 전용 상주 워처: 단일 TaskbarDock.exe watch 프로세스가 클릭과 도킹 유실을 stdout으로 통지
    * (주기적 프로세스 생성은 Windows AppStarting 커서를 유발하므로 금지)
    */
-  public static startDockWatcher(win: BrowserWindow, onClick: () => void, onDockLost: () => void): void {
+  public static startDockWatcher(win: BrowserWindow, onClick: () => void, onDockLost: () => void, onDrag?: () => void): void {
     if (!win || win.isDestroyed() || !this.lastTaskbarHwnd) return this.stopDockWatcher()
 
     // 같은 위젯/작업표시줄로 재도킹(크기 변경 등)이면 살아 있는 워처를 그대로 재사용
@@ -233,6 +253,8 @@ export class TaskbarDocker {
           if (msg === 'CLICK') {
             console.log('[TaskbarDocker] Native click detected on docked HWND, toggling popup')
             onClick()
+          } else if (msg === 'DRAG_START') {
+            onDrag?.()
           } else if (msg === 'DOCK_LOST' && this.dockWatchProcess === proc) {
             console.warn('[TaskbarDocker] Dock lost. Triggering re-dock repair...')
             this.dockWatchProcess = null
@@ -256,6 +278,30 @@ export class TaskbarDocker {
       } catch {}
       this.dockWatchProcess = null
     }
+  }
+
+  public static watchPointer(onMove: (p: { x: number; y: number }) => void, onEnd: (p?: { x: number; y: number }) => void): ChildProcess | null {
+    const exe = this.getDockerPath()
+    if (!fs.existsSync(exe)) { onEnd(); return null }
+    const proc = spawn(exe, ['pointerwatch'], { windowsHide: true })
+    let buffer = ''
+    let ended = false
+    const finish = (p?: { x: number; y: number }) => { if (!ended) { ended = true; onEnd(p) } }
+    proc.stdout?.on('data', chunk => {
+      buffer += chunk.toString()
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        const m = /^(MOVE|END):(-?\d+),(-?\d+)$/.exec(line.trim())
+        if (!m) continue
+        const p = screen.screenToDipPoint({ x: Number(m[2]), y: Number(m[3]) })
+        if (m[1] === 'END') finish(p)
+        else if (!ended) onMove(p)
+      }
+    })
+    proc.on('error', () => finish())
+    proc.on('exit', () => finish())
+    return proc
   }
 
   /**

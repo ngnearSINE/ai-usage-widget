@@ -1,11 +1,41 @@
 import { renderPopupView } from './components/popup-view.js'
-import { renderTheme1a } from './components/theme-1a.js'
-import { renderTheme1b } from './components/theme-1b.js'
-import { renderTheme1c } from './components/theme-1c.js'
-import { renderTheme1d } from './components/theme-1d.js'
 import { renderAiIcon } from './components/ai-icons.js'
 import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
+import { applyAppearance, renderDashboard, renderDockedUsage, openDesign } from './components/dashboard.js'
+import { initSettings, renderSettings } from './components/settings-view.js'
+import { visibleUsages } from '../common/widget-layout.js'
+import { lowestLeft, serviceModel } from '../common/usage-model.js'
+
+/** 트레이 아이콘에 가장 빠듯한 남은 %를 그린다. 메인 프로세스에는 캔버스가 없어 위젯 화면이 그려서 보낸다. */
+let lastTrayKey = ''
+function updateTrayIcon(state: AppState) {
+  const c = state.config
+  const list = visibleUsages(state.usages, state.accounts, c).filter(u => ['ready', 'stale'].includes(u.status)).map(u => ({ u, m: serviceModel(u) }))
+  const tight = list.sort((a, b) => lowestLeft(a.m) - lowestLeft(b.m))[0]
+  const tooltip = list.length ? `AI 사용량 · ${list.map(({ u, m }) => `${u.name} ${lowestLeft(m)}%`).join(' · ')}` : 'AI 사용량'
+  if (c.trayShowNumber === false || !tight) {
+    if (lastTrayKey !== 'default') { lastTrayKey = 'default'; window.api.setTrayImage?.(null, tooltip) }
+    return
+  }
+  const value = lowestLeft(tight.m), warn = c.warnPercent ?? 20, crit = Math.min(warn, c.critPercent ?? 10)
+  const bg = value <= crit ? '#ff6b73' : value <= warn ? '#f0b65a' : (/^#[\da-f]{6}$/i.test(c.accentColor || '') ? c.accentColor! : '#a99bff')
+  const key = `${value}|${bg}|${tooltip}`
+  if (key === lastTrayKey) return
+  lastTrayKey = key
+  const size = 32, canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const g = canvas.getContext('2d')!
+  g.fillStyle = bg
+  g.beginPath(); g.roundRect(1, 1, size - 2, size - 2, 7); g.fill()
+  const text = value >= 100 ? '100' : String(value)
+  g.fillStyle = '#16151d'
+  g.font = `700 ${text.length >= 3 ? 14 : 19}px "Segoe UI Variable Display","Segoe UI",sans-serif`
+  g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText(text, size / 2, size / 2 + 1)
+  window.api.setTrayImage?.(canvas.toDataURL('image/png'), tooltip)
+}
+import './dashboard.css'
 
 // title 속성에 들어가는 계정명/에러문구는 외부 프로세스 출력이거나 사용자 입력이다
 function escapeHtml(s: string): string {
@@ -21,10 +51,18 @@ document.documentElement.lang = lang
 const urlParams = new URLSearchParams(window.location.search)
 const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
 const viewType = urlParams.get('view') || hashParams.get('view') || (window.location.hash.includes('popup') ? 'popup' : 'widget')
+const dockPreview = viewType === 'dock-preview'
+if (dockPreview) {
+  document.body.classList.add('is-dock-preview')
+  document.documentElement.style.setProperty('--dock-preview-height',`${Math.max(24,Math.min(160,Number(urlParams.get('dockHeight'))||48))}px`)
+}
 const appEl = document.getElementById('app')!
 
 if (viewType === 'popup') {
   document.body.classList.add('is-popup-view')
+} else if (viewType === 'settings') {
+  // 계정·일반·API 탭은 팝업 스타일을 그대로 쓰므로 팝업 색 변수도 함께 켠다.
+  document.body.classList.add('is-settings-view', 'is-popup-view')
 } else {
   document.body.classList.add('is-widget-view')
 }
@@ -57,11 +95,23 @@ function renderUnavailable(u: AccountUsage, config: WidgetConfig): string {
 }
 
 function renderWidget(state: AppState) {
+  if (dockPreview) state={...state,config:{...state.config,placementMode:'docked'}}
+  else updateTrayIcon(state)
   currentState = state
+  applyAppearance(state.config)
+  const floating = state.config.placementMode !== 'docked'
+  document.body.classList.toggle('is-dashboard-view', floating)
+  if (floating) {
+    lastWidgetHtml = ''
+    lastSentWidth = 0
+    lastSentHeight = 0
+    renderDashboard(appEl, state)
+    return
+  }
   updateRootAlpha(state.config.alphaPercent)
   updateVerticalOffset(state.config.verticalOffsetPx)
 
-  const activeUsages = state.usages
+  const activeUsages = visibleUsages(state.usages, state.accounts, state.config)
   const isEmpty = activeUsages.length === 0
   let accountsHtml = ''
 
@@ -77,23 +127,14 @@ function renderWidget(state: AppState) {
       if (u.status === 'error' || u.status === 'unauthenticated' || u.status === 'loading') {
         return renderUnavailable(u, state.config)
       }
-      switch (state.config.theme) {
-        case '1b':
-          return renderTheme1b(u, state.config)
-        case '1c':
-          return renderTheme1c(u, state.config)
-        case '1d':
-          return renderTheme1d(u, state.config)
-        case '1a':
-        default:
-          return renderTheme1a(u, state.config)
-      }
+      return renderDockedUsage(u,state.config)
     }).join('')
   }
 
   const showCard = state.config.showCardBackground ?? false
   const newHtml = `
     <div class="widget-root ${isEmpty ? 'is-empty' : ''} ${showCard ? 'has-card-bg' : 'no-card-bg'}" id="widget-container" title="${t(state.config.doubleClickToOpenPopup ? 'widgetDoubleClickTitle' : 'widgetClickTitle')}">
+      <span class="dock-grip" title="끌어내면 자유 창으로 전환됩니다">⠿</span>
       ${accountsHtml}
     </div>
   `
@@ -110,13 +151,12 @@ function renderWidget(state: AppState) {
         if (container) {
           const rect = container.getBoundingClientRect()
           const naturalWidth = Math.max(rect.width, container.scrollWidth)
-          // 여유 너비 +24px, 높이는 34px 기본에 맞춰 설정
-          const width = Math.ceil(naturalWidth) + 24
-          const height = Math.max(34, Math.ceil(rect.height) + 4)
+          const width = Math.ceil(naturalWidth)
+          const height = window.innerHeight
           if (width !== lastSentWidth || height !== lastSentHeight) {
             lastSentWidth = width
             lastSentHeight = height
-            window.api.resizeWidget(width, height)
+            if (!dockPreview) window.api.resizeWidget(width, height)
           }
         }
       })
@@ -126,6 +166,7 @@ function renderWidget(state: AppState) {
 
 function renderPopup(state: AppState) {
   currentState = state
+  applyAppearance(state.config)
   renderPopupView(appEl, state)
 }
 
@@ -142,7 +183,8 @@ if (!(window as any).api) {
       alphaPercent: 85,
       showWeeklyLimit: true,
       colorByUsage: true,
-      showCardBackground: false
+      showCardBackground: false,
+      placementMode: 'floating', uiVersion: 2, appearance: 'dark', barStyle: 'silk', accentColor: '#a99bff', motion: 'subtle', hideDisconnected: true
     },
     accounts: [
       { id: 'local-antigravity', name: 'Google Antigravity', provider: 'antigravity', enabled: true },
@@ -151,7 +193,7 @@ if (!(window as any).api) {
     ],
     usages: [
       {
-        id: 'acc-antigravity',
+        id: 'local-antigravity',
         name: 'Antigravity (Local IDE)',
         provider: 'antigravity',
         iconLetter: 'A',
@@ -162,7 +204,7 @@ if (!(window as any).api) {
         updatedAt: new Date().toISOString()
       },
       {
-        id: 'acc-claude',
+        id: 'local-claude-code',
         name: 'Claude Code',
         provider: 'claude',
         iconLetter: 'C',
@@ -173,7 +215,7 @@ if (!(window as any).api) {
         updatedAt: new Date().toISOString()
       },
       {
-        id: 'acc-codex',
+        id: 'local-codex',
         name: 'Codex CLI',
         provider: 'codex',
         iconLetter: 'X',
@@ -215,6 +257,21 @@ if (!(window as any).api) {
       return mockState
     },
     toggleAccount: async () => mockState,
+    hideAccount: async (id: string, hidden: boolean) => {
+      mockState.accounts = mockState.accounts.map(a => a.id === id ? {...a,hidden} : a)
+      listeners.forEach(fn => fn(mockState)); return mockState
+    },
+    moveAccount: async (id: string, beforeId: string | null) => {
+      const moving = mockState.accounts.find(a => a.id === id)!
+      mockState.accounts = mockState.accounts.filter(a => a.id !== id)
+      mockState.accounts.splice(beforeId ? mockState.accounts.findIndex(a => a.id === beforeId) : mockState.accounts.length,0,moving)
+      listeners.forEach(fn => fn(mockState)); return mockState
+    },
+    beginInteraction: async () => {},
+    endInteraction: async () => {},
+    moveInteraction: () => {},
+    hideWidget: async () => {},
+    onOpenDesign: () => {},
     removeAccount: async (id: string) => {
       mockState.accounts = mockState.accounts.filter(a => a.id !== id)
       listeners.forEach((fn) => fn(mockState))
@@ -274,36 +331,16 @@ async function init() {
         window.api.hidePopup()
       }
     })
-  } else {
-    // 위젯 클릭 이벤트 시 팝업 토글 (중복 트리거 방지 디바운스 적용)
-    // 도킹 모드는 네이티브 워처(main.ts)가 클릭을 처리하므로 여기서는 무시하고,
-    // 플로팅 모드에서만 click/dblclick 중 설정된 쪽으로 토글한다.
-    let lastToggleTime = 0
-    const isFloating = () => currentState?.config.placementMode === 'floating'
-    const isDoubleClickMode = () => currentState?.config.doubleClickToOpenPopup === true
-
-    const triggerToggle = (e: Event) => {
-      e.stopPropagation()
-      if (!isFloating() || isDoubleClickMode()) return
-      const now = Date.now()
-      if (now - lastToggleTime < 300) return
-      lastToggleTime = now
-      console.log('[Widget] Click event handled, invoking togglePopup')
-      window.api.togglePopup()
-    }
-
-    const triggerDoubleClick = (e: Event) => {
-      e.stopPropagation()
-      if (!isFloating() || !isDoubleClickMode()) return
-      console.log('[Widget] Double-click event handled, invoking togglePopup')
-      window.api.togglePopup()
-    }
-
-    appEl.addEventListener('click', triggerToggle)
-    appEl.addEventListener('dblclick', triggerDoubleClick)
   }
 
   const state = await window.api.getState()
+  window.api.onOpenDesign?.(openDesign)
+
+  if (viewType === 'settings') {
+    initSettings(appEl, state, urlParams.get('tab') || undefined)
+    window.api.onStateChange((nextState) => renderSettings(nextState))
+    return
+  }
 
   if (viewType === 'popup') {
     renderPopup(state)

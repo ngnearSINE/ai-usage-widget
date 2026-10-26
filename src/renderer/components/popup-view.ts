@@ -1,5 +1,5 @@
 import { parseUsageColor } from '../../common/time-utils.js'
-import type { AccountConfig, AccountUsage, AppState, ThemeType, WidgetConfig } from '../../common/types.js'
+import type { AccountConfig, AccountUsage, AppState, WidgetConfig } from '../../common/types.js'
 import { renderAiIcon } from './ai-icons.js'
 import { t } from '../../common/i18n.js'
 
@@ -7,6 +7,10 @@ let activeTab: 'usage' | 'accounts' | 'settings' | 'api' = 'usage'
 let hasDetectedApps = false
 let isAddingCustom = false
 let isSliderDragging = false
+// 같은 탭 내용을 설정 창에서도 쓴다. 다시 그리기 대상과 팝업 잠금 여부를 호스트별로 바꾼다.
+let rerender: (container: HTMLElement, state: AppState) => void = (c, s) => renderPopupView(c, s)
+let inSettingsWindow = false
+const lockPopup = () => { if (!inSettingsWindow) window.api.lockPopup() }
 
 // 캐시된 감지 앱 목록
 let cachedDetectedApps: any[] = [
@@ -16,7 +20,28 @@ let cachedDetectedApps: any[] = [
 ]
 
 // animate: 팝업이 실제로 열릴 때만 true (설정 클릭 등 재렌더링 시 애니메이션이 다시 재생되어 깜빡이는 것 방지)
+/** 설정 창의 계정·일반·API 탭: 팝업의 탭 내용과 이벤트를 그대로 쓰되 그 탭만 다시 그린다. */
+export function renderPopupTab(container: HTMLElement, state: AppState, tab: 'accounts' | 'settings' | 'api') {
+  if (isSliderDragging || document.activeElement?.matches('.api-input')) return
+  inSettingsWindow = true
+  activeTab = tab
+  rerender = (c, s) => renderPopupTab(c, s, tab)
+  const prevScrollTop = container.scrollTop
+  container.innerHTML = `<div class="popup-body settings-popup-body">${renderTabContent(state)}</div>`
+  bindPopupEvents(container, state)
+  container.scrollTop = prevScrollTop
+  if (tab === 'accounts' && !hasDetectedApps) {
+    hasDetectedApps = true
+    window.api.detectLocalApps().then((apps) => {
+      if (apps && apps.length > 0) cachedDetectedApps = apps
+      if (activeTab === 'accounts' && container.isConnected) rerender(container, state)
+    }).catch(() => { hasDetectedApps = false })
+  }
+}
+
 export function renderPopupView(container: HTMLElement, state: AppState, animate = false) {
+  inSettingsWindow = false
+  rerender = (c, s) => renderPopupView(c, s)
   // 슬라이더 드래그 중에는 사용자 조작(포커스/마우스) 보호를 위해 전체 DOM 재작성 방지
   if (isSliderDragging) {
     return
@@ -38,6 +63,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
           <span class="popup-title-badge">${t('accountsActive', { count: state.usages.length })}</span>
         </div>
         <div class="popup-actions">
+          <button class="icon-button" id="btn-free-window" title="자유 창으로 펼치기" aria-label="자유 창으로 펼치기">↗</button>
           <button class="icon-button ${state.isRefreshing ? 'refreshing' : ''}" id="btn-refresh" title="${t('refresh')}">
             &#8635;
           </button>
@@ -63,6 +89,9 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
   `
 
   bindPopupEvents(container, state)
+  container.querySelector('#btn-free-window')?.addEventListener('click', () => {
+    void window.api.updateConfig({placementMode:'floating'}).then(() => window.api.hidePopup())
+  })
 
   const popupBody = container.querySelector('.popup-body')
   if (popupBody) popupBody.scrollTop = prevScrollTop
@@ -364,13 +393,8 @@ function renderSettingsTab(state: AppState): string {
     <div style="display: flex; flex-direction: column; gap: 14px;">
       <!-- 테마 선택 -->
       <div class="form-group">
-        <label class="form-label">${t('widgetTheme')}</label>
-        <div class="form-row">
-          <button class="theme-button ${cfg.theme === '1a' ? 'active' : ''}" data-theme="1a">${t('theme1a')}</button>
-          <button class="theme-button ${cfg.theme === '1b' ? 'active' : ''}" data-theme="1b">${t('theme1b')}</button>
-          <button class="theme-button ${cfg.theme === '1c' ? 'active' : ''}" data-theme="1c">${t('theme1c')}</button>
-          <button class="theme-button ${cfg.theme === '1d' ? 'active' : ''}" data-theme="1d">${t('theme1d')}</button>
-        </div>
+        <label class="form-label">디자인</label>
+        <button class="theme-button" id="btn-open-design">자유 창에서 디자인 꾸미기 ↗</button>
       </div>
 
       <!-- 아이콘 스타일 -->
@@ -565,14 +589,14 @@ function bindPopupEvents(container: HTMLElement, state: AppState) {
       if (tabName) {
         activeTab = tabName
         if (activeTab === 'settings' || activeTab === 'accounts' || activeTab === 'api') {
-          window.api.lockPopup() // 설정이나 계정 관리 조작 중에는 팝업 잠금 유지
+          lockPopup() // 설정이나 계정 관리 조작 중에는 팝업 잠금 유지
         }
-        renderPopupView(container, state)
+        rerender(container, state)
         if (activeTab === 'accounts' && !hasDetectedApps) {
           hasDetectedApps = true
           window.api.detectLocalApps().then((apps) => {
             if (apps && apps.length > 0) cachedDetectedApps = apps
-            if (activeTab === 'accounts' && container.isConnected) renderPopupView(container, state)
+            if (activeTab === 'accounts' && container.isConnected) rerender(container, state)
           }).catch(() => { hasDetectedApps = false })
         }
       }
@@ -647,18 +671,18 @@ function bindPopupEvents(container: HTMLElement, state: AppState) {
       cachedDetectedApps = apps
       hasDetectedApps = true
     }
-    renderPopupView(container, state)
+    rerender(container, state)
     window.api.refreshQuota()
   })
 
   container.querySelector('#btn-show-custom-form')?.addEventListener('click', () => {
     isAddingCustom = true
-    renderPopupView(container, state)
+    rerender(container, state)
   })
 
   container.querySelector('#btn-cancel-custom')?.addEventListener('click', () => {
     isAddingCustom = false
-    renderPopupView(container, state)
+    rerender(container, state)
   })
 
   container.querySelector('#btn-save-custom')?.addEventListener('click', () => {
@@ -685,13 +709,8 @@ function bindPopupEvents(container: HTMLElement, state: AppState) {
   })
 
   // 설정 이벤트
-  container.querySelectorAll('.theme-button[data-theme]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const theme = btn.getAttribute('data-theme') as ThemeType
-      if (theme) {
-        window.api.updateConfig({ theme })
-      }
-    })
+  container.querySelector('#btn-open-design')?.addEventListener('click', () => {
+    void window.api.updateConfig({placementMode:'floating'}).then(() => window.api.hidePopup())
   })
 
   container.querySelector('#btn-icon-color')?.addEventListener('click', () => {
@@ -755,7 +774,7 @@ function bindPopupEvents(container: HTMLElement, state: AppState) {
 
     const onStart = () => {
       isSliderDragging = true
-      window.api.lockPopup()
+      lockPopup()
     }
     slider.addEventListener('mousedown', onStart)
     slider.addEventListener('touchstart', onStart)

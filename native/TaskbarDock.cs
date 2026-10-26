@@ -30,6 +30,12 @@ namespace FluentFlyoutDocker
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern bool SetProp(IntPtr hwnd, string name, IntPtr value);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr GetProp(IntPtr hwnd, string name);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr RemoveProp(IntPtr hwnd, string name);
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
@@ -39,6 +45,26 @@ namespace FluentFlyoutDocker
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("gdi32.dll")]
+        static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+        [DllImport("user32.dll")]
+        static extern int GetWindowRgn(IntPtr hwnd, IntPtr region);
+        [DllImport("user32.dll")]
+        static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
+        [DllImport("gdi32.dll")]
+        static extern bool PtInRegion(IntPtr region, int x, int y);
+        [DllImport("gdi32.dll")]
+        static extern int GetRgnBox(IntPtr region, out RECT rect);
+        [DllImport("gdi32.dll")]
+        static extern bool DeleteObject(IntPtr value);
+        [DllImport("dwmapi.dll")]
+        static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+        [DllImport("dwmapi.dll")]
+        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+        const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        [DllImport("winmm.dll")]
+        static extern uint timeBeginPeriod(uint period);
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
@@ -299,6 +325,38 @@ namespace FluentFlyoutDocker
 
             string action = args[0].ToLower();
 
+            // corner <hwnd> <round|none>: DWM 둥근 모서리. SetWindowRgn과 달리 아크릴 backdrop도 함께 자른다.
+            if (action == "corner" && args.Length >= 3)
+            {
+                int preference = args[2] == "round" ? 2 : 1;
+                return DwmSetWindowAttribute(ParseHwnd(args[1]), DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, 4) == 0 ? 0 : 1;
+            }
+
+            if (action == "inspect" && args.Length >= 2)
+            {
+                IntPtr hwnd = ParseHwnd(args[1]);
+                RECT r;
+                if (!GetWindowRect(hwnd, out r)) return 1;
+                int width = r.Right-r.Left, height=r.Bottom-r.Top;
+                IntPtr region=CreateRectRgn(0,0,0,0);
+                try
+                {
+                    int kind=GetWindowRgn(hwnd,region);
+                    int backdrop;
+                    if(DwmGetWindowAttribute(hwnd,38,out backdrop,4)!=0) backdrop=-1;
+                    StringBuilder parentName=new StringBuilder(64);
+                    GetClassName(GetParent(hwnd),parentName,parentName.Capacity);
+                    RECT client;
+                    GetClientRect(hwnd,out client);
+                    RECT clip;
+                    GetRgnBox(region,out clip);
+                    Console.WriteLine(string.Format("WINDOW screen:{0},{1},{2},{3} region:{4} corner:{5} center:{6} backdrop:{7} parent:{8} client:{9},{10} style:{11:X} clip:{12},{13}",
+                        r.Left,r.Top,width,height,kind,kind==0 || PtInRegion(region,0,0),kind==0 || PtInRegion(region,width/2,height/2),backdrop,parentName,client.Right,client.Bottom,GetWindowLong(hwnd,GWL_STYLE),clip.Right-clip.Left,clip.Bottom-clip.Top));
+                    return 0;
+                }
+                finally { DeleteObject(region); }
+            }
+
             // ==========================================
             // 1. DOCK: 실제 작업표시줄에 child HWND로 도킹
             // 인자: dock <childHwnd> <width> <height> <align: right|left> <offset> <vOffset> [monLeft,monTop,monRight,monBottom]
@@ -355,28 +413,18 @@ namespace FluentFlyoutDocker
 
                 int taskbarClientWidth = tbClientRect.Right - tbClientRect.Left;
                 int taskbarClientHeight = tbClientRect.Bottom - tbClientRect.Top;
+                int contentPadding = args.Length >= 9 ? Math.Max(0,Math.Min(128,int.Parse(args[8]))) : 0;
 
                 // 작업표시줄 DPI 스케일 감지
                 int dpi = GetWindowDpi(taskbarHwnd);
                 double scale = dpi / 96.0;
 
-                // 너비 및 높이: Electron HWND의 실제 physical rect 읽기 (DPI 재계산 왜곡 방지)
-                int widgetWidthPx = origRect.Right - origRect.Left;
-                int widgetHeightPx = origRect.Bottom - origRect.Top;
-
-                if (widgetWidthPx <= 0) widgetWidthPx = (int)Math.Round(logicalWidth * scale);
-                if (widgetHeightPx <= 0) widgetHeightPx = (int)Math.Round(logicalHeight * scale);
+                // Windows top-level 최소 높이와 무관하게 작업표시줄의 실제 세로 영역을 채운다.
+                int widgetWidthPx = (int)Math.Round(logicalWidth * scale);
+                int widgetHeightPx = taskbarClientHeight + contentPadding;
 
                 int physOffset = (int)Math.Round(logicalOffset * scale);
-                int physVOffset = (int)Math.Round(logicalVOffset * scale);
-
-                // 위치 계산: 수학적 중앙은 Win11 작업표시줄의 시각적 중앙보다 위에 보이므로 DPI-aware bias 추가
-                const double TaskbarVerticalBiasDip = 8.0; // 시각적 중앙선에 맞춰 조정
-                int centerY = (taskbarClientHeight - widgetHeightPx) / 2;
-                int biasPx = (int)Math.Round(TaskbarVerticalBiasDip * scale);
-                int maxY = Math.Max(0, taskbarClientHeight - widgetHeightPx);
-                // 기본 위치(중앙+bias)만 작업표시줄 안으로 제한하고, 사용자 세로 오프셋(설정 슬라이더)은 제한 없이 반영
-                int widgetY = Math.Max(0, Math.Min(centerY + biasPx, maxY)) + physVOffset;
+                int widgetY = 0;
 
                 int widgetX = 0;
                 if (align == "left")
@@ -396,7 +444,9 @@ namespace FluentFlyoutDocker
 
                 // 1) Window Style 변환: WS_POPUP 제거, WS_CHILD 추가
                 int style = GetWindowLong(childHwnd, GWL_STYLE);
-                style = (style & ~WS_POPUP) | WS_CHILD;
+                if ((style & WS_CHILD) == 0) SetProp(childHwnd,"AIUsageWidget.OriginalStyle",new IntPtr(style));
+                // WS_CAPTION/THICKFRAME/시스템 메뉴가 남으면 child client 높이에서 32px가 빠진다.
+                style = (style & ~WS_POPUP & ~0x00CF0000) | WS_CHILD;
                 SetWindowLong(childHwnd, GWL_STYLE, style);
 
                 // 2) Extended Style: ToolWindow 설정, WS_EX_NOACTIVATE 제거 (포커스/마우스 인터랙션 차단 방지)
@@ -442,6 +492,9 @@ namespace FluentFlyoutDocker
                 // 5) 위치 및 크기 설정
                 bool posOk = SetWindowPos(childHwnd, insertAfter, finalX, finalY, widgetWidthPx, widgetHeightPx,
                     SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                // Chromium이 별도로 차감하는 프레임 공간은 보상하되 실제 그리기·클릭 영역은 작업표시줄에 맞춘다.
+                IntPtr visibleRegion=CreateRectRgn(0,0,widgetWidthPx,taskbarClientHeight);
+                if(SetWindowRgn(childHwnd,visibleRegion,true)==0) DeleteObject(visibleRegion);
 
                 if (!posOk)
                 {
@@ -464,8 +517,8 @@ namespace FluentFlyoutDocker
                     origRect.Left, origRect.Top, origRect.Right - origRect.Left, origRect.Bottom - origRect.Top));
                 Console.WriteLine(string.Format("Electron HWND rect after docking = {0},{1} {2}x{3}",
                     afterRect.Left, afterRect.Top, afterRect.Right - afterRect.Left, afterRect.Bottom - afterRect.Top));
-                Console.WriteLine(string.Format("TaskbarHeight={0} WidgetHeight={1} CenterY={2} Bias={3} UserVOffset={4} FinalY={5} DPI={6}",
-                    taskbarClientHeight, widgetHeightPx, centerY, biasPx, physVOffset, widgetY, dpi));
+                Console.WriteLine(string.Format("TaskbarHeight={0} WidgetHeight={1} FinalY={2} DPI={3}",
+                    taskbarClientHeight, widgetHeightPx, widgetY, dpi));
                 Console.WriteLine(string.Format("Parent={0}", parentClassName));
                 Console.WriteLine(string.Format("DOCKED_OK taskbar:0x{0:X} widget:0x{1:X} client:{2},{3},{4},{5} screen:{6},{7},{8},{9} dpi:{10}",
                     taskbarHwnd.ToInt64(), childHwnd.ToInt64(), widgetX, widgetY, widgetWidthPx, widgetHeightPx,
@@ -488,11 +541,14 @@ namespace FluentFlyoutDocker
                 }
 
                 // 부모 분리
+                SetWindowRgn(childHwnd,IntPtr.Zero,true);
                 SetParent(childHwnd, IntPtr.Zero);
 
                 // 스타일 복원: WS_CHILD 제거, WS_POPUP 복원
                 int style = GetWindowLong(childHwnd, GWL_STYLE);
-                style = (style & ~WS_CHILD) | WS_POPUP;
+                IntPtr originalStyle = GetProp(childHwnd,"AIUsageWidget.OriginalStyle");
+                style = originalStyle != IntPtr.Zero ? unchecked((int)originalStyle.ToInt64()) : (style & ~WS_CHILD) | WS_POPUP;
+                RemoveProp(childHwnd,"AIUsageWidget.OriginalStyle");
                 SetWindowLong(childHwnd, GWL_STYLE, style);
 
                 int exStyle = GetWindowLong(childHwnd, GWL_EXSTYLE);
@@ -591,12 +647,35 @@ namespace FluentFlyoutDocker
             // 인자: watch <childHwnd> <expectedTaskbarHwnd>
             // 출력: CLICK (반복), DOCK_LOST (1회 출력 후 종료)
             // ==========================================
+            else if (action == "pointerwatch")
+            {
+                // 창 바깥에서 버튼을 놓아도 제스처를 종료한다. 좌표는 물리 픽셀이며 Electron에서 DIP로 변환한다.
+                // 기본 타이머 해상도(15.6ms)에서는 Sleep(16)이 약 31ms가 되어 이동이 끊기므로 1ms로 올리고 바뀐 좌표만 보낸다.
+                timeBeginPeriod(1);
+                int lastX = int.MinValue, lastY = int.MinValue;
+                while (true)
+                {
+                    POINT p;
+                    if (!GetCursorPos(out p)) return 1;
+                    bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                    if (!down || p.X != lastX || p.Y != lastY)
+                    {
+                        Console.WriteLine(string.Format("{0}:{1},{2}", down ? "MOVE" : "END", p.X, p.Y));
+                        Console.Out.Flush();
+                        lastX = p.X; lastY = p.Y;
+                    }
+                    if (!down) return 0;
+                    Thread.Sleep(4);
+                }
+            }
             else if (action == "watch" && args.Length >= 3)
             {
                 IntPtr widget = ParseHwnd(args[1]);
                 IntPtr taskbar = ParseHwnd(args[2]);
                 bool previousDown = false;
                 bool pressedOnWidget = false;
+                bool dragging = false;
+                POINT pressPoint = new POINT();
 
                 while (IsWindow(widget))
                 {
@@ -614,12 +693,21 @@ namespace FluentFlyoutDocker
                     if (down != previousDown)
                     {
                         bool onWidget = IsCursorOnWidget(widget, taskbar);
-                        if (down) pressedOnWidget = onWidget;
-                        else if (pressedOnWidget && onWidget)
+                        if (down) { pressedOnWidget = onWidget; dragging = false; GetCursorPos(out pressPoint); }
+                        else if (pressedOnWidget && onWidget && !dragging)
                         {
                             Console.WriteLine("CLICK");
                             Console.Out.Flush();
                         }
+                    }
+
+                    POINT cursor;
+                    if (down && pressedOnWidget && !dragging && GetCursorPos(out cursor)
+                        && (Math.Abs(cursor.X - pressPoint.X) > 6 || Math.Abs(cursor.Y - pressPoint.Y) > 6))
+                    {
+                        dragging = true;
+                        Console.WriteLine("DRAG_START");
+                        Console.Out.Flush();
                     }
 
                     previousDown = down;

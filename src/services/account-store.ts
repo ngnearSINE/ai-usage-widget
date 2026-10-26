@@ -5,6 +5,7 @@ import type { AccountConfig, WidgetConfig } from '../common/types.js'
 import type { DetectedApp } from './local-app-detector.js'
 import { mergeClaudeAccounts } from './claude-account-migration.js'
 import { DEFAULT_API_ENDPOINT } from './usage-push.js'
+import { moveAccountBefore } from '../common/widget-layout.js'
 
 const DEFAULT_CONFIG: WidgetConfig = {
   theme: '1a',
@@ -18,13 +19,41 @@ const DEFAULT_CONFIG: WidgetConfig = {
   colorByUsage: true,
   showCardBackground: true,
   showUsedPercent: false,
-  placementMode: 'docked',
+  placementMode: 'floating',
   alwaysOnTop: true,
   openAtLogin: true,
   doubleClickToOpenPopup: false,
   apiPushEnabled: false,
   apiEndpoint: DEFAULT_API_ENDPOINT,
-  apiScreen: 1
+  apiScreen: 1,
+  uiVersion: 3,
+  appearance: 'dark',
+  barStyle: 'silk',
+  motion: 'subtle',
+  accentColor: '#a99bff',
+  fontScale: 100,
+  cardGap: 6,
+  hideDisconnected: true,
+  showResetTime: true,
+  showServiceName: true,
+  backgroundEffect: 'acrylic',
+  design: 'rich',
+  valueSource: {},
+  warnPercent: 20,
+  critPercent: 10,
+  showPace: true,
+  sortLowFirst: false,
+  notifyEnabled: true,
+  notifyLow: true,
+  notifyPace: true,
+  notifyReset: false,
+  notifyMuted: [],
+  notifyUnused: true,
+  trayShowNumber: true,
+  clickThrough: false,
+  shortcuts: { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' },
+  rememberPerMonitor: true,
+  layoutsByMonitor: {}
 }
 
 // 쿼터 수치는 전부 실시간 조회로 채운다. 프리셋 숫자를 넣어두면 조회 실패 시 그게 정상값처럼 표시된다.
@@ -86,7 +115,18 @@ export class AccountStore {
     try {
       if (fs.existsSync(this.configPath)) {
         const raw = fs.readFileSync(this.configPath, 'utf-8')
-        return { ...DEFAULT_CONFIG, ...JSON.parse(raw) }
+        const saved = JSON.parse(raw)
+        // 자유 창 도입 시 한 번만 새 기본 배치를 적용하고 기존 외형·계정 설정은 보존한다.
+        const config = { ...DEFAULT_CONFIG, ...saved }
+        if (!saved.uiVersion || saved.uiVersion < 2) {
+          config.placementMode = 'floating'
+        }
+        // 카드형 대시보드(uiVersion 3)에서 카드 간격 기본값이 12 → 6으로 바뀌었다. 직접 바꾼 값은 보존한다.
+        if (!saved.uiVersion || saved.uiVersion < 3) {
+          if (saved.cardGap === undefined || saved.cardGap === 12) config.cardGap = DEFAULT_CONFIG.cardGap
+        }
+        config.uiVersion = DEFAULT_CONFIG.uiVersion
+        return config
       }
     } catch (err) {
       console.error('[AccountStore] Failed to load config, using default', err)
@@ -203,6 +243,15 @@ export class AccountStore {
     const temp = this.accounts[idx]
     this.accounts[idx] = this.accounts[targetIdx]
     this.accounts[targetIdx] = temp
+    this.saveAccounts(this.accounts)
+  }
+
+  public moveAccount(id: string, beforeId: string | null): void {
+    this.saveAccounts(moveAccountBefore(this.accounts, id, beforeId))
+  }
+
+  public hideAccount(id: string, hidden: boolean): void {
+    this.accounts = this.accounts.map(a => a.id === id ? { ...a, hidden } : a)
     this.saveAccounts(this.accounts)
   }
 }
