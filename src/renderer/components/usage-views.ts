@@ -151,11 +151,13 @@ function timeline(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o:
     if (vert) return `<text x="${px + 11}" y="${py - 6}" text-anchor="middle" fill="var(--muted)" font-size="9">${name}</text><rect x="${px}" y="${py}" width="10" height="${len}" rx="1" fill="var(--svg-track)"/><rect x="${px}" y="${py + len - el}" width="10" height="${el}" rx="1" fill="var(--svg-elapsed)"/>${t.join('')}<rect x="${px + 13}" y="${py}" width="9" height="${len}" rx="1" fill="var(--svg-track)"/><rect x="${px + 13}" y="${py + len - fuel}" width="9" height="${fuel}" rx="1" fill="${c}"/>${now}<text x="${px + 11}" y="${py + len + 15}" text-anchor="middle" fill="${vc}" font-size="12" font-weight="650">${shown(x, w)}%</text>`
     return `<text x="${px}" y="${py - 6}" fill="var(--muted)" font-size="10">${name}</text><text x="${px + len}" y="${py - 6}" text-anchor="end" fill="var(--dim)" font-size="9.5">${w.resetMs === null ? '' : `리셋 ${fmtDuration(w.resetMs)} 뒤`}</text><rect x="${px}" y="${py}" width="${len}" height="10" rx="1" fill="var(--svg-track)"/><rect x="${px}" y="${py}" width="${el}" height="10" rx="1" fill="var(--svg-elapsed)"/>${t.join('')}<rect x="${px}" y="${py + 13}" width="${len}" height="6" rx="1" fill="var(--svg-track)"/><rect x="${px}" y="${py + 13}" width="${fuel}" height="6" rx="1" fill="${c}"/>${now}<text x="${px + len + 8}" y="${py + 18}" fill="${vc}" font-size="13" font-weight="650">${shown(x, w)}%</text>`
   }
-  const names = (w: QuotaWindow, vert: boolean) => w.key === 'weekly' ? (vert ? '주간' : '주간 (7일)') : '5시간'
-  const body = v ? ws.map((w, i) => lane(14 + i * 48, 22, 200, w, w.key === 'weekly' ? 7 : 5, names(w, true), true)).join('')
-    : ws.map((w, i) => lane(4, 20 + i * 58, 240, w, w.key === 'weekly' ? 7 : 5, names(w, false), false)).join('')
+  const names = (w: QuotaWindow, vert: boolean) => w.period === 'weekly' && !vert ? '주간 (7일)' : w.label
+  // 눈금: 5시간은 1시간, 주간은 하루, 월간은 한 주 간격.
+  const ticks = (w: QuotaWindow) => w.period === 'weekly' ? 7 : w.period === 'monthly' ? 4 : 5
+  const body = v ? ws.map((w, i) => lane(14 + i * 48, 22, 200, w, ticks(w), names(w, true), true)).join('')
+    : ws.map((w, i) => lane(4, 20 + i * 58, 240, w, ticks(w), names(w, false), false)).join('')
   // 주간 시간축 안에서 현재 5시간 창의 위치를 괄호로 표시해 두 주기의 포함 관계를 보여 준다.
-  const bracket = v || !m.ww || !m.w5 || m.ww.elapsed === null || m.w5.elapsed === null ? '' : (() => {
+  const bracket = v || !m.ww || !m.w5 || m.w5.period !== '5h' || m.ww.elapsed === null || m.w5.elapsed === null ? '' : (() => {
     const px = 4 + 240 * m.ww!.elapsed!, wd = Math.max(3, 240 * 5 / 168), x0 = px - wd * m.w5!.elapsed!
     return `<path d="M${x0.toFixed(1)} 33v3h${wd.toFixed(1)}v-3" stroke="var(--accent)" fill="none" stroke-width="1"/><path d="M${x0.toFixed(1)} 36 L4 74 M${(x0 + wd).toFixed(1)} 36 L244 74" stroke="var(--accent)" stroke-width=".6" opacity=".3" fill="none"/>`
   })()
@@ -308,6 +310,6 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
   return `<div ${cardAttrs(u, sev, '', style)} title="${titleOf(u, m)}">
-    <div class="card-head">${logo(u, x)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" title="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+    <div class="card-head">${logo(u, x)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" title="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

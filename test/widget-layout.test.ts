@@ -19,7 +19,7 @@ test('보조 모니터 하단과 자동 숨김 작업표시줄을 감지하고 �
   assert.equal(isDockTarget({x:2000,y:875},bounds,{...bounds,y:-152,height:1032}),false)
 })
 test('자동 숨김은 미연결만 제외하고 마지막 실측값·순서·수동 숨김을 유지한다', () => {
-  const usages=previewUsages()
+  const usages=previewUsages().slice(0,3)
   usages[0].status='error'; usages[1].status='stale'
   const accounts:AccountConfig[]=usages.map(u=>({id:u.id,name:u.name,provider:u.provider,enabled:true}))
   accounts[2].hidden=true

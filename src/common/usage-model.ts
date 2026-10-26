@@ -3,6 +3,11 @@ import type { AccountUsage, QuotaInfo } from './types.js'
 /** 대시보드 디자인과 그 디자인이 크기에 따라 바뀌는 규칙. 렌더러와 테스트가 함께 쓰는 순수 계산만 둔다. */
 export const WINDOW_5H = 5 * 3600e3
 export const WINDOW_7D = 7 * 86400e3
+export const WINDOW_30D = 30 * 86400e3
+/** 한도의 실제 주기. 첫 번째 칸(key '5h')은 서비스에 따라 5시간 또는 월간이다. */
+export type WindowPeriod = '5h' | 'weekly' | 'monthly'
+export const PERIOD_LEN: Record<WindowPeriod, number> = { '5h': WINDOW_5H, weekly: WINDOW_7D, monthly: WINDOW_30D }
+const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': ['5시간', '5h'], weekly: ['주간', '주'], monthly: ['월간', '월'] }
 export type DesignId = 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
 export type ValueSource = 'weekly' | '5h' | 'tight'
 export const DESIGNS: Array<[DesignId, string, string]> = [
@@ -12,7 +17,9 @@ export const DESIGNS: Array<[DesignId, string, string]> = [
 export const SOURCE_LABEL: Record<ValueSource, string> = { weekly: '주간', '5h': '5시간', tight: '빠듯한 쪽' }
 
 export interface QuotaWindow {
+  /** 칸 이름. 설정(기준 선택·알림 끄기)과 기록에 저장되는 값이라 주기와 따로 둔다. */
   key: '5h' | 'weekly'
+  period: WindowPeriod
   label: string
   short: string
   left: number
@@ -39,8 +46,8 @@ export interface ServiceModel {
 
 const clampPct = (n: number) => Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0
 
-export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now()): QuotaWindow {
-  const len = key === '5h' ? WINDOW_5H : WINDOW_7D
+export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now(), period: WindowPeriod = key): QuotaWindow {
+  const len = PERIOD_LEN[period]
   const parsed = q.resetTime ? Date.parse(q.resetTime) - now : q.timeUntilResetMs
   const resetMs = Number.isFinite(parsed) && parsed! >= 0 ? Math.min(parsed!, len) : null
   const left = clampPct(q.percentLeft), used = 100 - left
@@ -48,7 +55,7 @@ export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now()
   const rate = elapsed === null ? 0 : used / (elapsed * len)
   const toEmptyMs = elapsed === null ? null : rate > 0 ? left / rate : Infinity
   return {
-    key, label: key === '5h' ? '5시간' : '주간', short: key === '5h' ? '5h' : '주',
+    key, period, label: PERIOD_LABEL[period][0], short: PERIOD_LABEL[period][1],
     left, used, resetMs, elapsed,
     expectedLeft: elapsed === null ? null : Math.round((1 - elapsed) * 100),
     toEmptyMs, runsOut: used > 0 && toEmptyMs !== null && resetMs !== null && toEmptyMs < resetMs,
@@ -58,7 +65,7 @@ export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now()
 
 export function serviceModel(u: AccountUsage, now = Date.now()): ServiceModel {
   // 주간 전용 계정은 기본 한도가 곧 주간 한도다.
-  const w5 = u.isWeeklyOnly ? undefined : quotaWindow(u.primaryQuota, '5h', now)
+  const w5 = u.isWeeklyOnly ? undefined : quotaWindow(u.primaryQuota, '5h', now, u.primaryKind === 'monthly' ? 'monthly' : '5h')
   const ww = u.isWeeklyOnly ? quotaWindow(u.primaryQuota, 'weekly', now) : u.weeklyQuota ? quotaWindow(u.weeklyQuota, 'weekly', now) : undefined
   return { id: u.id, name: u.name, provider: u.provider, brand: u.brandColor, available: ['ready', 'stale'].includes(u.status), w5, ww }
 }
@@ -81,8 +88,7 @@ export function lowestLeft(m: ServiceModel) { return Math.min(...windowsOf(m).ma
  */
 export function paceWarning(w: QuotaWindow) {
   if (!w.runsOut || w.resetMs === null || w.toEmptyMs === null) return false
-  const len = w.key === '5h' ? WINDOW_5H : WINDOW_7D
-  return w.resetMs - w.toEmptyMs >= len * .15 && w.left <= 50
+  return w.resetMs - w.toEmptyMs >= PERIOD_LEN[w.period] * .15 && w.left <= 50
 }
 
 export function severity(m: ServiceModel, warn: number, crit: number): '' | 'warn' | 'crit' {

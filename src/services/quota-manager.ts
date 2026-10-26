@@ -1,6 +1,7 @@
 import { AntigravityCliClient } from './antigravity-cli-client.js'
 import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
+import { GrokCliClient } from './grok-cli-client.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { retainedUsage } from '../common/widget-layout.js'
@@ -138,6 +139,8 @@ export class QuotaManager {
               usage = await fetchClaudeUsage(acc)
             } else if (acc.provider === 'codex') {
               usage = await CodexLocalClient.fetchUsage(acc)
+            } else if (acc.provider === 'xai') {
+              usage = await GrokCliClient.fetchUsage(acc)
             } else if (QuotaManager.isManualAccount(acc)) {
               // 실시간 조회 대상이 아닌 수동 입력 계정: 입력값이 곧 데이터
               usage = this.createInitialUsage(acc)

@@ -172,8 +172,9 @@ function alertsTab(s: AppState) {
   // 서비스마다 실제로 있는 한도만 보여 준다(주간 전용 계정은 주간만).
   const rows = s.accounts.filter(a => a.enabled).map(a => {
     const u = s.usages.find(u => u.id === a.id)
-    const keys: Array<['5h' | 'weekly', string]> = u?.isWeeklyOnly ? [['weekly', '주간']] : u && !u.weeklyQuota ? [['5h', '5시간']] : [['5h', '5시간'], ['weekly', '주간']]
-    return `<div class="alert-row"><span class="alert-name">${renderAiIcon(a.provider, a.name, c.iconStyle, 20)}<b>${escapeText(a.name)}</b></span>${[['5h', '5시간'], ['weekly', '주간']].map(([k, label]) => keys.some(x => x[0] === k)
+    const first = u?.primaryKind === 'monthly' ? '월간' : '5시간'
+    const keys: Array<['5h' | 'weekly', string]> = u?.isWeeklyOnly ? [['weekly', '주간']] : u && !u.weeklyQuota ? [['5h', first]] : [['5h', first], ['weekly', '주간']]
+    return `<div class="alert-row"><span class="alert-name">${renderAiIcon(a.provider, a.name, c.iconStyle, 20)}<b>${escapeText(a.name)}</b></span>${[['5h', first], ['weekly', '주간']].map(([k, label]) => keys.some(x => x[0] === k)
       ? `<label class="alert-check"><input type="checkbox" data-mute="${escapeText(a.id)}:${k}" ${muted.has(`${a.id}:${k}`) ? '' : 'checked'} ${on ? '' : 'disabled'}><span>${label}</span></label>` : '<span class="alert-check none">—</span>').join('')}</div>`
   }).join('')
   return section('Windows 알림', toggle('notifyEnabled', '알림 사용', '켜 두면 아래 조건에서 Windows 알림을 보냅니다.', on)

@@ -7,13 +7,14 @@ import { LocalLspClient } from './local-lsp-client.js'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { ClaudeDesktopClient } from './claude-desktop-client.js'
 import { findClaudeDataDirs } from './claude-desktop-oauth.js'
+import { GrokCliClient, readGrokAuth } from './grok-cli-client.js'
 
 const execAsync = promisify(exec)
 
 export interface DetectedApp {
   id: string
   name: string
-  provider: 'antigravity' | 'claude' | 'codex' | 'google' | 'openai' | 'custom'
+  provider: 'antigravity' | 'claude' | 'codex' | 'google' | 'openai' | 'xai' | 'custom'
   installed: boolean
   running: boolean
   description: string
@@ -120,6 +121,20 @@ export class LocalAppDetector {
       description: codexLoggedIn ? '로컬 세션 감지됨 (연결 완료)' : (codexInstalled ? '설치됨 (연결 가능)' : '미설치 (기본 프리셋 제공)'),
       iconLetter: 'X',
       brandColor: '#6366F1'
+    })
+
+    // 4. Grok CLI 감지 (로그인 토큰이 있으면 연결, 만료 여부는 조회 때 안내)
+    const grokInstalled = GrokCliClient.isInstalled()
+    const grokAuth = readGrokAuth()
+    results.push({
+      id: 'local-grok',
+      name: 'Grok',
+      provider: 'xai',
+      installed: grokInstalled,
+      running: !!grokAuth,
+      description: grokAuth ? 'CLI 로그인 세션 감지됨' : (grokInstalled ? '설치됨 (grok login 필요)' : '미설치'),
+      iconLetter: 'G',
+      brandColor: '#A1A1AA'
     })
 
     return results

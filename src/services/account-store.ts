@@ -3,6 +3,7 @@ import path from 'node:path'
 import { app } from 'electron'
 import type { AccountConfig, WidgetConfig } from '../common/types.js'
 import type { DetectedApp } from './local-app-detector.js'
+import { GrokCliClient } from './grok-cli-client.js'
 import { mergeClaudeAccounts } from './claude-account-migration.js'
 import { DEFAULT_API_ENDPOINT } from './usage-push.js'
 import { moveAccountBefore } from '../common/widget-layout.js'
@@ -77,6 +78,12 @@ export const DEFAULT_ACCOUNTS: AccountConfig[] = [
     name: 'Codex CLI',
     provider: 'codex',
     enabled: true
+  },
+  {
+    id: 'local-grok',
+    name: 'Grok',
+    provider: 'xai',
+    enabled: true
   }
 ]
 
@@ -109,6 +116,13 @@ export class AccountStore {
 
     this.config = this.loadConfig()
     this.accounts = this.loadAccounts()
+    // Grok 연동 이전에 계정 목록을 저장한 사용자에게 한 번만 Grok을 추가한다(이 PC에 Grok CLI가 있을 때만, 지운 뒤엔 다시 넣지 않는다).
+    if (!this.config.grokOffered) {
+      if (GrokCliClient.isInstalled() && !this.accounts.some(a => a.provider === 'xai')) {
+        this.saveAccounts([...this.accounts, structuredClone(DEFAULT_ACCOUNTS.find(a => a.id === 'local-grok')!)])
+      }
+      this.saveConfig({ ...this.config, grokOffered: true })
+    }
   }
 
   private loadConfig(): WidgetConfig {

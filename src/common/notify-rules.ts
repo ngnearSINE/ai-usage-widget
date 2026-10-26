@@ -1,5 +1,5 @@
 import type { AccountUsage, WidgetConfig } from './types.js'
-import { fmtDuration, paceWarning, serviceModel, unusedWeekly, windowsOf, WINDOW_5H, WINDOW_7D, type QuotaWindow } from './usage-model.js'
+import { fmtDuration, paceWarning, PERIOD_LEN, serviceModel, unusedWeekly, windowsOf, type QuotaWindow } from './usage-model.js'
 
 /**
  * 알림 판정. 사용량이 갱신될 때마다 호출되며, 같은 리셋 주기 안에서는 종류별로 한 번만 알린다.
@@ -17,7 +17,7 @@ const PERIOD_SLACK = 30 * 60e3 // 리셋 시각이 조회마다 조금씩 흔들
 function periodOf(w: QuotaWindow, now: number, prev?: WindowRecord): { resetAt: number | null; period: string } {
   if (w.resetMs === null) {
     // 리셋 시각을 모르면 주기 길이 단위로 나눈 칸을 주기로 쓴다.
-    const len = w.key === '5h' ? WINDOW_5H : WINDOW_7D
+    const len = PERIOD_LEN[w.period]
     return { resetAt: null, period: `b${Math.floor(now / len)}` }
   }
   const resetAt = now + w.resetMs

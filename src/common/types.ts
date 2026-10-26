@@ -37,6 +37,7 @@ export interface AccountUsage {
   primaryQuota: QuotaInfo // 5시간 또는 기본 한도
   weeklyQuota?: QuotaInfo // 주간 한도
   isWeeklyOnly?: boolean // ChatGPT Pro 등 5시간 세션 쿼터 없이 1주일 쿼터만 존재하는 계정 여부
+  primaryKind?: 'monthly' // 기본 한도가 5시간이 아니라 월간 크레딧인 계정(Grok)
   models?: ModelQuotaDetail[]
   updatedAt: string
 }
@@ -90,6 +91,7 @@ export interface WidgetConfig {
   showServiceName?: boolean
   opacity?: number // 모든 창 배경 불투명도 0~100 (Windows Terminal과 같은 뜻, 기본 70)
   useAcrylic?: boolean // 배경 뒤를 흐리게(아크릴). 끄면 흐림 없이 비친다 (기본 켬)
+  grokOffered?: boolean // 기존 계정 목록에 Grok을 한 번 추가했는지
   design?: 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
   valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
   warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)

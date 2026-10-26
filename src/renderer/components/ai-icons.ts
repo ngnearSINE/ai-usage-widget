@@ -57,6 +57,14 @@ const GENERIC_AI_SVG = `
 </svg>
 `
 
+// 6. Grok (xAI) — 원과 사선으로 그린 단순화한 표식
+const GROK_SVG = `
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" width="16" height="16">
+  <path d="M17.5 5.2A8 8 0 1 0 19.6 15"/>
+  <path d="M6 20.5 21 3.5"/>
+</svg>
+`
+
 export interface AiBrandInfo {
   name: string
   svg: string
@@ -130,6 +138,17 @@ export function getAiBrand(provider: string, accountName: string = ''): AiBrandI
       name: 'Gemini',
       svg: GEMINI_SVG,
       brandColor: '#4E82EE', // 제미나이 블루
+      bgMono: '#374151',
+      colorMono: '#D1D5DB'
+    }
+  }
+
+  // 5. Grok (xAI)
+  if (normProvider === 'xai' || normName.includes('grok')) {
+    return {
+      name: 'Grok',
+      svg: GROK_SVG,
+      brandColor: '#A1A1AA', // 흑백 브랜드라 두 테마에서 모두 보이는 중간 회색
       bgMono: '#374151',
       colorMono: '#D1D5DB'
     }

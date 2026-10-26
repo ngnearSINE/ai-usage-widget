@@ -128,6 +128,7 @@ function servicePageUrl(accountId: string) {
   const key = `${acc?.provider || ''} ${acc?.name || ''}`.toLowerCase()
   if (key.includes('claude')) return 'https://claude.ai/settings/usage'
   if (key.includes('codex') || key.includes('openai') || key.includes('gpt')) return 'https://chatgpt.com/codex/settings/usage'
+  if (key.includes('xai') || key.includes('grok')) return 'https://grok.com/'
   return null
 }
 

@@ -59,7 +59,7 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   const quotas: Array<QuotaInfo | undefined> = [u.isWeeklyOnly ? undefined : u.primaryQuota, u.isWeeklyOnly ? u.primaryQuota : u.weeklyQuota]
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas">${quotas.map((q, i) => {
     const value = available && q ? clamp(config.showUsedPercent ? q.percentUsed : q.percentLeft) : null
-    const label = `${i === 0 ? '5시간' : '전체(주간)'} ${config.showUsedPercent ? '사용한 양' : '남은 양'}`
+    const label = `${i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : '전체(주간)'} ${config.showUsedPercent ? '사용한 양' : '남은 양'}`
     return `<div class="mini-quota ${i === 1 ? 'secondary' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
   }).join('')}</div></div>`
 }
@@ -195,7 +195,8 @@ function bindDelegated(container: HTMLElement) {
     if (src) {
       e.stopPropagation()
       const id = src.dataset.src!, now = lastState.config.valueSource?.[id] || 'weekly'
-      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
+      const monthly = lastState.usages.find(u => u.id === id)?.primaryKind === 'monthly'
+      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: k === '5h' && monthly ? '월간' : SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
         { key: 'all', label: '모든 카드에 같은 기준 적용', run: () => { const all: Record<string, ValueSource> = {}; for (const u of lastState.usages) all[u.id] = now; void update({ valueSource: all }) } }])
       return
     }
