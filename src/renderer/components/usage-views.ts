@@ -50,9 +50,45 @@ const color = (x: ViewContext, m: ServiceModel, w: QuotaWindow) =>
 const valColor = (x: ViewContext, w: QuotaWindow) => x.colorByUsage && w.left <= x.warn ? (w.left <= x.crit ? 'var(--danger)' : 'var(--warn)') : 'var(--ink)'
 const remainWord = (x: ViewContext) => x.showUsed ? '사용' : '남음'
 
+/* ---------- 마우스 설명: 요소마다 무엇인지와 값, 카드에는 작아서 생략된 정보 ---------- */
+const clock = (ms: number) => {
+  const d = new Date(Date.now() + ms), p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+const amountWord = (x: ViewContext) => x.showUsed ? '사용한 양' : '남은 양'
+const resetLine = (w: QuotaWindow) => w.resetMs === null ? '리셋 시각 정보 없음' : `리셋 ${fmtDuration(w.resetMs)} 뒤 · ${clock(w.resetMs)}`
+export function tipWindow(m: ServiceModel, w: QuotaWindow, x: ViewContext) {
+  return [`${w.label} ${amountWord(x)} ${shown(x, w)}% (막대)`, resetLine(w), noteOf(w).t, m.name].join('\n')
+}
+export function tipPace(w: QuotaWindow, x: ViewContext) {
+  if (w.expectedLeft === null) return ''
+  const diff = w.left - w.expectedLeft
+  return [`${w.label} 페이스 기준 (흰 눈금)`, `고르게 썼다면 지금 ${x.showUsed ? `${100 - w.expectedLeft}% 썼어야` : `${w.expectedLeft}% 남아 있어야`} 해요`,
+    diff >= 0 ? `지금은 기준보다 ${diff}%p 여유 있게 쓰는 중` : `지금은 기준보다 ${-diff}%p 빨리 쓰는 중`].join('\n')
+}
+export function tipOther(w: QuotaWindow, x: ViewContext) {
+  return [`${w.label} ${amountWord(x)} ${shown(x, w)}% (색 눈금)`, resetLine(w), noteOf(w).t].join('\n')
+}
+const hhmm = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '' }
+function cardTip(u: AccountUsage, m: ServiceModel, x: ViewContext) {
+  const h = headline(m, x)
+  return esc([u.name, u.tier || '', ...windowsOf(m).map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
+    h.t, `${u.status === 'stale' ? '갱신 지연 · 마지막 확인' : '확인'} ${hhmm(u.updatedAt)}`].filter(Boolean).join('\n'))
+}
+
 const bar = (x: ViewContext, m: ServiceModel, w: QuotaWindow, vert = false) => {
-  const e = x.showPace ? expected(x, w) : null
-  return `<div class="track"><div class="fill" style="--c:${color(x, m, w)};${vert ? `height:${shown(x, w)}%` : `width:${shown(x, w)}%`}"></div>${e === null ? '' : vert ? `<i class="pace" style="bottom:calc(${e}% - 1px)"></i>` : `<i class="pace" style="left:calc(${e}% - 1px)"></i>`}</div>`
+  const e = x.showPace ? expected(x, w) : null, pt = esc(tipPace(w, x))
+  return `<div class="track" data-tip="${esc(tipWindow(m, w, x))}"><div class="fill" style="--c:${color(x, m, w)};${vert ? `height:${shown(x, w)}%` : `width:${shown(x, w)}%`}"></div>${e === null ? '' : vert ? `<i class="pace" data-tip="${pt}" style="bottom:calc(${e}% - 1px)"></i>` : `<i class="pace" data-tip="${pt}" style="left:calc(${e}% - 1px)"></i>`}</div>`
+}
+/**
+ * 한 줄 막대: 막대 = 큰 숫자 기준 한도, 흰 눈금 = 그 한도의 페이스, 막대 아래 가는 보조 막대 = 다른 한도(보통 5시간).
+ * 이름이 빠지는 작은 카드에서 두 줄 대신 쓴다. 보조 표시는 막대 위로 튀어나오지 않게 아래에 두어 위쪽 숫자와 겹치지 않는다.
+ */
+const bar1 = (x: ViewContext, m: ServiceModel) => {
+  const { main, other } = pickWindow(m, x.source(m.id))
+  if (!other) return bar(x, m, main)
+  const sub = `<div class="sub-bar" data-tip="${esc(tipOther(other, x))}"><i style="width:${shown(x, other)}%;--c:${color(x, m, other)}"></i></div>`
+  return bar(x, m, main).replace(/<\/div>$/, `${sub}</div>`).replace('class="track"', 'class="track with-sub"')
 }
 const num = (x: ViewContext, w: QuotaWindow, size: number) =>
   `<span class="big" style="font-size:${Math.round(size)}px;color:${valColor(x, w)}">${shown(x, w)}<span class="unit" style="font-size:${Math.round(size * .44)}px">%</span></span>`
@@ -202,10 +238,11 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
     const { main } = pickWindow(m, x.source(m.id)), ws = windowsOf(m)
     if (v) return `<div class="c-vbars">${ws.map(w => `<div class="vbar">${bar(x, m, w, true)}<span class="num row-val" style="font-size:12px;color:${valColor(x, w)}">${shown(x, w)}</span>${c.h >= 120 ? `<span class="cap">${w.short}</span>` : ''}</div>`).join('')}</div>`
     // 아주 작으면 숫자 아래에 막대, 그만큼 높이가 없으면 막대 옆에 숫자.
-    if (c.w < 110) return c.h >= 30 ? `<div class="c-under">${num(x, main, 14)}${bar(x, m, main)}</div>` : `<div class="c-row nocap" style="flex:1;grid-template-columns:1fr auto">${bar(x, m, main)}${num(x, main, 13)}</div>`
-    const two = c.h >= 33 && c.w >= 140, cap = c.w >= 140, reset = c.w >= 420
-    const r = (w: QuotaWindow) => `<div class="c-row ${cap ? '' : 'nocap'} ${reset ? 'reset' : ''}">${cap ? `<span class="cap">${c.w >= 260 ? w.label : w.short}</span>` : ''}${bar(x, m, w)}${smallVal(x, w)}${reset ? `<span class="cap">${fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
-    return `<div class="c-rows">${(two ? ws : [main]).map(r).join('')}</div>`
+    if (c.w < 110) return c.h >= 30 ? `<div class="c-under">${num(x, main, 14)}${bar1(x, m)}</div>` : `<div class="c-row nocap" style="flex:1;grid-template-columns:1fr auto">${bar1(x, m)}${num(x, main, 13)}</div>`
+    // 두 줄 여부는 높이로만 정한다(폭으로 정하면 계정 표식이 붙은 카드만 한 줄이 되어 격자가 들쭉날쭉해진다).
+    const two = c.h >= 33, cap = c.w >= 120, reset = c.w >= 420
+    const r = (w: QuotaWindow, one = false) => `<div class="c-row ${cap ? '' : 'nocap'} ${reset ? 'reset' : ''}">${cap ? `<span class="cap">${c.w >= 260 ? w.label : w.short}</span>` : ''}${one ? bar1(x, m) : bar(x, m, w)}${smallVal(x, w)}${reset ? `<span class="cap">${fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
+    return `<div class="c-rows">${two ? ws.map(w => r(w)).join('') : r(main, true)}</div>`
   },
   rings(m, x, c, v) {
     const { main } = pickWindow(m, x.source(m.id))
@@ -254,7 +291,7 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
       return `<div class="c-num">${c.h >= 46 ? `<span class="cap">${main.label}</span>` : ''}${num(x, main, size)}</div><span class="c-sep"></span><div class="c-rows">${windowsOf(m).map(r).join('')}</div>`
     }
     // 좁으면: 높이가 되면 숫자 아래 상태 문장, 아주 작으면 숫자 옆에 두 한도를 가는 막대로(숫자 디자인과 구분).
-    const micro = `<div class="c-micro">${windowsOf(m).map(ww => bar(x, m, ww)).join('')}</div>`
+    const micro = `<div class="c-micro">${bar1(x, m)}</div>`
     if (c.h >= 44) return `<div class="c-num" style="align-items:center">${num(x, main, Math.min(size, 30))}${c.w >= 110 ? `<span class="c-status ${status.hot ? 'hot' : ''}" style="margin-top:5px">${status.t}</span>` : micro}</div>`
     return `${c.w >= 190 ? `<span class="c-status ${status.hot ? 'hot' : ''}" style="flex:1;text-align:right">${status.t}</span>` : micro}<div class="c-num inline">${num(x, main, size)}</div>`
   },
@@ -276,12 +313,11 @@ const logo = (u: AccountUsage, x: ViewContext, tagged = true) => {
 }
 const cardAttrs = (u: AccountUsage, sev: string, cls: string, style = '') =>
   `class="ucard ${cls} ${sev ? 'sev-' + sev : ''} ${u.status === 'stale' ? 'is-stale' : ''}" data-card="${esc(u.id)}" draggable="true" style="--brand:${hex(u.brandColor)};${style}"`
-const titleOf = (u: AccountUsage, m: ServiceModel) => esc(`${u.name} · ${windowsOf(m).map(w => `${w.label} ${w.left}% 남음`).join(' · ')}${u.status === 'stale' ? ' · 갱신 지연' : ''}`)
 
 function offlineCard(u: AccountUsage, x: ViewContext, box: { w: number; h: number }, style: string) {
   const msg = u.status === 'loading' ? '확인 중' : '연결 안 됨'
   const compact = box.h < 90
-  return `<div ${cardAttrs(u, '', compact ? 'compact is-offline center' : 'is-offline', style)} title="${esc(u.errorMessage || msg)}">${compact
+  return `<div ${cardAttrs(u, '', compact ? 'compact is-offline center' : 'is-offline', style)} data-tip="${esc([u.name, u.errorMessage || msg].join('\n'))}">${compact
     ? `<div class="c-id">${logo(u, x)}${box.w >= 220 ? `<span class="svc">${esc(u.name)}</span>` : ''}</div><div class="c-main"><span class="c-status">${msg}</span></div>`
     : `<div class="card-head">${logo(u, x)}<span class="svc">${esc(u.name)}</span></div><div class="body offline-body"><span class="lbl">${msg}</span>${box.h >= 140 && u.errorMessage ? `<span class="cap offline-detail">${esc(u.errorMessage)}</span>` : ''}</div>`}</div>`
 }
@@ -295,14 +331,14 @@ function compactCard(u: AccountUsage, m: ServiceModel, design: DesignId, x: View
       : windowsOf(m).map(w => `${W >= 120 ? `<span class="cap">${w.short}</span>` : ''}${smallVal(x, w)}`).join('')
     const art = design === 'battery' ? `<div style="display:flex">${batterySVG(m, x, main, Math.min(18, (W - 6) / 4.4), 10, false)}</div>`
       : windowsOf(m).map(w => design === 'bars' ? bar(x, m, w) : laneSVG(m, x, w, W, 10)).join('')
-    return `<div ${cardAttrs(u, sev, 'compact cs', style)} title="${titleOf(u, m)}"><div class="cs-top">${logo(u, x)}<div class="cs-vals">${vals}</div></div><div class="cs-art">${art}</div></div>`
+    return `<div ${cardAttrs(u, sev, 'compact cs', style)} data-tip="${cardTip(u, m, x)}"><div class="cs-top">${logo(u, x)}<div class="cs-vals">${vals}</div></div><div class="cs-art">${art}</div></div>`
   }
   const v = box.h > box.w * 1.25 && box.w < 170, c = { w: box.w - (v ? 16 : 24), h: box.h - (v ? 20 : 12) }
   // 그림이 넓게 필요한 디자인일수록 이름을 늦게 보인다.
   const nameShown = !v && c.w >= ({ numeral: 240, rich: 250, rings: 300, battery: 340, bars: 380, timeline: 380 } as Record<DesignId, number>)[design]
   const tag = nameShown ? '' : accountTag(u.name)
   const idW = v ? 0 : 18 + (nameShown ? Math.min(120, u.name.length * 7 + 7) : 0) + (tag ? [...tag].length * 7 + 11 : 0) + 12
-  return `<div ${cardAttrs(u, sev, `compact ${v ? 'cv' : ''} ${!v && !nameShown ? 'center' : ''}`, style)} title="${titleOf(u, m)}"><div class="c-id">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}</div><div class="c-main">${COMPACT[design](m, x, { w: c.w - idW, h: c.h }, v)}</div></div>`
+  return `<div ${cardAttrs(u, sev, `compact ${v ? 'cv' : ''} ${!v && !nameShown ? 'center' : ''}`, style)} data-tip="${cardTip(u, m, x)}"><div class="c-id">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}</div><div class="c-main">${COMPACT[design](m, x, { w: c.w - idW, h: c.h }, v)}</div></div>`
 }
 
 /** 카드 하나. box는 격자 칸 크기(px). */
@@ -312,7 +348,7 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   if (formOf(design, box.w, box.h) === 'compact') return compactCard(u, m, design, x, box, style)
   const sev = severity(m, x.warn, x.crit), lo = Math.min(...windowsOf(m).map(w => w.left))
   const { bw, bh } = cardBody(box.w, box.h), narrow = box.w < 210
-  const flag = !sev ? '' : `<span class="flag" title="${lo <= x.warn ? `여유 ${lo}%` : '이 속도면 리셋 전에 소진'}"><i></i>${narrow ? (lo <= x.warn ? lo + '%' : '!') : lo <= x.warn ? `여유 ${lo}%` : '속도 주의'}</span>`
+  const flag = !sev ? '' : `<span class="flag" data-tip="${lo <= x.warn ? `가장 빠듯한 한도의 여유가 ${lo}%예요` : '이 속도면 리셋 전에 소진될 수 있어요'}"><i></i>${narrow ? (lo <= x.warn ? lo + '%' : '!') : lo <= x.warn ? `여유 ${lo}%` : '속도 주의'}</span>`
   const tier = design === 'rich' ? richTier(bw, bh) : ''
   const multi = windowsOf(m).length > 1
   const showSrc = multi && box.w >= 150 && (['numeral', 'rings', 'battery'].includes(design) || (design === 'rich' && ['mw', 'l', 'lw', 'tall', 'ml'].includes(tier)))
@@ -322,7 +358,7 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   // 이름이 가장 중요하다. 좁으면 줄임표로 줄여서라도 남기고, 정말 좁을 때만 뺀다.
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
-  return `<div ${cardAttrs(u, sev, '', style)} title="${titleOf(u, m)}">
-    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" title="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+  return `<div ${cardAttrs(u, sev, '', style)} data-tip="${cardTip(u, m, x)}">
+    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

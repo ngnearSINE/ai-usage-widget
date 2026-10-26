@@ -1,7 +1,20 @@
 import type { AccountConfig, AccountUsage, WidgetConfig } from './types.js'
 
 export const DEFAULT_WINDOW_SIZE = { width: 620, height: 540 }
-export const MIN_WINDOW_SIZE = { width: 300, height: 220 }
+/** 카드 하나 + 안쪽 여백(6px×2). 서비스가 하나뿐이어도 이 크기까지 줄일 수 있다. */
+export const CARD_MIN = { width: 160, height: 56 }
+export const MIN_WINDOW_SIZE = { width: CARD_MIN.width + 12, height: CARD_MIN.height + 12 }
+/** 이 너비·높이보다 작으면 제목줄을 숨기고 마우스를 위쪽 가장자리에 올릴 때만 겹쳐 보인다(dashboard.css와 같은 값). */
+export const HEADER_HIDE = { width: 300, height: 110 }
+const HEADER_H = 36
+
+/** 너비가 width일 때 카드 n개가 모두 들어가는 최소 창 높이. 남는 높이가 제목줄 숨김 기준보다 작으면 제목줄을 빼고 잰다. */
+export function minWindowHeight(width: number, n: number, gap = 6) {
+  const cols = Math.max(1, Math.min(Math.max(1, n), Math.floor((width - 12 + gap) / (CARD_MIN.width + gap))))
+  const rows = Math.ceil(Math.max(1, n) / cols)
+  const base = rows * CARD_MIN.height + (rows - 1) * gap + 12
+  return width >= HEADER_HIDE.width && base + HEADER_H >= HEADER_HIDE.height ? base + HEADER_H : base
+}
 export interface Rect { x: number; y: number; width: number; height: number }
 
 export function fitWindow(rect: Rect, area: Rect): Rect {

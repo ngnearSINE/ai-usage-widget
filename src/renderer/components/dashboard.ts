@@ -88,6 +88,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
   if (!force && (busy || dragId)) return
   const design = designOf(state.config)
   updateMarkup(container, `<div class="dashboard">
+    <div class="header-hot" aria-hidden="true"></div>
     <header class="dashboard-header"><div class="window-handle" data-window-drag title="끌어서 창 이동 · 아래로 끌면 도킹"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
       <button class="view-btn" data-view-menu aria-haspopup="menu" title="보기 바꾸기">${DESIGNS.find(d => d[0] === design)![1]}${icon('chev')}</button>
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>

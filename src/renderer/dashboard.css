@@ -465,3 +465,27 @@ body.is-settings-view #app { display:block; height:100vh; }
 /* 같은 서비스 여러 계정: 아이콘 옆 짧은 표식 */
 .logo.tagged { width:auto; display:inline-flex; gap:3px; }
 .logo-tag { font-style:normal; font-size:9px; font-weight:650; line-height:14px; padding:0 4px; border-radius:3px; background:var(--soft); color:var(--muted); white-space:nowrap; }
+
+/* 한 줄 막대의 다른 한도: 막대 아래 가는 보조 막대(흐린 바탕선 위에 남은 양 길이). 위로 튀어나오지 않아 숫자와 겹치지 않는다. */
+.track.with-sub { margin-bottom:4px; }
+.track.with-sub .pace { top:-2px; bottom:-2px; }
+.sub-bar { position:absolute; left:0; right:0; top:calc(100% + 2px); height:2px; border-radius:1px; background:var(--track); }
+.sub-bar i { position:absolute; left:0; top:0; bottom:0; border-radius:inherit; background:var(--c); opacity:.55; }
+/* 가는 눈금·막대도 마우스로 잡기 쉽게 투명한 판정 영역을 넓힌다 */
+.pace::after { content:""; position:absolute; inset:-4px -5px; }
+.sub-bar::after { content:""; position:absolute; inset:-3px 0; }
+
+/* 아주 작은 창: 제목줄을 숨기고 위쪽 가장자리에 마우스를 올리면 겹쳐 보인다. 기준은 widget-layout.ts HEADER_HIDE와 같다. */
+.header-hot { display:none; }
+@container (max-width:299px) or (max-height:109px) {
+  .dashboard-header { position:absolute; left:0; right:0; top:0; z-index:6; opacity:0; pointer-events:none; transform:translateY(-6px); transition:opacity .14s ease, transform .14s ease;
+    background:rgb(var(--surface)); box-shadow:0 4px 12px rgba(0,0,0,.25); }
+  .dashboard-header .header-status, .dashboard-header .app-title { display:none; }
+  /* 가장 좁을 때(약 170px)도 단추가 다 들어가게 줄인다: 끌기 손잡이는 로고만, 보기 단추는 화살표만, 서비스 관리는 설정 창에서. */
+  .dashboard-header { padding:0 4px 0 8px; gap:2px; }
+  .dashboard-header .window-handle { min-width:22px; }
+  .dashboard-header .view-btn { font-size:0; padding:0 4px; gap:0; }
+  .dashboard-header [data-settings="services"] { display:none; }
+  .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
+  .dashboard:has(.header-hot:hover) .dashboard-header, .dashboard-header:hover, .dashboard:has(.menu) .dashboard-header { opacity:1; pointer-events:auto; transform:none; }
+}

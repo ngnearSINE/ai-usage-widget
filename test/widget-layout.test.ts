@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cardLayout, fitWindow, isDockTarget, moveAccountBefore, retainedUsage, visibleUsages } from '../src/common/widget-layout.js'
+import { cardLayout, fitWindow, isDockTarget, moveAccountBefore, retainedUsage, visibleUsages, minWindowHeight } from '../src/common/widget-layout.js'
 import { previewUsages } from '../src/common/preview-data.js'
 import type { AccountConfig, WidgetConfig } from '../src/common/types.js'
 import { roundedWindowShape } from '../src/common/window-shape.js'
@@ -62,4 +62,14 @@ test('아크릴의 실제 창 영역은 모서리를 제외하고 크기 변경 
     for(const [x,y] of [[0,0],[w-1,0],[0,h-1],[w-1,h-1]]) assert.equal(includes(x,y),false)
     for(const [x,y] of [[w/2,0],[w/2,h-1],[0,h/2],[w-1,h/2],[w/2,h/2]]) assert.equal(includes(x,y),true)
   }
+})
+
+test('최소 창 높이는 보이는 카드가 모두 들어가는 높이다(서비스 하나면 카드 한 장)', () => {
+  assert.equal(minWindowHeight(172, 1), 68)
+  // 좁으면 한 줄에 하나씩: 카드 3장 = 56×3 + 간격 6×2 + 여백 12, 제목줄 숨김 기준(너비 300) 미만이라 제목줄 없음
+  assert.equal(minWindowHeight(172, 3), 192)
+  // 넓으면 두 장씩: 2줄 = 56×2 + 6 + 12, 너비 300 이상이고 높이가 110 이상이 되면 제목줄(36)을 더한다
+  assert.equal(minWindowHeight(340, 3), 166)
+  // 한 줄에 다 들어가면 제목줄 없이도 110 미만이라 제목줄을 빼고 잰다
+  assert.equal(minWindowHeight(600, 3), 68)
 })

@@ -13,7 +13,7 @@ import { LocalAppDetector } from '../services/local-app-detector.js'
 import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, visibleUsages } from '../common/widget-layout.js'
+import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
@@ -104,6 +104,61 @@ function broadcastState() {
 }
 
 
+
+/* ---------- 마우스 설명 창 ---------- */
+// 작은 위젯 창 안에 그리면 잘리므로 창 밖까지 나오는 별도 창에 띄운다. 클릭은 통과시킨다.
+const TIP_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent;overflow:hidden}
+#t{display:block;width:max-content;max-width:300px;padding:7px 10px;border-radius:7px;font:12px/1.5 "Segoe UI Variable Text","Segoe UI","Malgun Gothic",sans-serif;
+background:var(--bg);color:var(--fg);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:pre-wrap;word-break:keep-all}
+#t b{display:block;font-weight:650;margin-bottom:1px}#t span{display:block;color:var(--sub)}
+</style></head><body><div id="t"></div><script>
+window.setTip=(lines,dark)=>{const t=document.getElementById('t'),s=document.documentElement.style
+s.setProperty('--bg',dark?'#1d1e24':'#ffffff');s.setProperty('--fg',dark?'#ececf1':'#1d1e24');s.setProperty('--sub',dark?'#a3a4ae':'#666774');s.setProperty('--line',dark?'#3a3b45':'#d9dae2')
+t.replaceChildren(...lines.map((l,i)=>{const e=document.createElement(i?'span':'b');e.textContent=l;return e}))
+const r=t.getBoundingClientRect();return{w:Math.ceil(r.width),h:Math.ceil(r.height)}}
+</script></body></html>`
+let tipWindow: BrowserWindow | null = null
+let tipReady: Promise<void> | null = null
+let tipSeq = 0
+function ensureTipWindow() {
+  if (tipWindow && !tipWindow.isDestroyed()) return tipReady!
+  tipWindow = new BrowserWindow({ width: 10, height: 10, frame: false, transparent: true, show: false, focusable: false, skipTaskbar: true,
+    resizable: false, hasShadow: false, alwaysOnTop: true, title: '설명', webPreferences: { nodeIntegration: false, contextIsolation: true } })
+  tipWindow.setIgnoreMouseEvents(true)
+  tipWindow.setAlwaysOnTop(true, 'screen-saver', 10000)
+  tipReady = tipWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(TIP_HTML)).catch(() => {})
+  return tipReady
+}
+function hideTip() {
+  tipSeq++
+  if (tipWindow && !tipWindow.isDestroyed() && tipWindow.isVisible()) tipWindow.hide()
+}
+async function showTip(sender: Electron.WebContents, text: string, rect: { x: number; y: number; width: number; height: number }) {
+  const seq = ++tipSeq
+  const win = BrowserWindow.fromWebContents(sender)
+  if (!win || win.isDestroyed() || !text) return
+  // 요소 좌표는 창 내용 기준(DIP). 작업표시줄에 도킹된 위젯은 Electron 좌표가 작업표시줄 기준이라 실제 화면 위치를 따로 구한다.
+  let origin = win.getContentBounds()
+  if (win === widgetWindow && accountStore.getConfig().placementMode === 'docked') {
+    const r = await TaskbarDocker.getWidgetScreenRect(win)
+    if (r) origin = { ...origin, ...screen.screenToDipPoint({ x: r.x, y: r.y }) }
+  }
+  await ensureTipWindow()
+  if (seq !== tipSeq || !tipWindow || tipWindow.isDestroyed()) return
+  const c = accountStore.getConfig().appearance || 'dark'
+  const dark = c === 'system' ? nativeTheme.shouldUseDarkColors : c !== 'light'
+  const size = await tipWindow.webContents.executeJavaScript(`setTip(${JSON.stringify(String(text).split('\n').slice(0, 12))}, ${dark})`).catch(() => null) as { w: number; h: number } | null
+  if (!size || seq !== tipSeq || tipWindow.isDestroyed()) return
+  const t = { x: origin.x + rect.x, y: origin.y + rect.y, w: rect.width, h: rect.height }
+  const area = screen.getDisplayNearestPoint({ x: Math.round(t.x + t.w / 2), y: Math.round(t.y) }).workArea
+  const x = Math.max(area.x + 4, Math.min(t.x + t.w / 2 - size.w / 2, area.x + area.width - size.w - 4))
+  // 아래에 자리가 없으면(작업표시줄 도킹 등) 위에 띄운다.
+  const below = t.y + t.h + 6
+  const y = below + size.h <= area.y + area.height ? below : Math.max(area.y, t.y - size.h - 6)
+  tipWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: size.w, height: size.h })
+  tipWindow.showInactive()
+}
 
 /* ---------- 모니터별 배치 ---------- */
 // 모니터 구성(위치·해상도·배율)마다 자유 창 위치·크기와 디자인을 기억했다가, 구성이 바뀌면 되살린다.
@@ -416,7 +471,7 @@ function createWidgetWindow() {
       applyClickThrough()
     }
     // 첫 드래그에서 안내 창 생성·로드가 끊김을 만들지 않도록 유휴 시간에 미리 만든다.
-    setTimeout(() => { if (!interacting) showDockHint(false, undefined, undefined, true) }, 1500)
+    setTimeout(() => { if (!interacting) showDockHint(false, undefined, undefined, true); void ensureTipWindow() }, 1500)
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -547,6 +602,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
     }
     const start = widgetWindow.getBounds()
     const ghostWidth = dockWidth()
+    const shown = getAppState(), cardCount = Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
     if(kind==='move') showDockHint(false,undefined,origin,true,ghostWidth)
     let last = origin
     let moved = false
@@ -566,9 +622,12 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         const edge = kind.slice(7)
         let { x, y, width, height } = start
         if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
-        if (edge.includes('s')) height = Math.max(MIN_WINDOW_SIZE.height, start.height + dy)
         if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
-        if (edge.includes('n')) { height = Math.max(MIN_WINDOW_SIZE.height, start.height - dy); y = start.y + start.height - height }
+        // 최소 높이는 지금 너비에서 보이는 카드가 모두 들어가는 높이(서비스가 하나면 카드 한 장 높이).
+        const minH = minWindowHeight(width, cardCount, cardGap)
+        if (edge.includes('s')) height = Math.max(minH, start.height + dy)
+        if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
+        if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
         widgetWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
       }
     }
@@ -1096,6 +1155,8 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle(IPC_CHANNELS.TEST_NOTIFICATION, () => notifier?.test() ?? false)
+  ipcMain.on(IPC_CHANNELS.TIP_SHOW, (event, text: string, rect) => { void showTip(event.sender, String(text), rect).catch(() => {}) })
+  ipcMain.on(IPC_CHANNELS.TIP_HIDE, () => hideTip())
   ipcMain.on(IPC_CHANNELS.WINDOW_CONTROL, (event, action: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win !== settingsWindow) return
@@ -1213,6 +1274,7 @@ app.on('before-quit', () => {
   clearTimeout(boundsSaveTimer)
   pointerProcess?.stop()
   dockHint?.destroy()
+  tipWindow?.destroy()
   dockGhost?.destroy()
   if (widgetWindow && !widgetWindow.isDestroyed() && accountStore?.getConfig().placementMode === 'floating') {
     accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: widgetWindow.getBounds() })

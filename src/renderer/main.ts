@@ -35,7 +35,10 @@ function updateTrayIcon(state: AppState) {
   g.fillText(text, size / 2, size / 2 + 1)
   window.api.setTrayImage?.(canvas.toDataURL('image/png'), tooltip)
 }
+import { initTooltips } from './components/tooltip.js'
 import './dashboard.css'
+
+initTooltips()
 
 // title 속성에 들어가는 계정명/에러문구는 외부 프로세스 출력이거나 사용자 입력이다
 function escapeHtml(s: string): string {
