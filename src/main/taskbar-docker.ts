@@ -413,6 +413,15 @@ export class TaskbarDocker {
     return (await this.helper.run(['fade', this.getHwnd(win), faded ? '0' : 'off'])).code === 0
   }
 
+  /** 그 모니터 작업표시줄에서 위젯이 쓸 수 있는 오른쪽 끝(알림 영역·시계의 왼쪽) 화면 x(DIP). 알 수 없으면 null. */
+  public static async usableRight(display: Electron.Display): Promise<number | null> {
+    if (process.platform !== 'win32' || !fs.existsSync(this.getDockerPath())) return null
+    const r = screen.dipToScreenRect(null, display.bounds)
+    const res = await this.helper.run(['usableright', `${r.x},${r.y},${r.x + r.width},${r.y + r.height}`])
+    const x = parseInt(res.out.trim(), 10)
+    return res.code === 0 && Number.isFinite(x) ? screen.screenToDipPoint({ x, y: r.y }).x : null
+  }
+
   /** 도킹된 위젯을 작업표시줄 안에서 가로로만 옮긴다(왼쪽 기준 논리 픽셀). 끌기 중 매 좌표마다 써도 가볍다. */
   public static async slideDocked(win: BrowserWindow, offset: number): Promise<boolean> {
     if (process.platform !== 'win32' || !win || win.isDestroyed() || !fs.existsSync(this.getDockerPath())) return false

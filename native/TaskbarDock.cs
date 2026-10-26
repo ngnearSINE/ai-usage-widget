@@ -436,6 +436,25 @@ namespace FluentFlyoutDocker
 
             // slide <hwnd> <logicalOffset>: 도킹된 위젯을 작업표시줄 안에서 가로로만 옮긴다(왼쪽 기준).
             // dock처럼 스타일·부모를 다시 정하지 않으므로 끌기 중 매 좌표마다 불러도 watch가 도킹 유실로 오해하지 않는다.
+            // usableright <l,t,r,b>: 그 모니터 작업표시줄에서 위젯이 쓸 수 있는 오른쪽 끝(알림 영역 왼쪽)의 화면 x(물리 픽셀).
+            // 도킹 미리보기가 실제로 붙을 자리(dock·slide의 GetRightAnchor)와 같아지도록 쓴다.
+            if (action == "usableright" && args.Length >= 2)
+            {
+                string[] parts = args[1].Split(',');
+                if (parts.Length != 4) return 2;
+                RECT r = new RECT();
+                r.Left = int.Parse(parts[0]); r.Top = int.Parse(parts[1]); r.Right = int.Parse(parts[2]); r.Bottom = int.Parse(parts[3]);
+                IntPtr tb = FindTargetTaskbar(r);
+                RECT pc;
+                if (tb == IntPtr.Zero || !GetClientRect(tb, out pc)) return 1;
+                POINT pt = new POINT();
+                pt.X = GetRightAnchor(tb, pc.Right - pc.Left);
+                pt.Y = 0;
+                if (!ClientToScreen(tb, ref pt)) return 1;
+                Emit(pt.X.ToString());
+                return 0;
+            }
+
             if (action == "slide" && args.Length >= 3)
             {
                 IntPtr hwnd = ParseHwnd(args[1]);

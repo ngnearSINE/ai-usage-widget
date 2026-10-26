@@ -570,11 +570,23 @@ function dockWidth() {
 }
 
 /** 마우스를 놓으면 위젯이 들어갈 작업표시줄 자리. 미리보기와 실제 도킹이 같은 계산을 쓴다. */
+// 모니터마다 작업표시줄에서 쓸 수 있는 오른쪽 끝(알림 영역·시계 왼쪽, DIP). 실제로 붙을 때 보조 프로그램이 그 왼쪽에서 멈추므로
+// 미리보기도 같은 자리에서 멈춰야 놓은 뒤 위치가 튀지 않는다. 끌기를 시작할 때마다 새로 읽는다(트레이 아이콘 수가 바뀔 수 있음).
+const usableRightByDisplay = new Map<number, number>()
+function refreshUsableRight() {
+  for (const d of screen.getAllDisplays()) void TaskbarDocker.usableRight(d).then(x => { if (x !== null) usableRightByDisplay.set(d.id, x); else usableRightByDisplay.delete(d.id) }).catch(() => {})
+}
+function dockRight(display: Electron.Display) {
+  const edge = display.bounds.x + display.bounds.width, tray = usableRightByDisplay.get(display.id)
+  return tray !== undefined && tray > display.bounds.x && tray <= edge ? tray : edge
+}
+
 function dockSlot(p: {x:number;y:number}, width = dockWidth()) {
   const display = screen.getDisplayNearestPoint(p)
   const height = getTaskbarInfo(display).taskbarHeight
-  const w = Math.min(width, display.bounds.width)
-  const x = Math.max(display.bounds.x, Math.min(p.x - 100, display.bounds.x + display.bounds.width - w))
+  const right = dockRight(display)
+  const w = Math.min(width, right - display.bounds.x)
+  const x = Math.max(display.bounds.x, Math.min(p.x - 100, right - w))
   return { display, rect: { x: Math.round(x), y: display.bounds.y + display.bounds.height - height, width: w, height } }
 }
 
@@ -674,6 +686,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
   const win = widgetWindow
   const startedDocked = accountStore.getConfig().placementMode === 'docked'
   let leftDockArea = !startedDocked
+  refreshUsableRight()
   hidePopup(true)
   hideTip()
   // UIA 클라이언트(접근성 도구 등)가 켜진 PC에서는 활성 창의 접근성 트리를 주기적으로 읽어 UI 스레드가 50~70ms씩 멈춘다.
@@ -752,7 +765,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
       if (mode === 'converting') return
       if (mode === 'slide' && slide) {
         if (p.y < slide.top - SLIDE_ESCAPE_PX) { void toFloat(p).catch(err => console.error('[Window] Undock during drag failed:', err)); return }
-        const maxOffset = Math.max(0, slide.display.bounds.width - slide.width)
+        const maxOffset = Math.max(0, dockRight(slide.display) - slide.display.bounds.x - slide.width)
         slide.offset = Math.round(Math.max(0, Math.min(maxOffset, p.x - slide.grabDx - slide.display.bounds.x)))
         slideTo(slide.offset)
         return
@@ -1406,6 +1419,7 @@ app.whenReady().then(() => {
   })
 
   TaskbarDocker.warmHelper()
+  refreshUsableRight()
   setupIpcHandlers()
   restoreLayout()
   createWidgetWindow()
