@@ -76,12 +76,16 @@ let lastDockedWidgetClickAt = 0
 const DOUBLE_CLICK_WINDOW_MS = 500
 
 function getAppState(): AppState {
-  const usages = isPreview ? previewUsages().filter(u => accountStore.getAccounts().some(a => a.id === u.id && a.enabled)) : quotaManager.getUsages()
+  const accounts = accountStore.getAccounts()
+  const raw = isPreview ? previewUsages().filter(u => accounts.some(a => a.id === u.id && a.enabled)) : quotaManager.getUsages()
+  // 모델 전용 한도(Fable 등)를 숨긴 계정은 그 값을 빼고, 설정 화면이 스위치를 보이도록 이름만 남긴다.
+  const usages = raw.map(u => accounts.find(a => a.id === u.id)?.showScoped === false && u.scopedQuotas?.length
+    ? { ...u, scopedQuotas: undefined, scopedHidden: u.scopedQuotas.map(s => s.label) } : u)
   return {
     preview: isPreview,
     acrylicSupported,
     config: accountStore.getConfig(),
-    accounts: accountStore.getAccounts(),
+    accounts,
     usages,
     isRefreshing: !isPreview && quotaManager.refreshing,
     lastRefreshedAt: usages.map(u => u.updatedAt).sort().at(-1) || '',
@@ -519,7 +523,7 @@ function saveFloatingBounds() {
 
 function dockWidth() {
   const state=getAppState()
-  return Math.max(80,24+136*visibleUsages(state.usages,state.accounts,state.config).length)
+  return Math.max(80,24+136*visibleUsages(state.usages,state.accounts,state.config,true).length)
 }
 
 /** 마우스를 놓으면 위젯이 들어갈 작업표시줄 자리. 미리보기와 실제 도킹이 같은 계산을 쓴다. */
@@ -742,7 +746,9 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         if (win.kind === 'backdrop') await TaskbarDocker.setAlpha(win, null)
         else win.setOpacity(1)
         await setPlacement('docked', safe)
-        if (!win.isDestroyed() && !win.isVisible()) win.showInactive()
+        // 숨겼던 창을 보조 프로그램이 도킹하며 다시 보이게 했지만 Electron은 여전히 숨김으로 알아 새 프레임을 그리지 않는다
+        // (실측: 도킹 모양 대신 줄어든 대시보드가 멈춰 보임). 보임을 알리면 Electron이 자기 좌표로 창을 옮기므로 곧바로 다시 붙인다.
+        if (!win.isDestroyed()) { win.showInactive(); await updateWidgetBounds() }
         showDockPreview(false)
       } else {
         showDockPreview(false)
@@ -1196,6 +1202,16 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.RENAME_ACCOUNT, (_event, id: string, name: string) => {
     accountStore.renameAccount(String(id), String(name))
     broadcastState()
+    return getAppState()
+  })
+  // 계정 표시 설정(모델 전용 한도 보기·작업표시줄에서만 숨김). 정해진 키만 받는다.
+  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown }) => {
+    const clean: { showScoped?: boolean; hiddenInDock?: boolean } = {}
+    if (typeof patch?.showScoped === 'boolean') clean.showScoped = patch.showScoped
+    if (typeof patch?.hiddenInDock === 'boolean') clean.hiddenInDock = patch.hiddenInDock
+    accountStore.patchAccountDisplay(String(id), clean)
+    broadcastState()
+    if (clean.hiddenInDock !== undefined && accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds()
     return getAppState()
   })
   ipcMain.handle(IPC_CHANNELS.HIDE_ACCOUNT, (_event, id: string, hidden: boolean) => {

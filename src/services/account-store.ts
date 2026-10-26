@@ -289,6 +289,10 @@ export class AccountStore {
     return true
   }
 
+  public patchAccountDisplay(id: string, patch: { showScoped?: boolean; hiddenInDock?: boolean }): void {
+    this.saveAccounts(this.accounts.map(a => a.id === id ? { ...a, ...patch } : a))
+  }
+
   public hideAccount(id: string, hidden: boolean): void {
     this.accounts = this.accounts.map(a => a.id === id ? { ...a, hidden } : a)
     this.saveAccounts(this.accounts)

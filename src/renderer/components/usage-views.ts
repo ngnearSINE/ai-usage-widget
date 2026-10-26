@@ -1,8 +1,7 @@
 import type { AccountUsage, HistoryPoint, WidgetConfig } from '../../common/types.js'
 import {
   cardBody, fitDesign, fmtDuration, fmtDurationShort, formOf, paceWarning, pickWindow, richScale, richTier, serviceModel, severity, unusedWeekly, windowsOf, worstWindow,
-  type DesignId, type QuotaWindow, type ServiceModel, type ValueSource,
-} from '../../common/usage-model.js'
+  type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
 
 /** 대시보드 카드 렌더러. 디자인마다 기본 형태와 작은 카드 형태가 있고, 작아져도 다른 디자인으로 바꿔 그리지 않는다. */
@@ -72,7 +71,7 @@ export function tipOther(w: QuotaWindow, x: ViewContext) {
 const hhmm = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '' }
 function cardTip(u: AccountUsage, m: ServiceModel, x: ViewContext) {
   const h = headline(m, x)
-  return esc([u.name, u.tier || '', ...windowsOf(m).map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
+  return esc([u.name, u.tier || '', ...[...windowsOf(m), ...m.scoped].map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
     h.t, `${u.status === 'stale' ? '갱신 지연 · 마지막 확인' : '확인'} ${hhmm(u.updatedAt)}`].filter(Boolean).join('\n'))
 }
 
@@ -122,12 +121,24 @@ function rich(m: ServiceModel, x: ViewContext, b: { w: number; h: number }) {
     return `<div class="row"><div class="row-top"><span class="lbl">${w.label}</span><span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span><span class="cap row-reset">${resetText(w)}</span></div>${bar(x, m, w)}${withNote ? `<div class="row-note ${n.hot ? 'hot' : ''}">${n.t}</div>` : ''}</div>`
   }
   const inline = (w: QuotaWindow, reset: boolean) => `<div class="inline-row ${reset ? 'with-reset' : ''}"><span class="lbl">${w.label}</span>${bar(x, m, w)}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span>${reset ? `<span class="cap">${w.resetMs === null ? '' : fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
-  const rows = (note: boolean) => ws.map(w => row(w, note)).join('')
+  // 모델 전용 주간 한도(Fable 등)는 큰 카드에 줄을 더한다. 자리가 모자라면 덜 중요한 글부터 뺀다:
+  // 줄 아래 메모(줄마다 약 14px) → 상태 문장(약 30px). 그래도 안 되면 설명 창에만 둔다.
+  const spare = b.h - (TIER_NEED[t] ?? b.h) * Math.min(richScale(b.w, b.h), 1.35)
+  const plan = (note: boolean, head: boolean) => {
+    const tries: Array<[boolean, boolean]> = [[note, head], [false, head], [false, false]]
+    for (const [cn, ch] of tries) {
+      const room = spare + (note && !cn ? ws.length * 14 : 0) + (head && !ch && h.t ? 30 : 0)
+      const n = Math.min(m.scoped.length, Math.floor(room / (cn ? 46 : 32)))
+      if (n >= 1) return { note: cn, head: ch, extra: m.scoped.slice(0, n) }
+    }
+    return { note, head, extra: [] as QuotaWindow[] }
+  }
+  const rows = (p: { note: boolean; extra: QuotaWindow[] }) => [...ws, ...p.extra].map(w => row(w, p.note)).join('')
   const sum = (size: number, head: boolean, extra = '') => `<div class="rich-sum">${big(size)}<div class="lbl sub" ${extra}>${main.label} ${remainWord(x)}</div>${head && h.t ? `<div class="rich-head ${h.hot ? 'hot' : ''}">${esc(h.t)}</div>` : ''}</div>`
   const wrap = (cls: string, inner: string) => `<div style="--k:${k.toFixed(2)}" class="rich ${cls}">${inner}</div>`
   if (t === 's') return wrap('t-s', `<div class="rows">${ws.map(w => inline(w, b.w >= 290)).join('')}</div>`)
-  if (t === 'm') return wrap('t-m', `<div class="rows">${rows(false)}</div>`)
-  if (t === 'mw') return wrap('t-mw', `${sum(Math.max(30, Math.min(b.h * .5, 48)), false)}<div class="rows">${rows(false)}</div>`)
+  if (t === 'm') return wrap('t-m', `<div class="rows">${rows(plan(false, false))}</div>`)
+  if (t === 'mw') return wrap('t-mw', `${sum(Math.max(30, Math.min(b.h * .5, 48)), false)}<div class="rows">${rows(plan(false, false))}</div>`)
   if (t === 'tall') {
     const vb = (w: QuotaWindow) => `<div class="vbar">${bar(x, m, w, true)}<span class="num row-val" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span><span class="cap">${w.label}</span></div>`
     return wrap('t-tall', `${sum(Math.max(28, Math.min(b.w * .36, 44)), false)}<div class="vbars">${ws.map(vb).join('')}</div>`)
@@ -137,11 +148,12 @@ function rich(m: ServiceModel, x: ViewContext, b: { w: number; h: number }) {
   const sparkWin = m.w5 || main
   const sparkBlock = (h: number) => { const sv = spark(m, x, sparkWin, h); return sv ? `<div class="rich-spark">${sv}<span class="cap">최근 24시간 · ${sparkWin.label}</span></div>` : '' }
   if (t === 'lw') {
-    const size = Math.max(38, Math.min(b.h * .42, 64 * k)), withSpark = b.h >= 140
-    return wrap('t-lw', `<div class="rich-sum ${withSpark ? (b.h >= 175 ? 'with-spark' : 'with-spark tight') : ''}">${big(withSpark ? Math.min(size, b.h >= 175 ? 52 : 40) : size)}<div class="lbl sub">${main.label} ${remainWord(x)}</div>${h.t ? `<div class="rich-head ${h.hot ? 'hot' : ''}">${esc(h.t)}</div>` : ''}${withSpark ? sparkBlock(26) : ''}</div><div class="rows">${rows(true)}</div>`)
+    const size = Math.max(38, Math.min(b.h * .42, 64 * k)), withSpark = b.h >= 140, p = plan(true, true)
+    return wrap('t-lw', `<div class="rich-sum ${withSpark ? (b.h >= 175 ? 'with-spark' : 'with-spark tight') : ''}">${big(withSpark ? Math.min(size, b.h >= 175 ? 52 : 40) : size)}<div class="lbl sub">${main.label} ${remainWord(x)}</div>${p.head && h.t ? `<div class="rich-head ${h.hot ? 'hot' : ''}">${esc(h.t)}</div>` : ''}${withSpark ? sparkBlock(26) : ''}</div><div class="rows">${rows(p)}</div>`)
   }
-  if (t === 'ml') return wrap('t-l t-ml', `${sum(Math.max(30, Math.min(b.w * .16, b.h * .22, 44)), true)}<div class="rows">${rows(false)}</div>`)
-  return wrap('t-l', `${sum(Math.max(34, Math.min(b.w * .2, b.h * .22, 60 * k)), true)}<div class="rows">${rows(true)}</div>${b.h >= 212 * k + 56 ? sparkBlock(30) : ''}`)
+  if (t === 'ml') { const p = plan(false, true); return wrap('t-l t-ml', `${sum(Math.max(30, Math.min(b.w * .16, b.h * .22, 44)), p.head)}<div class="rows">${rows(p)}</div>`) }
+  const p = plan(true, true)
+  return wrap('t-l', `${sum(Math.max(34, Math.min(b.w * .2, b.h * .22, 60 * k)), p.head)}<div class="rows">${rows(p)}</div>${b.h >= 212 * k + 56 + p.extra.length * 46 ? sparkBlock(30) : ''}`)
 }
 
 /* ---------- 다른 디자인: 기본 형태 ---------- */
@@ -153,7 +165,9 @@ function numeral(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o: 
 function bars(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o: 'h' | 'v' }) {
   const v = b.o === 'v'
   const row = (w: QuotaWindow) => `<div class="bar-row" ${v ? 'style="height:100%"' : ''}><div class="bar-cap"><span class="lbl">${w.label}</span><span class="num row-val" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span></div>${bar(x, m, w, v)}</div>`
-  return `<div class="v-bars ${v ? 'v' : ''}">${windowsOf(m).map(row).join('')}</div>`
+  // 모델 전용 주간 한도는 가로형에서 줄마다 약 44px가 남을 때만 덧붙인다.
+  const ws = windowsOf(m), extra = v ? [] : m.scoped.slice(0, Math.max(0, Math.floor(b.h / 44) - ws.length))
+  return `<div class="v-bars ${v ? 'v' : ''}">${[...ws, ...extra].map(row).join('')}</div>`
 }
 const arc = (cx: number, cy: number, r: number, a0: number, a1: number) => {
   const p = (a: number) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]

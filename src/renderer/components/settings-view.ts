@@ -157,12 +157,14 @@ function displayTab(c: WidgetConfig) {
 }
 function servicesTab(s: AppState) {
   return section('표시', toggle('hideDisconnected', '미연결 서비스 자동 숨김', '일시 오류는 마지막 확인 값을 유지합니다.', !!s.config.hideDisconnected)
-      + '<p class="setting-hint">눈 아이콘은 표시만 바꿉니다. 조회를 끄려면 스위치를 끄세요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.</p>')
+      + '<p class="setting-hint">눈 아이콘은 위젯 창과 작업 표시줄 모두에서, 작업 표시줄 아이콘은 작업 표시줄에서만 숨깁니다. 조회를 끄려면 스위치를 끄세요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.</p>')
     + `<div class="service-manager">${s.accounts.map((a, index) => {
       const u = s.usages.find(u => u.id === a.id)
       const status = !a.enabled ? '조회 꺼짐' : a.hidden ? '수동 숨김' : u?.status === 'ready' ? '연결됨' : u?.status === 'stale' ? '갱신 지연' : u?.status === 'loading' ? '확인 중' : '연결 안 됨'
       const name = escapeText(a.name)
-      return `<div class="managed-service">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span><b class="svc-name" data-name-of="${escapeText(a.id)}">${name}</b><small>${status}${u?.tier && a.orgUuid ? ` · ${escapeText(u.tier)}` : ''}</small></span><button class="tool" data-rename="${escapeText(a.id)}" title="이름 바꾸기" aria-label="${name} 이름 바꾸기">${icon('pencil')}</button><div class="managed-order"><button class="tool" data-order="up" data-id="${escapeText(a.id)}" ${index === 0 ? 'disabled' : ''} aria-label="${name} 앞으로 이동">${icon('up')}</button><button class="tool" data-order="down" data-id="${escapeText(a.id)}" ${index === s.accounts.length - 1 ? 'disabled' : ''} aria-label="${name} 뒤로 이동">${icon('down')}</button></div><button class="tool" data-hide="${escapeText(a.id)}" aria-label="${name} ${a.hidden ? '다시 표시' : '숨기기'}" aria-pressed="${!!a.hidden}">${icon(a.hidden ? 'hidden' : 'eye')}</button><label class="mini-toggle"><input type="checkbox" class="switch" data-enabled="${escapeText(a.id)}" aria-label="${name} 조회" ${a.enabled ? 'checked' : ''}><span class="switch-track"></span></label></div>`
+      // 모델 전용 주간 한도(Fable 등)가 있는 계정만 보기 스위치를 둔다.
+      const scopedNames = u?.scopedQuotas?.map(s => s.label) || u?.scopedHidden || []
+      return `<div class="managed-service">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span><b class="svc-name" data-name-of="${escapeText(a.id)}">${name}</b><small>${status}${u?.tier && a.orgUuid ? ` · ${escapeText(u.tier)}` : ''}</small>${scopedNames.length ? `<label class="scoped-toggle"><input type="checkbox" data-scoped="${escapeText(a.id)}" ${a.showScoped === false ? '' : 'checked'}><span>${escapeText(scopedNames.join('·'))} 한도 표시</span></label>` : ''}</span><button class="tool" data-rename="${escapeText(a.id)}" title="이름 바꾸기" aria-label="${name} 이름 바꾸기">${icon('pencil')}</button><div class="managed-order"><button class="tool" data-order="up" data-id="${escapeText(a.id)}" ${index === 0 ? 'disabled' : ''} aria-label="${name} 앞으로 이동">${icon('up')}</button><button class="tool" data-order="down" data-id="${escapeText(a.id)}" ${index === s.accounts.length - 1 ? 'disabled' : ''} aria-label="${name} 뒤로 이동">${icon('down')}</button></div><button class="tool ${a.hiddenInDock ? 'is-off' : ''}" data-dock-hide="${escapeText(a.id)}" aria-pressed="${!!a.hiddenInDock}" title="${a.hiddenInDock ? '작업 표시줄에서 숨김 중(위젯 창에는 보임)' : '작업 표시줄에도 표시'}" aria-label="${name} 작업 표시줄에서 ${a.hiddenInDock ? '다시 표시' : '숨기기'}">${icon('taskbar')}</button><button class="tool" data-hide="${escapeText(a.id)}" title="${a.hidden ? '숨김 중(위젯 창·작업 표시줄 모두)' : '위젯 창·작업 표시줄에 표시'}" aria-label="${name} ${a.hidden ? '다시 표시' : '숨기기'}" aria-pressed="${!!a.hidden}">${icon(a.hidden ? 'hidden' : 'eye')}</button><label class="mini-toggle"><input type="checkbox" class="switch" data-enabled="${escapeText(a.id)}" aria-label="${name} 조회" ${a.enabled ? 'checked' : ''}><span class="switch-track"></span></label></div>`
     }).join('')}</div><button class="secondary-button" data-goto="accounts">계정 추가 · 감지 ${icon('arrow')}</button>`
 }
 
@@ -335,6 +337,11 @@ function bindEvents() {
     input.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false) }
     input.onblur = () => finish(true)
   })
+  body.querySelectorAll<HTMLElement>('[data-dock-hide]').forEach(el => el.onclick = () => {
+    const a = state.accounts.find(x => x.id === el.dataset.dockHide)
+    if (a) void window.api.setAccountDisplay(a.id, { hiddenInDock: !a.hiddenInDock }).catch(() => notify('표시 설정을 저장하지 못했어요.'))
+  })
+  body.querySelectorAll<HTMLInputElement>('[data-scoped]').forEach(el => el.onchange = () => { void window.api.setAccountDisplay(el.dataset.scoped!, { showScoped: el.checked }).catch(() => notify('표시 설정을 저장하지 못했어요.')) })
   body.querySelectorAll<HTMLInputElement>('[data-enabled]').forEach(el => el.onchange = () => { void window.api.toggleAccount(el.dataset.enabled!, el.checked).catch(() => notify('조회 설정을 저장하지 못했어요.')) })
   body.querySelectorAll<HTMLElement>('[data-order]').forEach(el => el.onclick = () => {
     void window.api.reorderAccount(el.dataset.id!, el.dataset.order as 'up' | 'down').catch(() => notify('순서를 저장하지 못했어요.'))

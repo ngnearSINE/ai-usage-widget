@@ -34,9 +34,10 @@ export function isDockTarget(point: { x: number; y: number }, bounds: Rect, work
     && point.y < bounds.y + bounds.height
 }
 
-export function visibleUsages(usages: AccountUsage[], accounts: AccountConfig[], config: WidgetConfig): AccountUsage[] {
+/** 화면에 보일 계정. docked면 '작업표시줄에서만 숨김' 계정도 뺀다. */
+export function visibleUsages(usages: AccountUsage[], accounts: AccountConfig[], config: WidgetConfig, docked = false): AccountUsage[] {
   const byId = new Map(usages.map(u => [u.id, u]))
-  return accounts.filter(a => a.enabled && !a.hidden).flatMap(a => {
+  return accounts.filter(a => a.enabled && !a.hidden && !(docked && a.hiddenInDock)).flatMap(a => {
     const u = byId.get(a.id)
     if (!u || (config.hideDisconnected && !['ready', 'stale'].includes(u.status))) return []
     return [u]

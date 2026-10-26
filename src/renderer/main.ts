@@ -114,7 +114,7 @@ function renderWidget(state: AppState) {
   updateRootAlpha(state.config.opacity ?? 70)
   updateVerticalOffset(state.config.verticalOffsetPx)
 
-  const activeUsages = visibleUsages(state.usages, state.accounts, state.config)
+  const activeUsages = visibleUsages(state.usages, state.accounts, state.config, true)
   const isEmpty = activeUsages.length === 0
   let accountsHtml = ''
 

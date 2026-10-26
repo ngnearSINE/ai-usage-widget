@@ -42,6 +42,8 @@ export interface ServiceModel {
   available: boolean
   w5?: QuotaWindow
   ww?: QuotaWindow
+  /** 모델 전용 주간 한도(Fable 등). 판정·알림·큰 숫자에는 쓰지 않고 큰 카드의 보조 줄과 설명에만 쓴다. */
+  scoped: QuotaWindow[]
 }
 
 const clampPct = (n: number) => Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0
@@ -67,7 +69,8 @@ export function serviceModel(u: AccountUsage, now = Date.now()): ServiceModel {
   // 주간 전용 계정은 기본 한도가 곧 주간 한도다.
   const w5 = u.isWeeklyOnly ? undefined : quotaWindow(u.primaryQuota, '5h', now, u.primaryKind === 'monthly' ? 'monthly' : '5h')
   const ww = u.isWeeklyOnly ? quotaWindow(u.primaryQuota, 'weekly', now) : u.weeklyQuota ? quotaWindow(u.weeklyQuota, 'weekly', now) : undefined
-  return { id: u.id, name: u.name, provider: u.provider, brand: u.brandColor, available: ['ready', 'stale'].includes(u.status), w5, ww }
+  const scoped = (u.scopedQuotas || []).map(s => ({ ...quotaWindow(s.quota, 'weekly', now), label: s.label, short: s.label }))
+  return { id: u.id, name: u.name, provider: u.provider, brand: u.brandColor, available: ['ready', 'stale'].includes(u.status), w5, ww, scoped }
 }
 
 export const windowsOf = (m: ServiceModel) => [m.w5, m.ww].filter(Boolean) as QuotaWindow[]
@@ -115,7 +118,7 @@ export type RichTier = 'xs' | 's' | 'm' | 'mw' | 'ml' | 'l' | 'lw' | 'tall'
 export const TIER_NAME: Record<RichTier | 'xs2', string> = { xs: '한 줄', xs2: '두 줄', s: '간결', m: '보통', mw: '보통·넓게', ml: '풍부·간결', l: '풍부', lw: '풍부(요약 왼쪽)', tall: '세로' }
 const TIER_RANK: Record<string, number> = { xs: 1, xs2: 1.8, s: 2, tall: 2.5, m: 3, mw: 4, ml: 4, l: 4.5, lw: 5 }
 // 각 단계 내용이 기본 크기에서 차지하는 높이(px). 남는 높이를 여백으로 본다.
-const TIER_NEED: Record<string, number> = { xs: 24, xs2: 36, s: 58, m: 86, mw: 86, ml: 166, l: 212, lw: 124, tall: 170 }
+export const TIER_NEED: Record<string, number> = { xs: 24, xs2: 36, s: 58, m: 86, mw: 86, ml: 166, l: 212, lw: 124, tall: 170 }
 
 /** 카드 제목줄(28px)은 높이 60 미만이면 두지 않는다. */
 export function cardBody(cw: number, ch: number) {

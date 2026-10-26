@@ -122,13 +122,15 @@ export function parseClaudeDesktopLiveUsage(raw: unknown, account: AccountConfig
     return { percentUsed: used, percentLeft: 100 - used, remainingFraction: (100 - used) / 100,
       resetTime, resetCountdown: formatCountdown(resetTime), isExhausted: v.utilization >= 100 }
   }
-  const data = raw as { five_hour?: unknown; seven_day?: unknown } | null
+  const data = raw as { five_hour?: unknown; seven_day?: unknown; limits?: unknown } | null
   if (!data) throw new Error('Claude 앱 사용량 응답 없음')
+  const scopedQuotas = parseScopedLimits(data.limits)
   return {
     id: account.id, name: account.name || 'Claude Code', provider: 'claude', iconLetter: 'C',
     brandColor: '#D97757', tier: `${tier?.toUpperCase() || 'Claude'} (앱 실시간 세션)`,
     dataSource: 'claude-desktop-live', status: 'ready', primaryQuota: quota(data.five_hour),
-    weeklyQuota: data.seven_day == null ? undefined : quota(data.seven_day), updatedAt: new Date().toISOString()
+    weeklyQuota: data.seven_day == null ? undefined : quota(data.seven_day), updatedAt: new Date().toISOString(),
+    ...(scopedQuotas.length ? { scopedQuotas } : {})
   }
 }
 
@@ -168,6 +170,24 @@ export async function readClaudeDesktopTokens(): Promise<ClaudeDesktopTokenEntry
       try { out.push(...listClaudeDesktopTokens(decryptClaudeCache(config['oauth:tokenCacheV2'], key))) }
       finally { key.fill(0) }
     } catch { /* 이 폴더는 건너뛴다. 예외 메시지에 복호화 내용이 섞일 수 있어 남기지 않는다 */ }
+  }
+  return out
+}
+
+/**
+ * limits 중 모델 전용 주간 한도. 예(2026-10-26, 팀 조직): {kind:'weekly_scoped', percent:0, resets_at, scope:{model:{display_name:'Fable'}}}.
+ * percent는 그 모델 몫 안에서 쓴 비율이다. 형식이 다르면 조용히 건너뛴다(본 한도 표시를 막지 않는다).
+ */
+export function parseScopedLimits(limits: unknown): Array<{ label: string; quota: QuotaInfo }> {
+  if (!Array.isArray(limits)) return []
+  const out: Array<{ label: string; quota: QuotaInfo }> = []
+  for (const l of limits as Array<Record<string, any>>) {
+    if (l?.kind !== 'weekly_scoped' || typeof l.percent !== 'number' || !Number.isFinite(l.percent)) continue
+    const label = l.scope?.model?.display_name || l.scope?.surface?.display_name
+    if (typeof label !== 'string' || !label) continue
+    const used = Math.max(0, Math.min(100, Math.round(l.percent)))
+    const resetTime = typeof l.resets_at === 'string' && Number.isFinite(Date.parse(l.resets_at)) ? l.resets_at : undefined
+    out.push({ label, quota: { percentUsed: used, percentLeft: 100 - used, remainingFraction: (100 - used) / 100, resetTime, resetCountdown: formatCountdown(resetTime), isExhausted: used >= 100 } })
   }
   return out
 }

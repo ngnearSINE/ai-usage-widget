@@ -446,7 +446,8 @@ namespace FluentFlyoutDocker
                 double scale = GetWindowDpi(parent) / 96.0;
                 int width = wr.Right - wr.Left;
                 int x = (int)Math.Round(double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) * scale);
-                x = Math.Max(0, Math.Min(x, (pc.Right - pc.Left) - width));
+                // dock과 같이 알림 영역(트레이·시계) 왼쪽까지만 움직인다.
+                x = Math.Max(0, Math.Min(x, GetRightAnchor(parent, pc.Right - pc.Left) - width));
                 return SetWindowPos(hwnd, IntPtr.Zero, x, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) ? 0 : 1;
             }
 
@@ -572,7 +573,9 @@ namespace FluentFlyoutDocker
                     widgetX = rightAnchor - physOffset - widgetWidthPx;
                 }
 
-                // 작업표시줄 내부 영역 클램핑
+                // 작업표시줄 내부 영역 클램핑. 오른쪽은 알림 영역(트레이·시계) 왼쪽까지만 써서 그 아이콘을 덮지 않는다.
+                int usableRight = GetRightAnchor(taskbarHwnd, taskbarClientWidth);
+                if (widgetX + widgetWidthPx > usableRight) widgetX = usableRight - widgetWidthPx;
                 if (widgetX < 0) widgetX = 0;
                 if (widgetX + widgetWidthPx > taskbarClientWidth) widgetX = taskbarClientWidth - widgetWidthPx;
 

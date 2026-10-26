@@ -38,6 +38,8 @@ export interface AccountUsage {
   weeklyQuota?: QuotaInfo // 주간 한도
   isWeeklyOnly?: boolean // ChatGPT Pro 등 5시간 세션 쿼터 없이 1주일 쿼터만 존재하는 계정 여부
   primaryKind?: 'monthly' // 기본 한도가 5시간이 아니라 월간 크레딧인 계정(Grok)
+  scopedQuotas?: Array<{ label: string; quota: QuotaInfo }> // 모델 전용 주간 한도(예: Claude 팀의 Fable). 주간 한도 안의 별도 몫
+  scopedHidden?: string[] // 계정 설정으로 숨긴 모델 전용 한도 이름(설정 화면이 스위치를 보여 주는 데 쓴다)
   models?: ModelQuotaDetail[]
   updatedAt: string
 }
@@ -50,6 +52,8 @@ export interface AccountConfig {
   hidden?: boolean
   isLocalIde?: boolean
   orgUuid?: string // Claude 조직(팀/개인). 있으면 그 조직 토큰으로 조회한다
+  showScoped?: boolean // 모델 전용 한도(Fable 등) 보기. 기본 켬
+  hiddenInDock?: boolean // 작업표시줄 도킹 화면에서만 숨김. 위젯 창에는 보인다
   customMock?: {
     primaryPercent: number
     primaryReset: string

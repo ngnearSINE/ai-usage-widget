@@ -11,6 +11,7 @@ export const IPC_CHANNELS = {
   MOVE_ACCOUNT: 'account:move-account',
   HIDE_ACCOUNT: 'account:hide-account',
   RENAME_ACCOUNT: 'account:rename-account',
+  ACCOUNT_DISPLAY: 'account:display',
   TIP_SHOW: 'tip:show',
   TIP_HIDE: 'tip:hide',
   BEGIN_INTERACTION: 'window:begin-interaction',

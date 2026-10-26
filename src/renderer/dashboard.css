@@ -502,3 +502,9 @@ body.is-dock-preview.dock-enter #app { animation:dock-enter .18s cubic-bezier(.2
 @keyframes dock-enter { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:none; } }
 @keyframes dock-breathe { 50% { box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent), 0 0 26px color-mix(in srgb,var(--accent) 60%,transparent) inset; } }
 @media (prefers-reduced-motion: reduce) { body.is-dock-preview #app::after, body.is-dock-preview.dock-enter #app { animation:none; } }
+
+/* 설정 · 서비스: 작업표시줄에서만 숨김(꺼진 상태 표시), 모델 전용 한도 보기 */
+.dashboard .tool.is-off { color:var(--dim); opacity:.55; }
+.dashboard .tool.is-off svg { text-decoration:line-through; }
+.scoped-toggle { display:inline-flex; align-items:center; gap:5px; margin-top:4px; font-size:10.5px; color:var(--muted); cursor:pointer; }
+.scoped-toggle input { accent-color:var(--accent); margin:0; width:12px; height:12px; }

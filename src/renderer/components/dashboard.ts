@@ -18,6 +18,7 @@ const paths: Record<string, string> = {
   hidden: '<path d="m3 3 18 18M10.6 5.1A14 14 0 0 1 12 5c6.5 0 10 7 10 7a20 20 0 0 1-3.5 4.4M6.3 6.4A22 22 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1.1"/>',
   up: '<path d="m6 14 6-6 6 6"/>', down: '<path d="m6 10 6 6 6-6"/>',
   chev: '<path d="m7 10 5 5 5-5"/>',
+  taskbar: '<rect x="3" y="15" width="18" height="5" rx="1.5"/><path d="M7 17.5h2M11 17.5h2"/><path d="M12 4v7M9 8l3 3 3-3"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m14 6 4 4"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 }
