@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
@@ -15,6 +15,7 @@ import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
 import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
+import { ownColor } from '../common/bar-color.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
@@ -60,12 +61,13 @@ app.on('second-instance', () => {
   if (!widgetWindow.isVisible()) { widgetWindow.show(); void updateWidgetBounds() }
   updateTrayMenu()
 })
+const appPageUrl = () => pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 // 앱 화면은 모두 로컬 파일이다. 링크나 스크립트로 다른 주소로 이동하거나 새 창을 여는 것을 막는다(외부 페이지는 openExternal로만).
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
   contents.on('will-navigate', (event, url) => {
     const dev = process.env.VITE_DEV_SERVER_URL
-    if (!url.startsWith('file://') && !(dev && url.startsWith(dev))) event.preventDefault()
+    if (!(url.split(/[?#]/)[0] === appPageUrl() || (dev && url.startsWith(dev)))) event.preventDefault()
   })
 })
 
@@ -101,8 +103,11 @@ function getAppState(): AppState {
   const accounts = accountStore.getAccounts()
   const raw = isPreview ? previewUsages().filter(u => accounts.some(a => a.id === u.id && a.enabled)) : quotaManager.getUsages()
   // 모델 전용 한도(Fable 등)를 숨긴 계정은 그 값을 빼고, 설정 화면이 스위치를 보이도록 이름만 남긴다.
-  const usages = raw.map(u => accounts.find(a => a.id === u.id)?.showScoped === false && u.scopedQuotas?.length
-    ? { ...u, scopedQuotas: undefined, scopedHidden: u.scopedQuotas.map(s => s.label) } : u)
+  const usages = raw.map(u => {
+    const acc = accounts.find(a => a.id === u.id), bar = ownColor(acc?.barColor)
+    const v = acc?.showScoped === false && u.scopedQuotas?.length ? { ...u, scopedQuotas: undefined, scopedHidden: u.scopedQuotas.map(s => s.label) } : u
+    return bar ? { ...v, barColor: bar } : v
+  })
   return {
     preview: isPreview,
     acrylicSupported,
@@ -185,7 +190,10 @@ async function showTip(sender: Electron.WebContents, text: string, rect: { x: nu
   const below = t.y + t.h + 6
   const y = below + size.h <= area.y + area.height ? below : Math.max(area.y, t.y - size.h - 6)
   tipWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: size.w, height: size.h })
+  // 위젯도 '항상 위' 창이라, 숨겼다 다시 보이는 설명 창은 예전 순서 그대로면 위젯을 누른 뒤 그 뒤에 깔린다. 띄울 때마다 맨 앞으로 올린다.
+  tipWindow.setAlwaysOnTop(true, 'screen-saver', 10000)
   tipWindow.showInactive()
+  tipWindow.moveTop()
 }
 
 /* ---------- 모니터별 배치 ---------- */
@@ -648,6 +656,7 @@ async function setPlacement(mode: 'floating' | 'docked', floatBounds?: Electron.
   const previous = accountStore.getConfig()
   if (previous.placementMode === mode) return
   if (mode === 'floating') {
+    clearTimeout(dockRetryTimer); dockRepairPending = false
     TaskbarDocker.stopDockWatcher()
     const detached = await TaskbarDocker.undockWindow(widgetWindow)
     if (!detached) throw new Error('작업표시줄에서 창을 분리하지 못했습니다.')
@@ -1285,10 +1294,13 @@ function setupIpcHandlers() {
     if (!file) return false
     return (await shell.openPath(file)) === ''
   })
-  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown }) => {
-    const clean: { showScoped?: boolean; hiddenInDock?: boolean } = {}
+  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown; barColor?: unknown }) => {
+    const clean: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string } = {}
     if (typeof patch?.showScoped === 'boolean') clean.showScoped = patch.showScoped
     if (typeof patch?.hiddenInDock === 'boolean') clean.hiddenInDock = patch.hiddenInDock
+    // 평소 색: 'brand'(서비스 색으로 되돌림)·'green'·'#rrggbb'만 받는다.
+    if (patch?.barColor === 'brand') clean.barColor = undefined
+    else if (typeof patch?.barColor === 'string' && ownColor(patch.barColor)) clean.barColor = patch.barColor
     accountStore.patchAccountDisplay(String(id), clean)
     broadcastState()
     if (clean.hiddenInDock !== undefined && accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds()
@@ -1479,6 +1491,7 @@ app.on('before-quit', (event) => {
     event.preventDefault()
     if (quitPending) return
     quitPending = true
+    clearTimeout(dockRetryTimer); dockRepairPending = false
     TaskbarDocker.stopDockWatcher()
     const win = widgetWindow
     void Promise.race([TaskbarDocker.undockWindow(win), new Promise(r => setTimeout(r, 1500))])

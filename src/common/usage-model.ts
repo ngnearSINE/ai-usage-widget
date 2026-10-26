@@ -7,7 +7,8 @@ export const WINDOW_30D = 30 * 86400e3
 /** 한도의 실제 주기. 첫 번째 칸(key '5h')은 서비스에 따라 5시간 또는 월간이다. */
 export type WindowPeriod = '5h' | 'weekly' | 'monthly'
 export const PERIOD_LEN: Record<WindowPeriod, number> = { '5h': WINDOW_5H, weekly: WINDOW_7D, monthly: WINDOW_30D }
-const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': ['5시간', '5h'], weekly: ['주간', '주'], monthly: ['월간', '월'] }
+// 짧은 이름도 한 글자로 줄이지 않는다('주' 한 글자는 잘린 글자처럼 보인다).
+const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': ['5시간', '5h'], weekly: ['주간', '주간'], monthly: ['월간', '월간'] }
 export type DesignId = 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
 export type ValueSource = 'weekly' | '5h' | 'tight'
 export const DESIGNS: Array<[DesignId, string, string]> = [
@@ -44,6 +45,8 @@ export interface ServiceModel {
   ww?: QuotaWindow
   /** 모델 전용 주간 한도(Fable 등). 판정·알림·큰 숫자에는 쓰지 않고 큰 카드의 보조 줄과 설명에만 쓴다. */
   scoped: QuotaWindow[]
+  /** 그래프 평소 색(계정 설정, CSS 색). 없으면 서비스 색. */
+  bar?: string
 }
 
 const clampPct = (n: number) => Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0
@@ -72,7 +75,7 @@ export function serviceModel(u: AccountUsage, now = Date.now()): ServiceModel {
   const w5 = u.isWeeklyOnly ? undefined : quotaWindow(u.primaryQuota, '5h', now, u.primaryKind === 'monthly' ? 'monthly' : '5h')
   const ww = u.isWeeklyOnly ? quotaWindow(u.primaryQuota, 'weekly', now) : u.weeklyQuota ? quotaWindow(u.weeklyQuota, 'weekly', now) : undefined
   const scoped = (u.scopedQuotas || []).map(s => ({ ...quotaWindow(s.quota, 'weekly', now), label: s.label, short: s.label }))
-  return { id: u.id, name: u.name, provider: u.provider, brand: u.brandColor, available: ['ready', 'stale'].includes(u.status), w5, ww, scoped }
+  return { id: u.id, name: u.name, provider: u.provider, brand: u.brandColor, available: ['ready', 'stale'].includes(u.status), w5, ww, scoped, bar: u.barColor }
 }
 
 export const windowsOf = (m: ServiceModel) => [m.w5, m.ww].filter(Boolean) as QuotaWindow[]

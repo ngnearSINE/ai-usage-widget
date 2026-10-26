@@ -8,6 +8,7 @@ import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext } from './usage-views.js'
 import { applyAppearance, escapeText, icon } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
+import { SMOOTH_START } from '../../common/bar-color.js'
 
 /**
  * 설정 창: 왼쪽 미리보기(실제 위젯과 같은 렌더러·배치), 오른쪽 조절 항목.
@@ -38,6 +39,7 @@ const openAdvanced = new Set<string>() // 펼쳐 둔 '고급' 접기
 let detected: DetectedApp[] | null = null
 let detecting = false
 let addingCustom = false
+const customDraft = { name: '', p5: '100', pw: '100', color: '#8cbbff' }
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
 const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#a99bff'
@@ -69,7 +71,7 @@ export function initSettings(container: HTMLElement, initial: AppState, initialT
 /** 이름·주소·단축키를 입력하는 중인지. 그동안 새 상태로 다시 그리면 입력이 지워진다. */
 function typing() {
   const a = document.activeElement as HTMLElement | null
-  return !!a && root.contains(a) && (a.matches('input[type=text],input[type=url],input[type=number],.sc-input'))
+  return !!a && root.contains(a) && (a.matches('input[type=text],input[type=url],input[type=number],input[type=color],.sc-input'))
 }
 
 export function renderSettings(next: AppState, force = false) {
@@ -157,6 +159,18 @@ const toggle = (key: keyof WidgetConfig, label: string, description: string, val
 const slider = (key: string, label: string, min: number, max: number, value: number, unit: string) => `<label class="slider-setting"><span>${label}<output>${value}${unit}</output></span><input type="range" data-range="${key}" data-unit="${unit}" min="${min}" max="${max}" value="${value}" aria-label="${label}"></label>`
 const section = (label: string, inner: string, hint = '') => `<section class="editor-section"><div class="section-label">${label}${hint ? `<span>${hint}</span>` : ''}</div>${inner}</section>`
 const hint = (text: string, cls = '') => `<p class="setting-hint ${cls}">${text}</p>`
+/** 서비스마다 다른 값을 고르는 단추 묶음(설정 키 대신 data 속성 이름과 계정 ID를 쓴다). */
+const segmentRaw = (current: string, options: string[][], attr: string, id: string, label: string) => `<div class="segmented" role="group" aria-label="${label}">${options.map(([value, text]) => `<button ${attr}="${value}" data-id="${id}" aria-pressed="${current === value}">${text}</button>`).join('')}</div>`
+const barChoice = (a: AccountConfig) => !a.barColor ? 'brand' : a.barColor === 'green' ? 'green' : 'custom'
+const barSwatch = (a: AccountConfig, brand?: string) => /^#[\da-f]{6}$/i.test(a.barColor || '') ? a.barColor! : hex(brand)
+/** 연속 변화 미리보기 띠: 남은 양 100%(왼쪽) → 0%(오른쪽). */
+function colorScale(c: WidgetConfig, warn: number) {
+  if (c.colorMode !== 'smooth' || c.colorByUsage === false) return hint(`남은 양이 주의 ${warn}%·위험 ${Math.min(warn, c.critPercent ?? 10)}% 아래로 내려가는 순간 색이 바뀌어요.`)
+  const crit = Math.min(warn, c.critPercent ?? 10), top = Math.max(SMOOTH_START, warn + 1)
+  const stop = (left: number) => 100 - left
+  return `<div class="color-scale" aria-hidden="true" style="background:linear-gradient(90deg,var(--accent) 0%,var(--accent) ${stop(top)}%,var(--warn) ${stop(warn)}%,var(--danger) ${stop(crit)}%,var(--danger) 100%)"></div><div class="color-scale-labels">${[100, top, warn, crit, 0].filter((v, i, a) => a.indexOf(v) === i).filter((v, i, a) => i === 0 || v === 0 || a[i - 1] - v >= 8).map(v => `<span style="left:${stop(v)}%">${v}%</span>`).join('')}</div>`
+    + hint(`남은 양 ${top}%까지는 평소 색, 그 아래로 주의 ${warn}%까지 주황으로, 위험 ${crit}%까지 빨강으로 서서히 바뀌어요. 큰 숫자는 주의 기준 아래에서만 색이 바뀌어요.`)
+}
 const advanced = (id: string, inner: string, label = '고급') => `<details class="s-advanced" data-adv="${id}" ${openAdvanced.has(id) ? 'open' : ''}><summary>${icon('chev')}${label}</summary><div class="s-advanced-body">${inner}</div></details>`
 
 /* ---------- 탭 내용 ---------- */
@@ -180,6 +194,7 @@ function displayTab(c: WidgetConfig) {
   return section('큰 숫자', `<div class="segmented" role="group" aria-label="큰 숫자 기준">${(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => `<button data-source-all="${k}" aria-pressed="${common === k}">${SOURCE_LABEL[k]}</button>`).join('')}</div>${hint(`카드에 크게 보일 한도예요. 카드마다 다르게 하려면 카드의 기준 버튼(주간 ▾)을 누르세요.${common ? '' : ' 지금은 카드마다 다르게 설정되어 있어요.'}`)}`)
     + section('여유가 적을 때', slider('warnPercent', '주의(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
       + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
+      + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'smooth' ? 'smooth' : 'step', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
       + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
     + section('보여 줄 정보', toggle('showUsedPercent', '쓴 양으로 표시', '끄면 남은 양으로 표시해요.', !!c.showUsedPercent)
@@ -205,6 +220,7 @@ function servicesTab(s: AppState) {
     const scopedNames = u?.scopedQuotas?.map(x => x.label) || u?.scopedHidden || []
     const detail = open ? `<div class="svc-detail" id="svc-detail-${id}">
         <label class="field"><span>이름</span><input type="text" class="text-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
+        <div class="field"><span>평소 색</span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접 고르기']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div><small class="field-note">여유가 있을 때 막대·원형 그래프와 작업 표시줄 막대에 쓰는 색이에요.</small></div>
         <div class="field"><span>보일 곳</span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${visibilityOf(a) === v}" title="${d}">${t}</button>`).join('')}</div><small class="field-note">${visibilityOf(a) === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요.' : visibilityOf(a) === 'window' ? '작업 표시줄에 붙였을 때는 빼요.' : '어디에도 보이지 않아요. 사용량 조회는 계속해요.'}</small></div>
         ${scopedNames.length ? `<label class="setting-row"><span><b>${escapeText(scopedNames.join('·'))} 한도 표시</b><small>팀 요금제의 모델 전용 주간 한도를 카드에 함께 보여 줘요.</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
         <div class="field"><span>순서</span><div class="svc-actions"><button class="ghost-button" data-order="up" data-id="${id}" ${index === 0 ? 'disabled' : ''}>${icon('up')}앞으로</button><button class="ghost-button" data-order="down" data-id="${id}" ${index === s.accounts.length - 1 ? 'disabled' : ''}>${icon('down')}뒤로</button><button class="ghost-button danger" data-remove="${id}">${icon('close')}목록에서 빼기</button></div></div>
@@ -217,8 +233,8 @@ function servicesTab(s: AppState) {
   const added = new Set(s.accounts.map(a => a.id))
   const found = (detected || []).map(app => `<div class="found-row">${renderAiIcon(app.provider, app.name, s.config.iconStyle, 22)}<span class="svc-text"><b>${escapeText(app.name)}</b><small>${app.running ? '실행 중' : app.installed ? '설치됨' : '찾을 수 있음'}</small></span>${added.has(app.id) ? '<span class="pill">추가됨</span>' : `<button class="ghost-button accent" data-add-app="${escapeText(app.id)}">${icon('plus')}추가</button>`}</div>`).join('')
   const custom = addingCustom ? `<div class="custom-form">
-      <label class="field"><span>이름</span><input type="text" class="text-input" data-custom="name" maxlength="60" placeholder="예: 회사 Claude"></label>
-      <div class="field-row"><label class="field"><span>5시간 남은 양(%)</span><input type="number" class="text-input" data-custom="p5" min="0" max="100" value="100"></label><label class="field"><span>주간 남은 양(%)</span><input type="number" class="text-input" data-custom="pw" min="0" max="100" value="100"></label><label class="field narrow"><span>색</span><input type="color" class="color-input" data-custom="color" value="#8cbbff"></label></div>
+      <label class="field"><span>이름</span><input type="text" class="text-input" data-custom="name" maxlength="60" placeholder="예: 회사 Claude" value="${escapeText(customDraft.name)}"></label>
+      <div class="field-row"><label class="field"><span>5시간 남은 양(%)</span><input type="number" class="text-input" data-custom="p5" min="0" max="100" value="${escapeText(customDraft.p5)}"></label><label class="field"><span>주간 남은 양(%)</span><input type="number" class="text-input" data-custom="pw" min="0" max="100" value="${escapeText(customDraft.pw)}"></label><label class="field narrow"><span>색</span><input type="color" class="color-input" data-custom="color" value="${hex(customDraft.color)}"></label></div>
       <div class="svc-actions"><button class="primary-button" data-custom-save>추가</button><button class="ghost-button" data-custom-cancel>취소</button></div>
     </div>` : `<button class="secondary-button" data-custom-open>${icon('plus')}숫자를 직접 넣는 카드 추가</button>`
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
@@ -263,15 +279,18 @@ function historyTab() {
   if (!list.length) return section('사용 기록', hint('아직 기록이 없어요. 사용량을 조회할 때마다 이 PC에 쌓이고 30일 동안 보관해요.'))
   return section('서비스', `<div class="chip-row">${list.map(u => `<button class="chip-btn" data-hist="${escapeText(u.id)}" aria-pressed="${u.id === histId}">${renderAiIcon(u.provider, u.name, state.config.iconStyle, 16)}${escapeText(u.name)}</button>`).join('')}</div>`)
     + section('기간', `<div class="segmented" role="group" aria-label="기간"><button data-hrange="day" aria-pressed="${histRange === 'day'}">최근 24시간</button><button data-hrange="week" aria-pressed="${histRange === 'week'}">최근 7일</button></div>`)
-    + `<section class="editor-section"><div class="hist-chart" data-hist-chart>${hint('불러오는 중…')}</div>${hint(`남은 양(%)의 흐름이에요. 사용량을 조회할 때마다 이 PC에만 기록하고 30일 동안 보관해요.${usePreviewSample() ? ' 지금은 예시 기록이에요.' : ''}`)}</section>`
+    + `<section class="editor-section"><div class="hist-chart" data-hist-chart data-keep>${hint('불러오는 중…')}</div>${hint(`남은 양(%)의 흐름이에요. 사용량을 조회할 때마다 이 PC에만 기록하고 30일 동안 보관해요.${usePreviewSample() ? ' 지금은 예시 기록이에요.' : ''}`)}</section>`
 }
+let histSeq = 0
 async function drawHistory() {
   const box = root.querySelector<HTMLElement>('[data-hist-chart]'); if (!box || !histId) return
+  const seq = ++histSeq
   const now = Date.now(), span = histRange === 'day' ? 86400e3 : 7 * 86400e3, from = now - span
   const u = historyServices().find(x => x.id === histId)!
   let pts: HistoryPoint[]
   try { pts = usePreviewSample() ? downsample(sampleHistory()[histId] || [], from, now, 200) : await window.api.getHistory(histId, from, now, 200) }
-  catch { box.innerHTML = hint('기록을 불러오지 못했어요.'); return }
+  catch { if (seq === histSeq) box.innerHTML = hint('기록을 불러오지 못했어요.'); return }
+  if (seq !== histSeq || !box.isConnected) return
   if (pts.length < 2) { box.innerHTML = hint('이 기간에는 기록이 아직 충분하지 않아요.'); return }
   const W = 300, H = 140, L = 26, B = 18
   const px = (t: number) => L + (t - from) / span * (W - L - 4), py = (v: number) => 4 + (1 - v / 100) * (H - B - 4)
@@ -316,7 +335,9 @@ function generalTab(s: AppState) {
 }
 function shortcutFromEvent(e: KeyboardEvent): string | null {
   const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[]
-  const k = e.key.length === 1 ? e.key.toUpperCase() : /^F\d{1,2}$/.test(e.key) ? e.key : null
+  // 한글 입력 상태에서는 e.key가 자모로 오므로 글쇠 위치(e.code)로 읽는다.
+  const code = /^Key([A-Z])$/.exec(e.code)?.[1] || /^Digit(\d)$/.exec(e.code)?.[1]
+  const k = code || (e.key.length === 1 ? e.key.toUpperCase() : /^F\d{1,2}$/.test(e.key) ? e.key : null)
   // 글자 단독은 다른 앱의 입력을 막으므로 Ctrl 또는 Alt를 반드시 함께 쓴다.
   if (!k || !/^[A-Z0-9]$|^F\d{1,2}$/.test(k) || !(e.ctrlKey || e.altKey)) return null
   return [...mods, k].join('+')
@@ -346,6 +367,8 @@ function bindEvents() {
   root.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.onclick = () => { size = el.dataset.size as SizeKey; renderSettings(state, true) })
   root.querySelectorAll<HTMLElement>('[data-sample]').forEach(el => el.onclick = () => { sample = el.dataset.sample as 'real' | 'sample'; renderSettings(state, true) })
   const body = root.querySelector<HTMLElement>('[data-body]')!
+  // 같은 요소가 다시 그려져도 남으므로(updateMarkup) addEventListener를 쓰면 동작이 쌓인다. 항상 덮어쓴다.
+  const onClickOf = (sel: string, fn: (e: MouseEvent) => unknown) => { const el = body.querySelector<HTMLElement>(sel); if (el) el.onclick = fn }
   body.querySelectorAll<HTMLDetailsElement>('[data-adv]').forEach(el => el.ontoggle = () => { if (el.open) openAdvanced.add(el.dataset.adv!); else openAdvanced.delete(el.dataset.adv!) })
   body.querySelectorAll<HTMLElement>('[data-config]').forEach(el => el.onclick = () => { void update({ [el.dataset.config!]: el.dataset.value }) })
   body.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach(el => el.onchange = () => { void update({ [el.dataset.toggle!]: el.checked }) })
@@ -364,6 +387,8 @@ function bindEvents() {
       renderPreview()
     }
     el.onchange = () => { void update({ [el.dataset.range!]: Number(el.value) }) }
+    // 같은 값에서 놓으면 change가 오지 않는다. 임시 값이 남으면 창이 새 상태를 따라가지 못하므로 정리한다.
+    el.onpointerup = el.onblur = () => setTimeout(() => { if (draft && draft[el.dataset.range as keyof WidgetConfig] === state.config[el.dataset.range as keyof WidgetConfig]) { draft = null; renderSettings(state, true) } }, 0)
   })
   const colorInput = body.querySelector<HTMLInputElement>('[data-color]')
   if (colorInput) colorInput.onchange = () => { void update({ accentColor: colorInput.value }) }
@@ -372,10 +397,10 @@ function bindEvents() {
   // 단축키
   body.querySelectorAll<HTMLInputElement>('[data-shortcut]').forEach(el => {
     el.onkeydown = e => {
+      if (e.key === 'Tab') return // 다음 칸으로 이동(키보드 사용자)
       e.preventDefault()
       const k = el.dataset.shortcut as ShortcutKey, cur = { ...SHORTCUT_DEFAULTS, ...config().shortcuts }
       if (e.key === 'Escape') { el.blur(); return }
-      if (e.key === 'Tab') { el.blur(); return }
       if (e.key === 'Backspace' || e.key === 'Delete') { el.blur(); void update({ shortcuts: { ...cur, [k]: '' } }); return }
       const accel = shortcutFromEvent(e)
       if (!accel) { if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) el.value = 'Ctrl 또는 Alt와 함께 눌러 주세요'; return }
@@ -386,14 +411,14 @@ function bindEvents() {
   })
   body.querySelectorAll<HTMLElement>('[data-sc-clear]').forEach(el => el.onclick = () => { void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [el.dataset.scClear!]: '' } }) })
   body.querySelectorAll<HTMLElement>('[data-sc-default]').forEach(el => el.onclick = () => { const k = el.dataset.scDefault as ShortcutKey; void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [k]: SHORTCUT_DEFAULTS[k] } }) })
-  body.querySelector<HTMLElement>('[data-clear-layouts]')?.addEventListener('click', () => { void update({ layoutsByMonitor: {} }) })
+  onClickOf('[data-clear-layouts]', () => { void update({ layoutsByMonitor: {} }) })
 
   // 외부 디스플레이: 입력을 마칠 때(Enter·포커스 이동)만 저장한다.
   const ep = body.querySelector<HTMLInputElement>('[data-api-endpoint]')
   if (ep) ep.onchange = () => { const v = ep.value.trim(); if (/^https?:\/\/\S+$/i.test(v)) void update({ apiEndpoint: v }); else { notify('http:// 또는 https://로 시작하는 주소를 넣어 주세요.'); ep.value = state.config.apiEndpoint || 'http://localhost:8080/api/usage' } }
   const scr = body.querySelector<HTMLInputElement>('[data-api-screen]')
   if (scr) scr.onchange = () => { const v = parseInt(scr.value, 10); if (v >= 1) void update({ apiScreen: v }); else scr.value = String(state.config.apiScreen ?? 1) }
-  body.querySelector<HTMLElement>('[data-open-guide]')?.addEventListener('click', () => run(window.api.openGuide().then(ok => { if (!ok) notify('사용 설명서를 찾지 못했어요.') }), '사용 설명서를 열지 못했어요.'))
+  onClickOf('[data-open-guide]', () => run(window.api.openGuide().then(ok => { if (!ok) notify('사용 설명서를 찾지 못했어요.') }), '사용 설명서를 열지 못했어요.'))
 
   // 기록
   body.querySelectorAll<HTMLElement>('[data-hist]').forEach(el => el.onclick = () => { histId = el.dataset.hist!; renderSettings(state, true) })
@@ -405,7 +430,7 @@ function bindEvents() {
     if (el.checked) set.delete(el.dataset.mute!); else set.add(el.dataset.mute!)
     void update({ notifyMuted: [...set] })
   })
-  body.querySelector<HTMLElement>('[data-test-notify]')?.addEventListener('click', async () => {
+  onClickOf('[data-test-notify]', async () => {
     try { notify(await window.api.testNotification() ? '테스트 알림을 보냈어요.' : '이 PC에서는 Windows 알림을 쓸 수 없어요.') }
     catch { notify('테스트 알림을 보내지 못했어요.') }
   })
@@ -426,6 +451,12 @@ function bindEvents() {
       if (v !== 'none' && (v === 'window') !== !!a.hiddenInDock) await window.api.setAccountDisplay(id, { hiddenInDock: v === 'window' })
     } catch { notify('표시 설정을 저장하지 못했어요.') }
   })
+  body.querySelectorAll<HTMLElement>('[data-barcolor]').forEach(el => el.onclick = () => {
+    const v = el.dataset.barcolor!, id = el.dataset.id!
+    if (v === 'custom') { body.querySelector<HTMLInputElement>(`[data-barcolor-pick="${CSS.escape(id)}"]`)?.click(); return }
+    run(window.api.setAccountDisplay(id, { barColor: v }), '색을 저장하지 못했어요.')
+  })
+  body.querySelectorAll<HTMLInputElement>('[data-barcolor-pick]').forEach(el => el.onchange = () => run(window.api.setAccountDisplay(el.dataset.barcolorPick!, { barColor: el.value }), '색을 저장하지 못했어요.'))
   body.querySelectorAll<HTMLInputElement>('[data-scoped]').forEach(el => el.onchange = () => run(window.api.setAccountDisplay(el.dataset.scoped!, { showScoped: el.checked }), '표시 설정을 저장하지 못했어요.'))
   body.querySelectorAll<HTMLElement>('[data-order]').forEach(el => el.onclick = () => run(window.api.reorderAccount(el.dataset.id!, el.dataset.order as 'up' | 'down'), '순서를 저장하지 못했어요.'))
   body.querySelectorAll<HTMLElement>('[data-remove]').forEach(el => el.onclick = () => {
@@ -434,21 +465,31 @@ function bindEvents() {
     expanded = ''
     run(window.api.removeAccount(a.id), '목록에서 빼지 못했어요.')
   })
-  body.querySelector<HTMLElement>('[data-redetect]')?.addEventListener('click', () => { void detectApps(); void window.api.refreshQuota() })
+  onClickOf('[data-redetect]', () => { void detectApps(); void window.api.refreshQuota() })
   body.querySelectorAll<HTMLElement>('[data-add-app]').forEach(el => el.onclick = () => {
     const app = detected?.find(x => x.id === el.dataset.addApp); if (app) run(window.api.restoreDetectedApp(app), '추가하지 못했어요.')
   })
-  body.querySelector<HTMLElement>('[data-custom-open]')?.addEventListener('click', () => { addingCustom = true; renderSettings(state, true); body.querySelector<HTMLInputElement>('[data-custom="name"]')?.focus() })
-  body.querySelector<HTMLElement>('[data-custom-cancel]')?.addEventListener('click', () => { addingCustom = false; renderSettings(state, true) })
-  body.querySelector<HTMLElement>('[data-custom-save]')?.addEventListener('click', () => {
+  onClickOf('[data-custom-open]', () => { addingCustom = true; renderSettings(state, true); body.querySelector<HTMLInputElement>('[data-custom="name"]')?.focus() })
+  // 직접 입력 양식: Enter는 추가, Esc는 취소
+  body.querySelectorAll<HTMLInputElement>('[data-custom]').forEach(el => el.oninput = () => { (customDraft as Record<string, string>)[el.dataset.custom!] = el.value })
+  body.querySelectorAll<HTMLInputElement>('[data-custom]').forEach(el => el.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); body.querySelector<HTMLElement>('[data-custom-save]')?.click() }
+    else if (e.key === 'Escape') body.querySelector<HTMLElement>('[data-custom-cancel]')?.click()
+  })
+  onClickOf('[data-custom-cancel]', () => { addingCustom = false; renderSettings(state, true) })
+  onClickOf('[data-custom-save]', () => {
     const val = (k: string) => body.querySelector<HTMLInputElement>(`[data-custom="${k}"]`)?.value || ''
     const pct = (k: string) => { const n = Number(val(k)); return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : 100 }
     const name = val('name').trim()
-    if (!name) { notify('이름을 넣어 주세요.'); return }
+    if (!name) { notify('이름을 넣어 주세요.'); body.querySelector<HTMLInputElement>('[data-custom="name"]')?.focus(); return }
     addingCustom = false
+    Object.assign(customDraft, { name: '', p5: '100', pw: '100' })
+    // 입력 칸에 커서가 남아 있으면 '입력 중'으로 보고 다시 그리지 않으므로 먼저 빠져나온다.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    renderSettings(state, true)
     run(window.api.addCustomAccount({ name, provider: 'custom', customMock: { primaryPercent: 100 - pct('p5'), primaryReset: '', weeklyPercent: 100 - pct('pw'), weeklyReset: '', iconLetter: name.charAt(0).toUpperCase(), brandColor: val('color') } }), '추가하지 못했어요.')
   })
-  body.querySelector<HTMLElement>('[data-reset-defaults]')?.addEventListener('click', () => {
+  onClickOf('[data-reset-defaults]', () => {
     if (!confirm('서비스 목록을 기본으로 되돌릴까요?\n직접 추가한 카드와 바꾼 이름이 사라져요.')) return
     run(window.api.resetDefaultAccounts(), '되돌리지 못했어요.')
   })

@@ -1,4 +1,5 @@
 import type { AccountUsage, AppState, QuotaInfo, WidgetConfig } from '../../common/types.js'
+import { barColor } from '../../common/bar-color.js'
 import { visibleUsages } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
@@ -66,15 +67,19 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   // 모델 전용 주간 한도(Fable 등)를 보기로 둔 계정은 작업표시줄에도 세 번째 줄로 보인다(숨긴 계정은 상태에서 이미 빠져 있다).
   const scoped = u.scopedQuotas || []
   const rows = [...quotas, ...scoped.map(s => s.quota)]
+  const warn = Math.max(1, Math.min(60, config.warnPercent ?? 20))
+  const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
     const value = available && q ? clamp(config.showUsedPercent ? q.percentUsed : q.percentLeft) : null
     const name = i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
     const label = `${name} ${config.showUsedPercent ? '사용한 양' : '남은 양'}`
-    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
+    // 줄마다 기본 색(--row-base: 서비스 평소 색과 그 흐린 색)에서 경고색으로 바뀐다(CSS에서 줄별로 정함).
+    const fill = available && q ? barColor(clamp(q.percentLeft), 'var(--row-base)', colorOpts) : 'var(--row-base)'
+    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%;--fill:${fill}"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
   }).join('')}</div></div>`
 }
 export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {
-  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${color(u.brandColor)}" title="${escapeText(u.name)}${u.status === 'stale' ? ' · 갱신 지연' : ''}">${miniSummary(u, config)}</div>`
+  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText(u.name)}${u.status === 'stale' ? ' · 갱신 지연' : ''}">${miniSummary(u, config)}</div>`
 }
 
 /** 트레이·다른 창에서 '디자인 설정'을 열 때. 설정은 별도 설정 창에서 한다. */

@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.antigravity.ai-usage-widget",
+  "appId": "io.github.aiusagewidget.app",
   "productName": "AI Usage Widget",
   "asar": false,
   "directories": {

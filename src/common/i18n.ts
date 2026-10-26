@@ -8,7 +8,7 @@ export function detectLang(rawLocale: string | undefined | null): Lang {
 const dict = {
   trayToggleWidget: { ko: '위젯 표시/숨김', en: 'Show/Hide Widget' },
   trayOpenPopup: { ko: '상세 팝업 열기', en: 'Open Details' },
-  trayAutoLaunch: { ko: '윈도우 시작 시 자동 실행', en: 'Launch at Login' },
+  trayAutoLaunch: { ko: 'Windows를 켤 때 함께 시작', en: 'Launch at Login' },
   trayRefreshNow: { ko: '지금 새로고침', en: 'Refresh Now' },
   trayQuit: { ko: '종료', en: 'Quit' },
   trayTooltip: { ko: 'AI 토큰 사용량 위젯', en: 'AI Token Usage Widget' },

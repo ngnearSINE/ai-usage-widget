@@ -3,6 +3,7 @@ import {
   cardBody, fitDesign, fmtDuration, fmtDurationShort, formOf, paceWarning, pickWindow, richScale, richTier, serviceModel, severity, unusedWeekly, windowsOf, worstWindow,
   type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
+import { barColor, type ColorMode } from '../../common/bar-color.js'
 
 /** 대시보드 카드 렌더러. 디자인마다 기본 형태와 작은 카드 형태가 있고, 작아져도 다른 디자인으로 바꿔 그리지 않는다. */
 export interface ViewContext {
@@ -12,6 +13,7 @@ export interface ViewContext {
   showReset: boolean
   showUsed: boolean
   colorByUsage: boolean
+  colorMode: ColorMode
   iconStyle: WidgetConfig['iconStyle']
   source: (id: string) => ValueSource
   history?: Record<string, HistoryPoint[]>
@@ -21,7 +23,7 @@ export function viewContext(config: WidgetConfig, history?: Record<string, Histo
   return {
     warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)), showPace: config.showPace !== false,
     showReset: config.showResetTime !== false, showUsed: !!config.showUsedPercent, colorByUsage: config.colorByUsage !== false,
-    iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
+    colorMode: config.colorMode === 'smooth' ? 'smooth' : 'step', iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
   }
 }
 
@@ -44,8 +46,8 @@ const chev = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 // '사용한 양으로 표시'를 켜면 숫자와 그림 모두 사용량을 기준으로 바뀐다. 경고 판정은 항상 남은 양 기준.
 const shown = (x: ViewContext, w: QuotaWindow) => x.showUsed ? w.used : w.left
 const expected = (x: ViewContext, w: QuotaWindow) => w.expectedLeft === null ? null : x.showUsed ? 100 - w.expectedLeft : w.expectedLeft
-const color = (x: ViewContext, m: ServiceModel, w: QuotaWindow) =>
-  !x.colorByUsage ? hex(m.brand) : w.left <= x.crit ? 'var(--danger)' : w.left <= x.warn ? 'var(--warn)' : hex(m.brand)
+const base = (m: ServiceModel) => m.bar || hex(m.brand)
+const color = (x: ViewContext, m: ServiceModel, w: QuotaWindow) => barColor(w.left, base(m), { on: x.colorByUsage, mode: x.colorMode, warn: x.warn, crit: x.crit })
 const valColor = (x: ViewContext, w: QuotaWindow) => x.colorByUsage && w.left <= x.warn ? (w.left <= x.crit ? 'var(--danger)' : 'var(--warn)') : 'var(--ink)'
 const remainWord = (x: ViewContext) => x.showUsed ? '사용' : '남음'
 
@@ -211,7 +213,7 @@ function timeline(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o:
     const px = 4 + 240 * m.ww!.elapsed!, wd = Math.max(3, 240 * 5 / 168), x0 = px - wd * m.w5!.elapsed!
     return `<path d="M${x0.toFixed(1)} 33v3h${wd.toFixed(1)}v-3" stroke="var(--accent)" fill="none" stroke-width="1"/><path d="M${x0.toFixed(1)} 36 L4 74 M${(x0 + wd).toFixed(1)} 36 L244 74" stroke="var(--accent)" stroke-width=".6" opacity=".3" fill="none"/>`
   })()
-  const key = b.h > (v ? 200 : 120) && b.w >= 150 ? `<div class="cap" style="text-align:center"><i class="dot" style="background:var(--svg-elapsed)"></i>지난 시간 <i class="dot" style="background:${hex(m.brand)};margin-left:10px"></i>${x.showUsed ? '사용량' : '남은 양'}</div>` : ''
+  const key = b.h > (v ? 200 : 120) && b.w >= 150 ? `<div class="cap" style="text-align:center"><i class="dot" style="background:var(--svg-elapsed)"></i>지난 시간 <i class="dot" style="background:${base(m)};margin-left:10px"></i>${x.showUsed ? '사용량' : '남은 양'}</div>` : ''
   return `<div class="tl-wrap"><div class="svgwrap"><svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${body}${bracket}</svg></div>${key}</div>`
 }
 function batterySVG(m: ServiceModel, x: ViewContext, w: QuotaWindow, height: number, cells: number, vert: boolean) {
@@ -261,11 +263,15 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
   rings(m, x, c, v) {
     const { main } = pickWindow(m, x.source(m.id))
     if (v) { const size = Math.min(c.w, c.h - (c.h >= 120 ? 36 : 0)); return `${ringSVG(m, x, size, size >= 40 ? main : null, size < 44 ? 9 : 7, false)}${c.h >= 120 ? `<div class="c-legend" style="align-items:center"><div>${windowsOf(m).map(w => `<span class="cap">${w.short}</span><span class="num" style="color:${valColor(x, w)}">${shown(x, w)}%</span>`).join('')}</div></div>` : ''}` }
-    const size = Math.max(18, Math.min(c.h, 64)), legend = c.w >= size + 170 && c.h >= 34
+    // 링은 아이콘 자리(약 30px)를 뺀 폭 안에 들어가야 한다(넘치면 아이콘과 겹치고 숫자가 잘린다).
+    const avail = Math.max(18, c.w - 30)
+    let size = Math.max(18, Math.min(c.h, 64, avail))
+    const legend = c.w >= size + 170 && c.h >= 34
     const lg = legend ? `<div class="c-legend">${[m.ww, m.w5].filter(Boolean).map(w => `<div><i class="dot" style="background:${color(x, m, w!)}"></i><span class="cap">${w!.label}</span>${smallVal(x, w!)}</div>`).join('')}</div>` : ''
-    // 링 옆에 자리가 있으면 숫자를 밖에 크게, 없으면 링 안에 넣는다.
-    const beside = !legend && (c.w >= size + 56 || size < 40)
-    return `${ringSVG(m, x, size, !legend && !beside ? main : null, size < 44 ? 9 : 7, false)}${lg}${beside ? num(x, main, Math.max(16, Math.min(26, c.h * .55))) : ''}`
+    // 링 옆에 자리가 있으면 숫자를 밖에 크게, 없으면 링 안에 넣는다. 링이 작아 안에 못 넣으면 링을 줄여 옆에 둔다.
+    let beside = !legend && avail >= size + 56
+    if (!legend && !beside && size < 40) { size = Math.max(16, Math.min(size, avail - 34)); beside = true }
+    return `${ringSVG(m, x, size, !legend && !beside ? main : null, size < 44 ? 9 : 7, false)}${lg}${beside ? num(x, main, Math.max(13, Math.min(26, c.h * .55, (avail - size) * .45))) : ''}`
   },
   timeline(m, x, c, v) {
     const { main } = pickWindow(m, x.source(m.id)), ws = [m.ww, m.w5].filter(Boolean) as QuotaWindow[]
@@ -287,7 +293,8 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
       const h = Math.max(12, Math.min(c.w * .42, (c.h - (c.h >= 110 ? 36 : 16)) / 2.2))
       return `<div class="c-bats">${[[main, 1], ...(other ? [[other, .72]] : [])].map(([w, k]) => `<div class="c-bat">${batterySVG(m, x, w as QuotaWindow, h * (k as number), 10, true)}${c.h >= 90 ? `<span class="num" style="font-size:12px;color:${valColor(x, w as QuotaWindow)}">${shown(x, w as QuotaWindow)}%</span>` : ''}</div>`).join('')}</div>`
     }
-    // 길면 두 배터리를 양옆으로, 짧으면 하나만, 아주 작으면 글자 없이 배터리만.
+    // 길면 두 배터리를 양옆으로, 짧으면 하나만. 폭이 좁으면 숫자 아래에 배터리(숫자는 빼지 않는다).
+    if (c.w < 100) return c.h >= 30 ? `<div class="c-under">${num(x, main, 14)}${batterySVG(m, x, main, 9, 10, false)}</div>` : `<div class="c-row nocap" style="flex:1;grid-template-columns:auto 1fr">${batterySVG(m, x, main, Math.max(8, Math.min(12, c.h - 10)), 10, false)}${num(x, main, 13)}</div>`
     let h = Math.max(10, Math.min(c.h * .5, 22, (c.w - 52) / 4.6))
     const hTwo = Math.min(h, (c.w - 104) / 7.4), two = !!other && hTwo >= 13, text = c.w >= 100
     if (two) h = hTwo

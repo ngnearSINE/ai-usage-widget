@@ -1,7 +1,7 @@
 {
   "name": "ai-usage-taskbar-widget",
   "version": "1.4.2",
-  "description": "Taskbar AI token usage monitor widget with multi-account authentication and 4 visual themes",
+  "description": "Windows desktop and taskbar widget showing remaining AI usage limits for Claude, Codex, Antigravity and Grok",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -28,7 +28,7 @@
     "gemini",
     "claude"
   ],
-  "author": "Antigravity",
+  "author": "AI Usage Widget",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.13.9",

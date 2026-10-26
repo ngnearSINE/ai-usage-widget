@@ -434,8 +434,6 @@ namespace FluentFlyoutDocker
                 return DwmSetWindowAttribute(hwnd, 38, ref type, 4) == 0 ? 0 : 1;
             }
 
-            // slide <hwnd> <logicalOffset>: 도킹된 위젯을 작업표시줄 안에서 가로로만 옮긴다(왼쪽 기준).
-            // dock처럼 스타일·부모를 다시 정하지 않으므로 끌기 중 매 좌표마다 불러도 watch가 도킹 유실로 오해하지 않는다.
             // usableright <l,t,r,b>: 그 모니터 작업표시줄에서 위젯이 쓸 수 있는 오른쪽 끝(알림 영역 왼쪽)의 화면 x(물리 픽셀).
             // 도킹 미리보기가 실제로 붙을 자리(dock·slide의 GetRightAnchor)와 같아지도록 쓴다.
             if (action == "usableright" && args.Length >= 2)
@@ -455,6 +453,8 @@ namespace FluentFlyoutDocker
                 return 0;
             }
 
+            // slide <hwnd> <logicalOffset>: 도킹된 위젯을 작업표시줄 안에서 가로로만 옮긴다(왼쪽 기준).
+            // dock처럼 스타일·부모를 다시 정하지 않으므로 끌기 중 매 좌표마다 불러도 watch가 도킹 유실로 오해하지 않는다.
             if (action == "slide" && args.Length >= 3)
             {
                 IntPtr hwnd = ParseHwnd(args[1]);

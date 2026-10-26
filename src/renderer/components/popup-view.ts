@@ -22,7 +22,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
   const updated = state.lastRefreshedAt ? new Date(state.lastRefreshedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''
   const loading = state.isRefreshing || state.usages.some(u => u.status === 'loading')
   const body = list.length
-    ? list.map((u, i) => `<div class="pop-card" style="height:${CARD_H}px">${renderCard(u, 'rich', x, { w: width, h: CARD_H }, `--index:${i};`)}</div>`).join('')
+    ? list.map((u, i) => `<div class="pop-card" style="height:${CARD_H}px;--index:${i}">${renderCard(u, 'rich', x, { w: width, h: CARD_H })}</div>`).join('')
     : `<div class="empty-state">${icon(loading ? 'refresh' : 'grid')}<h2>${loading ? '서비스를 확인하고 있어요' : '표시할 서비스가 없어요'}</h2><button class="secondary-button" data-open-settings="services">서비스 관리</button></div>`
   updateMarkup(container, `<div class="dashboard popup-v2 ${animate ? 'popup-enter' : ''}">
     <header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${loading ? '확인 중' : `${list.length}개`}</b>${updated && !state.preview ? ` · ${escapeText(updated)}` : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>

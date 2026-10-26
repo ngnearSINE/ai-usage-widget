@@ -39,6 +39,7 @@ export interface AccountUsage {
   isWeeklyOnly?: boolean // ChatGPT Pro 등 5시간 세션 쿼터 없이 1주일 쿼터만 존재하는 계정 여부
   primaryKind?: 'monthly' // 기본 한도가 5시간이 아니라 월간 크레딧인 계정(Grok)
   scopedQuotas?: Array<{ label: string; quota: QuotaInfo }> // 모델 전용 주간 한도(예: Claude 팀의 Fable). 주간 한도 안의 별도 몫
+  barColor?: string // 계정 설정의 평소 색을 CSS 색으로 푼 값(ownColor). 없으면 서비스 색
   scopedHidden?: string[] // 계정 설정으로 숨긴 모델 전용 한도 이름(설정 화면이 스위치를 보여 주는 데 쓴다)
   models?: ModelQuotaDetail[]
   updatedAt: string
@@ -54,6 +55,7 @@ export interface AccountConfig {
   orgUuid?: string // Claude 조직(팀/개인). 있으면 그 조직 토큰으로 조회한다
   showScoped?: boolean // 모델 전용 한도(Fable 등) 보기. 기본 켬
   hiddenInDock?: boolean // 작업표시줄 도킹 화면에서만 숨김. 위젯 창에는 보인다
+  barColor?: string // 그래프 평소 색: 없음=서비스 색, 'green', '#rrggbb'
   customMock?: {
     primaryPercent: number
     primaryReset: string
@@ -74,6 +76,7 @@ export interface WidgetConfig {
   refreshIntervalSec: number // 갱신 주기 (기본 60초)
   showWeeklyLimit: boolean
   colorByUsage: boolean // 사용량에 따른 색상 변화 (안전:그린 -> 주의:오렌지 -> 위험:레드)
+  colorMode?: 'step' | 'smooth' // 경고색으로 바뀌는 방식: 기준에서 한 번에(기본) / 남은 양에 따라 부드럽게
   showUsedPercent?: boolean // true: 소모량(%) 표시, false/미설정: 남은량(%) 표시 (작업표시줄 바)
   placementMode?: 'docked' | 'floating' // 작업표시줄 내부 도킹 vs 작업표시줄 바로 위 플로팅
   alwaysOnTop?: boolean // '작업 표시줄 바로 위' 플로팅 모드 시 항상 위에 표시 여부 (기본: true)
