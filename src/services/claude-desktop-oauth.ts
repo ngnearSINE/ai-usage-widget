@@ -132,6 +132,46 @@ export function parseClaudeDesktopLiveUsage(raw: unknown, account: AccountConfig
   }
 }
 
+/** 데스크톱 앱 OAuth 캐시의 anthropic 토큰 중 아직 유효한 것을 모두 돌려준다(계정·조직 구분은 호출한 쪽이 profile로 한다). */
+export interface ClaudeDesktopTokenEntry { accountUuid: string; token: string; expiresAt: number; scopes: string[] }
+export function listClaudeDesktopTokens(cache: unknown, now = Date.now()): ClaudeDesktopTokenEntry[] {
+  if (!cache || typeof cache !== 'object') return []
+  const out: ClaudeDesktopTokenEntry[] = []
+  for (const [key, raw] of Object.entries(cache)) {
+    const match = /^acct:([^|]+)\|(.+)$/.exec(key)
+    if (!match) continue
+    const hostIdx = match[2].indexOf(':https://api.anthropic.com:')
+    if (hostIdx === -1) continue
+    const scopes = match[2].substring(hostIdx + ':https://api.anthropic.com:'.length).split(' ')
+    if (!scopes.includes('user:profile')) continue
+    const entry = raw as Partial<DesktopToken> | null
+    if (!entry || typeof entry.token !== 'string' || !entry.token ||
+        typeof entry.expiresAt !== 'number' || !Number.isFinite(entry.expiresAt) || entry.expiresAt <= now) continue
+    out.push({ accountUuid: match[1], token: entry.token, expiresAt: entry.expiresAt, scopes })
+  }
+  return out
+}
+
+export async function readClaudeDesktopTokens(): Promise<ClaudeDesktopTokenEntry[]> {
+  if (process.platform !== 'win32') return []
+  const out: ClaudeDesktopTokenEntry[] = []
+  for (const dir of findClaudeDataDirs()) {
+    try {
+      if (!fs.existsSync(path.join(dir, 'config.json')) || !fs.existsSync(path.join(dir, 'Local State'))) continue
+      const config = JSON.parse(await fs.promises.readFile(path.join(dir, 'config.json'), 'utf8'))
+      if (typeof config['oauth:tokenCacheV2'] !== 'string') continue
+      const state = JSON.parse(await fs.promises.readFile(path.join(dir, 'Local State'), 'utf8'))
+      if (typeof state.os_crypt?.encrypted_key !== 'string') continue
+      const wrapped = Buffer.from(state.os_crypt.encrypted_key, 'base64')
+      if (wrapped.subarray(0, 5).toString() !== 'DPAPI') continue
+      const key = await unprotectKey(wrapped.subarray(5))
+      try { out.push(...listClaudeDesktopTokens(decryptClaudeCache(config['oauth:tokenCacheV2'], key))) }
+      finally { key.fill(0) }
+    } catch { /* 이 폴더는 건너뛴다. 예외 메시지에 복호화 내용이 섞일 수 있어 남기지 않는다 */ }
+  }
+  return out
+}
+
 const DEFAULT_RATE_LIMIT_BACKOFF_MS = 5 * 60 * 1000
 
 export class ClaudeRateLimitError extends Error {

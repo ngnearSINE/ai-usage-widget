@@ -2,6 +2,7 @@ import { AntigravityCliClient } from './antigravity-cli-client.js'
 import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
 import { GrokCliClient } from './grok-cli-client.js'
+import { ClaudeOrgs } from './claude-orgs.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { retainedUsage } from '../common/widget-layout.js'
@@ -115,6 +116,13 @@ export class QuotaManager {
     this.isRefreshing = true
 
     try {
+      // Claude 조직(팀/개인)을 찾아 계정 목록에 맞춘다. 실패해도 나머지 조회는 계속한다.
+      try {
+        const orgs = await ClaudeOrgs.discover()
+        this.accountStore.syncClaudeOrgs(orgs.map(o => ({ orgUuid: o.orgUuid, label: o.label, fromCli: o.tokens.some(t => t.source === 'cli') })))
+      } catch (err) {
+        console.warn('[QuotaManager] Claude 조직 확인 실패', err)
+      }
       const accounts = this.accountStore.getAccounts().filter(a => a.enabled)
       const activeIds = new Set(accounts.map(a => a.id))
 
@@ -135,6 +143,8 @@ export class QuotaManager {
               // agy CLI가 기존 로그인 세션으로 조회 (RPC 포트/CSRF/토큰을 다루지 않음)
               usage = await AntigravityCliClient.fetchUsage(acc)
               // 다른 공급자와 같은 stale 보존 규칙을 아래에서 적용한다.
+            } else if (acc.provider === 'claude' && acc.orgUuid) {
+              usage = await ClaudeOrgs.fetchUsage(acc)
             } else if (acc.provider === 'claude') {
               usage = await fetchClaudeUsage(acc)
             } else if (acc.provider === 'codex') {

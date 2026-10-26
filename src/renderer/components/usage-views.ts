@@ -261,7 +261,19 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
 }
 
 /* ---------- 카드 ---------- */
-const logo = (u: AccountUsage, x: ViewContext) => `<span class="logo">${renderAiIcon(u.provider, u.name, x.iconStyle, 18)}</span>`
+/**
+ * 같은 서비스의 여러 계정(예: Claude 팀·개인)은 이름이 빠지는 작은 카드에서 아이콘만으로 구분되지 않는다.
+ * 이름이 'Claude 팀 · 조직' 형식이면 아이콘에 짧은 표식을 붙인다(팀·엔터프라이즈는 종류, 개인은 이메일 앞 5글자).
+ */
+export function accountTag(name: string) {
+  const m = /^\S+ (\S+) · (.+)$/.exec(name)
+  if (!m) return ''
+  return m[1] === '개인' ? [...m[2]].slice(0, 5).join('') : m[1] === '엔터프라이즈' ? '엔터' : m[1]
+}
+const logo = (u: AccountUsage, x: ViewContext, tagged = true) => {
+  const tag = tagged ? accountTag(u.name) : ''
+  return `<span class="logo ${tag ? 'tagged' : ''}">${renderAiIcon(u.provider, u.name, x.iconStyle, 18)}${tag ? `<i class="logo-tag">${esc(tag)}</i>` : ''}</span>`
+}
 const cardAttrs = (u: AccountUsage, sev: string, cls: string, style = '') =>
   `class="ucard ${cls} ${sev ? 'sev-' + sev : ''} ${u.status === 'stale' ? 'is-stale' : ''}" data-card="${esc(u.id)}" draggable="true" style="--brand:${hex(u.brandColor)};${style}"`
 const titleOf = (u: AccountUsage, m: ServiceModel) => esc(`${u.name} · ${windowsOf(m).map(w => `${w.label} ${w.left}% 남음`).join(' · ')}${u.status === 'stale' ? ' · 갱신 지연' : ''}`)
@@ -288,8 +300,9 @@ function compactCard(u: AccountUsage, m: ServiceModel, design: DesignId, x: View
   const v = box.h > box.w * 1.25 && box.w < 170, c = { w: box.w - (v ? 16 : 24), h: box.h - (v ? 20 : 12) }
   // 그림이 넓게 필요한 디자인일수록 이름을 늦게 보인다.
   const nameShown = !v && c.w >= ({ numeral: 240, rich: 250, rings: 300, battery: 340, bars: 380, timeline: 380 } as Record<DesignId, number>)[design]
-  const idW = v ? 0 : 18 + (nameShown ? Math.min(120, u.name.length * 7 + 7) : 0) + 12
-  return `<div ${cardAttrs(u, sev, `compact ${v ? 'cv' : ''} ${!v && !nameShown ? 'center' : ''}`, style)} title="${titleOf(u, m)}"><div class="c-id">${logo(u, x)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}</div><div class="c-main">${COMPACT[design](m, x, { w: c.w - idW, h: c.h }, v)}</div></div>`
+  const tag = nameShown ? '' : accountTag(u.name)
+  const idW = v ? 0 : 18 + (nameShown ? Math.min(120, u.name.length * 7 + 7) : 0) + (tag ? [...tag].length * 7 + 11 : 0) + 12
+  return `<div ${cardAttrs(u, sev, `compact ${v ? 'cv' : ''} ${!v && !nameShown ? 'center' : ''}`, style)} title="${titleOf(u, m)}"><div class="c-id">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}</div><div class="c-main">${COMPACT[design](m, x, { w: c.w - idW, h: c.h }, v)}</div></div>`
 }
 
 /** 카드 하나. box는 격자 칸 크기(px). */
@@ -310,6 +323,6 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
   return `<div ${cardAttrs(u, sev, '', style)} title="${titleOf(u, m)}">
-    <div class="card-head">${logo(u, x)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" title="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" title="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

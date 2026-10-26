@@ -7,6 +7,7 @@ import { GrokCliClient } from './grok-cli-client.js'
 import { mergeClaudeAccounts } from './claude-account-migration.js'
 import { DEFAULT_API_ENDPOINT } from './usage-push.js'
 import { moveAccountBefore } from '../common/widget-layout.js'
+import { syncClaudeOrgAccounts, type ClaudeOrgSeen } from '../common/claude-org-sync.js'
 
 const DEFAULT_CONFIG: WidgetConfig = {
   theme: '1a',
@@ -271,6 +272,21 @@ export class AccountStore {
 
   public moveAccount(id: string, beforeId: string | null): void {
     this.saveAccounts(moveAccountBefore(this.accounts, id, beforeId))
+  }
+
+  public renameAccount(id: string, name: string): void {
+    const clean = name.trim().slice(0, 60)
+    if (!clean) return
+    this.saveAccounts(this.accounts.map(a => a.id === id ? { ...a, name: clean } : a))
+  }
+
+  /** 발견된 Claude 조직을 계정 목록에 맞춘다(규칙은 syncClaudeOrgAccounts). 바뀌었으면 true. */
+  public syncClaudeOrgs(orgs: ClaudeOrgSeen[]): boolean {
+    const r = syncClaudeOrgAccounts(this.accounts, this.config.claudeOrgsSeen || [], orgs)
+    if (!r.changed) return false
+    this.saveAccounts(r.accounts)
+    this.saveConfig({ ...this.config, claudeOrgsSeen: r.seen })
+    return true
   }
 
   public hideAccount(id: string, hidden: boolean): void {

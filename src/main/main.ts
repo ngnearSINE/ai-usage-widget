@@ -1036,6 +1036,11 @@ function setupIpcHandlers() {
     broadcastState()
     return getAppState()
   })
+  ipcMain.handle(IPC_CHANNELS.RENAME_ACCOUNT, (_event, id: string, name: string) => {
+    accountStore.renameAccount(String(id), String(name))
+    broadcastState()
+    return getAppState()
+  })
   ipcMain.handle(IPC_CHANNELS.HIDE_ACCOUNT, (_event, id: string, hidden: boolean) => {
     accountStore.hideAccount(id, hidden)
     broadcastState()

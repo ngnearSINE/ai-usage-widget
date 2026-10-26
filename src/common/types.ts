@@ -49,6 +49,7 @@ export interface AccountConfig {
   enabled: boolean
   hidden?: boolean
   isLocalIde?: boolean
+  orgUuid?: string // Claude 조직(팀/개인). 있으면 그 조직 토큰으로 조회한다
   customMock?: {
     primaryPercent: number
     primaryReset: string
@@ -92,6 +93,7 @@ export interface WidgetConfig {
   opacity?: number // 모든 창 배경 불투명도 0~100 (Windows Terminal과 같은 뜻, 기본 70)
   useAcrylic?: boolean // 배경 뒤를 흐리게(아크릴). 끄면 흐림 없이 비친다 (기본 켬)
   grokOffered?: boolean // 기존 계정 목록에 Grok을 한 번 추가했는지
+  claudeOrgsSeen?: string[] // 이미 카드로 추가했던 Claude 조직(지운 뒤 다시 넣지 않도록)
   design?: 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
   valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
   warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)

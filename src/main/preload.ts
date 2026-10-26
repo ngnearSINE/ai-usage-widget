@@ -14,6 +14,7 @@ export const api = {
   reorderAccount: (id: string, direction: 'up' | 'down'): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.REORDER_ACCOUNT, id, direction),
   moveAccount: (id: string, beforeId: string | null): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.MOVE_ACCOUNT, id, beforeId),
   hideAccount: (id: string, hidden: boolean): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.HIDE_ACCOUNT, id, hidden),
+  renameAccount: (id: string, name: string): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.RENAME_ACCOUNT, id, name),
   beginInteraction: (kind: string, origin?: {x:number;y:number}): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.BEGIN_INTERACTION, kind, origin),
   endInteraction: (point?: {x:number;y:number}): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.END_INTERACTION, point),
   moveInteraction: (point: {x:number;y:number}): void => ipcRenderer.send(IPC_CHANNELS.MOVE_INTERACTION, point),

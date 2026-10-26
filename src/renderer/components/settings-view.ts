@@ -162,7 +162,7 @@ function servicesTab(s: AppState) {
       const u = s.usages.find(u => u.id === a.id)
       const status = !a.enabled ? '조회 꺼짐' : a.hidden ? '수동 숨김' : u?.status === 'ready' ? '연결됨' : u?.status === 'stale' ? '갱신 지연' : u?.status === 'loading' ? '확인 중' : '연결 안 됨'
       const name = escapeText(a.name)
-      return `<div class="managed-service">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span><b>${name}</b><small>${status}</small></span><div class="managed-order"><button class="tool" data-order="up" data-id="${escapeText(a.id)}" ${index === 0 ? 'disabled' : ''} aria-label="${name} 앞으로 이동">${icon('up')}</button><button class="tool" data-order="down" data-id="${escapeText(a.id)}" ${index === s.accounts.length - 1 ? 'disabled' : ''} aria-label="${name} 뒤로 이동">${icon('down')}</button></div><button class="tool" data-hide="${escapeText(a.id)}" aria-label="${name} ${a.hidden ? '다시 표시' : '숨기기'}" aria-pressed="${!!a.hidden}">${icon(a.hidden ? 'hidden' : 'eye')}</button><label class="mini-toggle"><input type="checkbox" class="switch" data-enabled="${escapeText(a.id)}" aria-label="${name} 조회" ${a.enabled ? 'checked' : ''}><span class="switch-track"></span></label></div>`
+      return `<div class="managed-service">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span><b class="svc-name" data-name-of="${escapeText(a.id)}">${name}</b><small>${status}${u?.tier && a.orgUuid ? ` · ${escapeText(u.tier)}` : ''}</small></span><button class="tool" data-rename="${escapeText(a.id)}" title="이름 바꾸기" aria-label="${name} 이름 바꾸기">${icon('pencil')}</button><div class="managed-order"><button class="tool" data-order="up" data-id="${escapeText(a.id)}" ${index === 0 ? 'disabled' : ''} aria-label="${name} 앞으로 이동">${icon('up')}</button><button class="tool" data-order="down" data-id="${escapeText(a.id)}" ${index === s.accounts.length - 1 ? 'disabled' : ''} aria-label="${name} 뒤로 이동">${icon('down')}</button></div><button class="tool" data-hide="${escapeText(a.id)}" aria-label="${name} ${a.hidden ? '다시 표시' : '숨기기'}" aria-pressed="${!!a.hidden}">${icon(a.hidden ? 'hidden' : 'eye')}</button><label class="mini-toggle"><input type="checkbox" class="switch" data-enabled="${escapeText(a.id)}" aria-label="${name} 조회" ${a.enabled ? 'checked' : ''}><span class="switch-track"></span></label></div>`
     }).join('')}</div><button class="secondary-button" data-goto="accounts">계정 추가 · 감지 ${icon('arrow')}</button>`
 }
 
@@ -316,6 +316,24 @@ function bindEvents() {
   body.querySelectorAll<HTMLElement>('[data-hide]').forEach(el => el.onclick = async () => {
     const id = el.dataset.hide!, account = state.accounts.find(a => a.id === id)!
     try { await window.api.hideAccount(id, !account.hidden) } catch { notify('표시 설정을 저장하지 못했어요.') }
+  })
+  body.querySelectorAll<HTMLElement>('[data-rename]').forEach(el => el.onclick = () => {
+    const id = el.dataset.rename!, b = body.querySelector<HTMLElement>(`[data-name-of="${CSS.escape(id)}"]`)
+    if (!b || b.querySelector('input')) return
+    const input = document.createElement('input')
+    input.className = 'rename-input'; input.value = b.textContent || ''; input.maxLength = 60
+    input.setAttribute('aria-label', '새 이름')
+    b.replaceChildren(input); input.focus(); input.select()
+    let done = false
+    const finish = (save: boolean) => {
+      if (done) return
+      done = true
+      const name = input.value.trim()
+      if (save && name && name !== state.accounts.find(a => a.id === id)?.name) void window.api.renameAccount(id, name).catch(() => notify('이름을 저장하지 못했어요.'))
+      else renderSettings(state, true)
+    }
+    input.onkeydown = e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false) }
+    input.onblur = () => finish(true)
   })
   body.querySelectorAll<HTMLInputElement>('[data-enabled]').forEach(el => el.onchange = () => { void window.api.toggleAccount(el.dataset.enabled!, el.checked).catch(() => notify('조회 설정을 저장하지 못했어요.')) })
   body.querySelectorAll<HTMLElement>('[data-order]').forEach(el => el.onclick = () => {
