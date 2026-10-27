@@ -6,7 +6,8 @@ import { promisify } from 'node:util'
 import { LocalLspClient } from './local-lsp-client.js'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { ClaudeDesktopClient } from './claude-desktop-client.js'
-import { findClaudeDataDirs } from './claude-desktop-oauth.js'
+import { findClaudeDataDirs, hasDesktopSession } from './claude-desktop-oauth.js'
+import { appDataDir, findExecutable } from './platform-paths.js'
 import { GrokCliClient, readGrokAuth } from './grok-cli-client.js'
 
 const execAsync = promisify(exec)
@@ -45,10 +46,7 @@ export class LocalAppDetector {
     let claudeInstalled = false
     let claudeLoggedIn = false
 
-    try {
-      const { stdout } = await execAsync('where.exe claude', { timeout: 2000, windowsHide: true })
-      if (stdout.trim()) claudeInstalled = true
-    } catch {}
+    if (findExecutable('claude')) claudeInstalled = true
 
     if (fs.existsSync(claudeCredsPath)) {
       claudeInstalled = true
@@ -63,15 +61,19 @@ export class LocalAppDetector {
 
     // CLI를 우선 사용하고 실패 시 데스크톱 앱 실시간 세션 또는 기록을 사용한다.
     const desktopDirs = findClaudeDataDirs()
-    const desktopSessionDetected = desktopDirs.some(dir =>
-      fs.existsSync(path.join(dir, 'config.json')) && fs.existsSync(path.join(dir, 'Local State'))
-    )
+    const desktopSessionDetected = desktopDirs.some(dir => hasDesktopSession(dir))
     const desktopHistoryPath = ClaudeDesktopClient.getUsageHistoryPath()
     const desktopDetected = !!desktopHistoryPath && fs.existsSync(desktopHistoryPath)
     let desktopRunning = false
     try {
-      const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq Claude.exe" /FO CSV /NH', { timeout: 2000, windowsHide: true })
-      desktopRunning = /^"Claude\.exe"/im.test(stdout.trim())
+      if (process.platform === 'win32') {
+        const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq Claude.exe" /FO CSV /NH', { timeout: 2000, windowsHide: true })
+        desktopRunning = /^"Claude\.exe"/im.test(stdout.trim())
+      } else {
+        // Linux 데스크톱 앱(claude-desktop 패키지)의 실행 파일 이름
+        const { stdout } = await execAsync('pgrep -x claude-desktop', { timeout: 2000 })
+        desktopRunning = !!stdout.trim()
+      }
     } catch {}
     const claudeAvailable = claudeInstalled || desktopSessionDetected || desktopDetected || desktopDirs.length > 0
     results.push({
@@ -92,14 +94,9 @@ export class LocalAppDetector {
     // 3. Codex CLI / Desktop 감지
     let codexInstalled = !!CodexAppServerClient.findCodexExecutable()
     let codexLoggedIn = false
-    if (!codexInstalled) {
-      try {
-        const { stdout } = await execAsync('where.exe codex', { timeout: 2000, windowsHide: true })
-        if (stdout.trim()) codexInstalled = true
-      } catch {}
-    }
+    if (!codexInstalled && findExecutable('codex')) codexInstalled = true
 
-    const appData = process.env.APPDATA || ''
+    const appData = appDataDir()
     const codexAuthPaths = [
       path.join(appData, 'orca', 'codex-runtime-home', 'home', 'auth.json'),
       path.join(homeDir, '.codex', 'auth.json')

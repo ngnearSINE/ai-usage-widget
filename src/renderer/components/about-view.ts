@@ -28,7 +28,7 @@ let showAll = false
 export function renderAbout(container: HTMLElement, s: AppState) {
   applyAppearance(s.config)
   const u = s.update, all = sections(), mine = all.find(x => x.version === s.version) || all[0]
-  const statusText = !u || u.status === 'unsupported' ? '자동 업데이트는 설치판에서만 돼요. 휴대용(zip)은 새 버전을 직접 내려받아 주세요.'
+  const statusText = !u || u.status === 'unsupported' ? (s.dockSupported === false ? '자동 업데이트는 AppImage로 실행할 때만 돼요. deb으로 설치했다면 새 버전 deb을 내려받아 설치해 주세요.' : '자동 업데이트는 설치판에서만 돼요. 휴대용(zip)은 새 버전을 직접 내려받아 주세요.')
     : u.status === 'checking' ? '새 버전을 확인하고 있어요…'
     : u.status === 'downloading' ? `새 버전 ${escapeText(u.version || '')}을 받고 있어요`
     : u.status === 'ready' ? `새 버전 ${escapeText(u.version || '')}이 준비됐어요. ${s.config.autoUpdate === false ? '아래 단추나 위젯 제목줄의 ‘업데이트’를 누르면 설치돼요.' : `${hourLabel(s.config.updateHour ?? 3)}나 앱을 끌 때 설치돼요. 지금 바로 설치할 수도 있어요.`}`

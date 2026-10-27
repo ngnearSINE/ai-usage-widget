@@ -149,6 +149,7 @@ export interface AppState {
   version?: string // 앱 버전(설정 창 '정보')
   guideAvailable?: boolean // 사용 설명서 PDF를 열 수 있는지
   acrylicSupported?: boolean
+  dockSupported?: boolean // 작업 표시줄 도킹 가능(Windows만)
   config: WidgetConfig
   accounts: AccountConfig[]
   usages: AccountUsage[]

@@ -33,17 +33,19 @@
       {
         "target": "nsis",
         "arch": [
-          "x64"
+          "x64",
+          "arm64"
         ]
       },
       {
         "target": "zip",
         "arch": [
-          "x64"
+          "x64",
+          "arm64"
         ]
       }
     ],
-    "artifactName": "${productName}-${version}-win-x64.${ext}"
+    "artifactName": "${productName}-${version}-win-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": true,
@@ -56,5 +58,51 @@
     "installerIcon": "public/icon.ico",
     "uninstallerIcon": "public/icon.ico",
     "artifactName": "${productName} Setup ${version}.${ext}"
+  },
+  "linux": {
+    "icon": "public/icon.png",
+    "category": "Utility",
+    "synopsis": "AI 서비스 사용량을 보여 주는 위젯",
+    "description": "Claude·Codex·Grok·Antigravity의 남은 사용량을 바탕화면 위젯과 트레이로 보여 줍니다.",
+    "maintainer": "AI Usage Widget <89822770+ngnearSINE@users.noreply.github.com>",
+    "executableName": "ai-usage-widget",
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      },
+      {
+        "target": "deb",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      }
+    ],
+    "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
+    "desktop": {
+      "entry": {
+        "Name": "AI Usage Widget",
+        "Name[ko]": "AI 사용량 위젯",
+        "StartupWMClass": "ai-usage-taskbar-widget"
+      }
+    }
+  },
+  "deb": {
+    "depends": [
+      "libgtk-3-0",
+      "libnotify4",
+      "libnss3",
+      "libxss1",
+      "libxtst6",
+      "xdg-utils",
+      "libatspi2.0-0",
+      "libuuid1",
+      "libsecret-1-0",
+      "python3"
+    ]
   }
 }

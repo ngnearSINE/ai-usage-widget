@@ -6,6 +6,7 @@ import readline from 'node:readline'
 import { app } from 'electron'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, ModelQuotaDetail } from '../common/types.js'
+import { findExecutable } from './platform-paths.js'
 
 interface PendingRequest {
   resolve: (value: any) => void
@@ -55,6 +56,10 @@ class CodexAppServerConn {
       } catch {}
     }
 
+    // 2-1. PATH와 사용자 설치 위치의 codex(Linux는 ~/.local/bin 등, Windows는 codex.exe)
+    const onPath = findExecutable('codex')
+    if (onPath) candidates.push(onPath)
+
     // 3. VS Code / Windsurf 확장 프로그램 경로 탐색
     const homeDir = os.homedir()
     const extDirs = [
@@ -67,9 +72,8 @@ class CodexAppServerConn {
           const subdirs = fs.readdirSync(extDir)
           for (const sub of subdirs) {
             if (sub.startsWith('openai.chatgpt-')) {
-              const exePath = path.join(extDir, sub, 'bin', 'windows-x86_64', 'codex.exe')
-              if (fs.existsSync(exePath)) {
-                candidates.push(exePath)
+              for (const exePath of codexExtensionBinaries(path.join(extDir, sub, 'bin'))) {
+                if (fs.existsSync(exePath)) candidates.push(exePath)
               }
             }
           }
@@ -117,7 +121,7 @@ class CodexAppServerConn {
 
     const executable = CodexAppServerConn.findCodexExecutable()
     if (!executable) {
-      throw new Error('Codex 실행 파일(codex.exe)을 찾을 수 없습니다.')
+      throw new Error(`Codex 실행 파일(${process.platform === 'win32' ? 'codex.exe' : 'codex'})을 찾을 수 없습니다.`)
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -457,6 +461,14 @@ class CodexAppServerConn {
 }
 
 /** 로그인 폴더마다 연결 하나. 기본 계정은 빈 문자열(평소 ~/.codex). */
+/** VS Code 확장(openai.chatgpt-*)의 bin 아래 이 OS·CPU용 codex 후보 */
+function codexExtensionBinaries(binDir: string): string[] {
+  const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64'
+  if (process.platform === 'win32') return [path.join(binDir, `windows-${arch}`, 'codex.exe'), path.join(binDir, 'windows-x86_64', 'codex.exe')]
+  if (process.platform === 'darwin') return [path.join(binDir, `macos-${arch}`, 'codex')]
+  return [path.join(binDir, `linux-${arch}`, 'codex')]
+}
+
 export class CodexAppServerClient {
   private static conns = new Map<string, CodexAppServerConn>()
   static findCodexExecutable() { return CodexAppServerConn.findCodexExecutable() }

@@ -8,7 +8,7 @@ import { inNightlyWindow, msUntilNightly } from './updater-time.js'
 /**
  * 자동 업데이트. GitHub Releases(ngnearSINE/ai-usage-widget)의 새 버전을 뒤에서 내려받고,
  * 앱을 다시 시작할 때(또는 사용자가 '다시 시작해 업데이트'를 누를 때) 설치한다.
- * 설치판에서만 동작한다. 휴대용 zip·개발 실행·미리보기는 설치 위치를 바꿀 수 없으므로 'unsupported'.
+ * Windows 설치판(NSIS)과 Linux AppImage에서만 동작한다. 휴대용 zip·deb·개발 실행·미리보기는 'unsupported'.
  */
 const { autoUpdater } = updaterPkg
 const CHECK_EVERY_MS = 6 * 3600e3
@@ -48,7 +48,10 @@ export class Updater {
 
   /** 설치판(NSIS)인지: 설치 폴더에 제거 프로그램이 있다. */
   private supported() {
-    if (this.opts.preview || !app.isPackaged || process.platform !== 'win32') return false
+    if (this.opts.preview || !app.isPackaged) return false
+    // Linux: AppImage만 스스로 바꿀 수 있다(deb은 apt·패키지 관리자로 업데이트).
+    if (process.platform === 'linux') return !!process.env.APPIMAGE
+    if (process.platform !== 'win32') return false
     const dir = path.dirname(app.getPath('exe'))
     return fs.existsSync(path.join(dir, `Uninstall ${app.getName()}.exe`)) || fs.readdirSync(dir).some(f => /^Uninstall .*\.exe$/i.test(f))
   }

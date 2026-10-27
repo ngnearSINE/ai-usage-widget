@@ -26,7 +26,8 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도(5시간·주간·월�
 
 ## 1. 준비물
 
-- **Windows 11** (22H2 이상이면 아크릴 흐림까지 지원). Windows 10에서는 작업 표시줄 도킹·아크릴이 제대로 동작하지 않을 수 있습니다.
+- **Windows 11** (x64·arm64, 22H2 이상이면 아크릴 흐림까지 지원). Windows 10에서는 작업 표시줄 도킹·아크릴이 제대로 동작하지 않을 수 있습니다.
+- 또는 **Ubuntu** (x64·arm64, 24.04에서 시험). Ubuntu에서는 작업 표시줄 도킹·상세 팝업·아크릴이 없고 위젯 창과 트레이로 씁니다. 자세한 내용은 [Ubuntu에서 쓰기](#ubuntu에서-쓰기)를 보세요.
 - 사용량을 보고 싶은 서비스의 **공식 앱이나 CLI에 미리 로그인**되어 있어야 합니다. 위젯은 별도 로그인 창이 없고, 이미 로그인된 앱의 정보를 읽기만 합니다. 서비스별 조건은 [4. 서비스 연결](#4-서비스-연결)을 보세요.
 
 ## 2. 설치
@@ -36,11 +37,29 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도(5시간·주간·월�
 | 파일 | 설명 |
 |---|---|
 | `AI-Usage-Widget-Setup-x.y.z.exe` | **설치 파일(추천).** 관리자 권한 없이 내 사용자 폴더(`%LOCALAPPDATA%\Programs\AI Usage Widget`)에 설치하고, 시작 메뉴 바로가기와 제거 기능을 만듭니다. 설치가 끝나면 바로 실행됩니다. |
-| `AI-Usage-Widget-x.y.z-win-x64.zip` | **휴대용.** 아무 폴더에나 압축을 풀고 `AI Usage Widget.exe`를 실행합니다. 설치·제거 과정이 없습니다. |
+| `AI-Usage-Widget-x.y.z-win-x64.zip`<br>`AI-Usage-Widget-x.y.z-win-arm64.zip` | **휴대용.** PC에 맞는 쪽(대부분 x64, ARM 노트북은 arm64)을 아무 폴더에나 풀고 `AI Usage Widget.exe`를 실행합니다. 설치·제거 과정이 없습니다. |
+
+설치 파일 하나에 x64·arm64가 함께 들어 있어, 설치할 때 PC에 맞는 쪽이 자동으로 깔립니다.
 
 ### "Windows의 PC 보호" 경고가 뜨면
 
 이 앱은 코드 서명 인증서가 없어서, 처음 실행할 때 Windows SmartScreen이 경고를 띄울 수 있습니다. **추가 정보 → 실행**을 누르면 열립니다. 한 번 허용하면 다음부터는 뜨지 않습니다.
+
+### Ubuntu에서 쓰기
+
+`uname -m`이 `x86_64`면 x64(파일 이름의 `x86_64`·`amd64`), `aarch64`면 arm64 파일을 고릅니다.
+
+| 파일 | 설명 |
+|---|---|
+| `AI-Usage-Widget-x.y.z-linux-x86_64.AppImage`<br>`AI-Usage-Widget-x.y.z-linux-arm64.AppImage` | **추천. 자동 업데이트가 됩니다.** 내려받아 `chmod +x 파일이름`으로 실행 권한을 준 뒤 실행합니다. 실행되지 않으면 `sudo apt install libfuse2t64`(22.04는 `libfuse2`)를 설치하세요. |
+| `AI-Usage-Widget-x.y.z-linux-amd64.deb`<br>`AI-Usage-Widget-x.y.z-linux-arm64.deb` | `sudo apt install ./파일이름.deb`으로 설치하고 앱 목록의 **AI 사용량 위젯**으로 실행합니다. 자동 업데이트는 되지 않습니다. |
+
+Windows와 다른 점:
+- **작업 표시줄 도킹·상세 팝업이 없습니다.** 위젯 창으로 쓰고, 트레이 아이콘 메뉴로 보이기·숨기기를 합니다(Ubuntu 기본 AppIndicator 확장).
+- **아크릴 배경**은 없고 불투명도만 조절합니다.
+- **Claude 데스크톱 앱 계정**은 GNOME 키링에 저장된 암호로 읽습니다. 로그인해 키링이 열려 있어야 하고 `python3`가 필요합니다(Ubuntu 데스크톱 기본 설치).
+- **Windows를 켤 때 함께 시작**은 Ubuntu에서 '로그인할 때 함께 시작'으로 동작합니다(`~/.config/autostart`).
+- 설정·기록은 `~/.config/ai-usage-taskbar-widget/`에 저장합니다.
 
 ## 3. 처음 실행했을 때
 

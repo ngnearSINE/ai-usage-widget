@@ -4,6 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, ModelQuotaDetail } from '../common/types.js'
+import { appDataDir } from './platform-paths.js'
 
 interface OrcaRuntimeMetadata {
   runtimeId?: string
@@ -76,7 +77,7 @@ export class OrcaLocalClient {
       return this.cachedData.result
     }
 
-    const appData = process.env.APPDATA || ''
+    const appData = appDataDir()
     const runtimeJsonPath = path.join(appData, 'orca', 'orca-runtime.json')
 
     if (!fs.existsSync(runtimeJsonPath)) {

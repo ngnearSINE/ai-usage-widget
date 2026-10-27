@@ -5,6 +5,7 @@ import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { OrcaLocalClient } from './orca-local-client.js'
+import { appDataDir } from './platform-paths.js'
 
 export class CodexLocalClient {
   private static cachedUsage?: AccountUsage
@@ -45,7 +46,7 @@ export class CodexLocalClient {
 
     // 1. Auth 파일 탐색
     const homeDir = os.homedir()
-    const appData = process.env.APPDATA || ''
+    const appData = appDataDir()
     const candidateAuthPaths = [
       path.join(appData, 'orca', 'codex-runtime-home', 'home', 'auth.json'),
       path.join(homeDir, '.codex', 'auth.json')

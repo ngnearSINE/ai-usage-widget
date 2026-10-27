@@ -1,11 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { createDecipheriv } from 'node:crypto'
+import { createDecipheriv, pbkdf2Sync } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
+import { appDataDir } from './platform-paths.js'
 
-export function findClaudeDataDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+export function findClaudeDataDirs(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string[] {
+  // Linux: ~/.config/Claude
+  if (platform !== 'win32') return [path.join(appDataDir(env, platform), 'Claude')]
   const dirs: string[] = []
   if (env.APPDATA) dirs.push(path.join(env.APPDATA, 'Claude'))
   if (env.LOCALAPPDATA) {
@@ -67,6 +70,92 @@ function unprotectKey(wrapped: Buffer): Promise<Buffer> {
     })
     child.stdin.end(wrapped.toString('base64'))
   })
+}
+
+/**
+ * Linux의 Electron safeStorage 암호: GNOME 키링(Secret Service)의 'chrome_libsecret_os_crypt_password_v2'
+ * 항목(application=Claude). python3의 GObject(libsecret) 또는 dbus로 읽는다. 둘 다 Ubuntu 데스크톱 기본 설치다.
+ * 값은 stdout으로만 받고 인자·파일·로그에 남기지 않는다.
+ */
+const LINUX_SECRET_SCRIPT = [
+  'import sys, base64',
+  'app = sys.argv[1]',
+  'def via_gi():',
+  "    import gi; gi.require_version('Secret', '1'); from gi.repository import Secret",
+  "    schema = Secret.Schema.new('chrome_libsecret_os_crypt_password_v2', Secret.SchemaFlags.DONT_MATCH_NAME, {'application': Secret.SchemaAttributeType.STRING})",
+  "    return Secret.password_lookup_sync(schema, {'application': app}, None)",
+  'def via_dbus():',
+  '    import dbus',
+  "    bus = dbus.SessionBus(); svc = bus.get_object('org.freedesktop.secrets', '/org/freedesktop/secrets')",
+  "    iface = dbus.Interface(svc, 'org.freedesktop.Secret.Service')",
+  "    _, session = iface.OpenSession('plain', dbus.String('', variant_level=1))",
+  "    unlocked, locked = iface.SearchItems({'xdg:schema': 'chrome_libsecret_os_crypt_password_v2', 'application': app})",
+  '    items = list(unlocked)',
+  '    if not items: return None',
+  "    item = dbus.Interface(bus.get_object('org.freedesktop.secrets', items[0]), 'org.freedesktop.Secret.Item')",
+  "    return bytes(item.GetSecret(session)[2]).decode('utf8')",
+  'pw = None',
+  'for f in (via_gi, via_dbus):',
+  '    try:',
+  '        pw = f()',
+  '        if pw: break',
+  '    except Exception: pass',
+  'if not pw: sys.exit(1)',
+  "sys.stdout.write(base64.b64encode(pw.encode('utf8')).decode())",
+].join('\n')
+function linuxSafeStoragePassword(app = 'Claude'): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env }
+    if (!env.DBUS_SESSION_BUS_ADDRESS && typeof process.getuid === 'function') env.DBUS_SESSION_BUS_ADDRESS = `unix:path=/run/user/${process.getuid()}/bus`
+    const child = spawn('python3', ['-c', LINUX_SECRET_SCRIPT, app], { env, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })
+    let output = ''
+    child.on('error', () => reject(new Error('키링 암호 읽기 실패')))
+    child.stdout.on('data', chunk => { output += chunk.toString(); if (output.length > 4096) child.kill() })
+    child.on('close', code => {
+      const pw = Buffer.from(output.trim(), 'base64'); output = ''
+      if (code === 0 && pw.length) resolve(pw); else { pw.fill(0); reject(new Error('키링 암호 읽기 실패')) }
+    })
+  })
+}
+
+/** Linux Chromium os_crypt: v11은 키링 암호, v10은 고정 암호 'peanuts'. PBKDF2(1회, saltysalt)로 만든 AES-128-CBC, IV는 공백 16개. */
+export function decryptClaudeCacheLinux(encoded: string, password: Buffer): unknown {
+  const blob = Buffer.from(encoded, 'base64')
+  if (blob.length < 19 || !['v10', 'v11'].includes(blob.subarray(0, 3).toString())) throw new Error('지원하지 않는 Claude 앱 OAuth 암호화 형식')
+  const key = pbkdf2Sync(password, 'saltysalt', 1, 16, 'sha1')
+  const decipher = createDecipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20))
+  const partial = decipher.update(blob.subarray(3))
+  let plain: Buffer | undefined
+  try {
+    plain = Buffer.concat([partial, decipher.final()])
+    return JSON.parse(plain.toString('utf8'))
+  } finally { partial.fill(0); plain?.fill(0); key.fill(0) }
+}
+
+/** 실패 단계(복호화 내용이 섞이지 않게 단계 이름만). bare면 '실패'를 붙이지 않는다. */
+class StepError extends Error { constructor(readonly step: string, readonly bare = false) { super(step) } }
+
+/** 이 폴더의 OAuth 캐시를 연다(Windows DPAPI 키, Linux 키링 암호). */
+async function openClaudeCache(dir: string, encoded: string): Promise<unknown> {
+  if (process.platform !== 'win32') {
+    const v10 = Buffer.from(encoded, 'base64').subarray(0, 3).toString() === 'v10'
+    let password: Buffer
+    try { password = v10 ? Buffer.from('peanuts') : await linuxSafeStoragePassword() } catch { throw new StepError('키링 암호 읽기') }
+    try { return decryptClaudeCacheLinux(encoded, password) } catch { throw new StepError('OAuth 캐시 복호화') } finally { password.fill(0) }
+  }
+  let state: any
+  try { state = JSON.parse(await fs.promises.readFile(path.join(dir, 'Local State'), 'utf8')) } catch { throw new StepError('Local State 읽기') }
+  if (typeof state.os_crypt?.encrypted_key !== 'string') throw new StepError('encrypted_key 없음', true)
+  const wrapped = Buffer.from(state.os_crypt.encrypted_key, 'base64')
+  if (wrapped.subarray(0, 5).toString() !== 'DPAPI') throw new StepError('DPAPI 접두사 없음', true)
+  let key: Buffer
+  try { key = await unprotectKey(wrapped.subarray(5)) } catch { throw new StepError('DPAPI 키 복호화') }
+  try { return decryptClaudeCache(encoded, key) } catch { throw new StepError('OAuth 캐시 복호화') } finally { key.fill(0) }
+}
+
+/** 데스크톱 앱 로그인 흔적: config.json(+ Windows는 Local State의 암호화 키). */
+export function hasDesktopSession(dir: string, platform = process.platform) {
+  return fs.existsSync(path.join(dir, 'config.json')) && (platform !== 'win32' || fs.existsSync(path.join(dir, 'Local State')))
 }
 
 export function decryptClaudeCache(encoded: string, key: Buffer): unknown {
@@ -155,20 +244,14 @@ export function listClaudeDesktopTokens(cache: unknown, now = Date.now()): Claud
 }
 
 export async function readClaudeDesktopTokens(): Promise<ClaudeDesktopTokenEntry[]> {
-  if (process.platform !== 'win32') return []
+  if (process.platform !== 'win32' && process.platform !== 'linux') return []
   const out: ClaudeDesktopTokenEntry[] = []
   for (const dir of findClaudeDataDirs()) {
     try {
-      if (!fs.existsSync(path.join(dir, 'config.json')) || !fs.existsSync(path.join(dir, 'Local State'))) continue
+      if (!hasDesktopSession(dir)) continue
       const config = JSON.parse(await fs.promises.readFile(path.join(dir, 'config.json'), 'utf8'))
       if (typeof config['oauth:tokenCacheV2'] !== 'string') continue
-      const state = JSON.parse(await fs.promises.readFile(path.join(dir, 'Local State'), 'utf8'))
-      if (typeof state.os_crypt?.encrypted_key !== 'string') continue
-      const wrapped = Buffer.from(state.os_crypt.encrypted_key, 'base64')
-      if (wrapped.subarray(0, 5).toString() !== 'DPAPI') continue
-      const key = await unprotectKey(wrapped.subarray(5))
-      try { out.push(...listClaudeDesktopTokens(decryptClaudeCache(config['oauth:tokenCacheV2'], key))) }
-      finally { key.fill(0) }
+      out.push(...listClaudeDesktopTokens(await openClaudeCache(dir, config['oauth:tokenCacheV2'])))
     } catch { /* 이 폴더는 건너뛴다. 예외 메시지에 복호화 내용이 섞일 수 있어 남기지 않는다 */ }
   }
   return out
@@ -214,25 +297,18 @@ export function parseRetryAfterMs(header: string | null, now = Date.now()): numb
 }
 
 export async function fetchClaudeDesktopLiveUsage(account: AccountConfig): Promise<AccountUsage> {
-  if (process.platform !== 'win32') throw new Error('Claude 앱 OAuth 조회는 Windows에서 지원됩니다')
+  if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error('Claude 앱 OAuth 조회는 Windows·Linux에서 지원됩니다')
   const failures: string[] = []
   for (const dir of findClaudeDataDirs()) {
-    if (!fs.existsSync(path.join(dir, 'config.json')) || !fs.existsSync(path.join(dir, 'Local State'))) continue
+    if (!hasDesktopSession(dir)) continue
     // 실패 사유는 단계 이름만 남긴다. 예외 메시지에는 복호화된 내용 일부가 섞일 수 있어 그대로 쓰지 않는다
     let step = '설정 파일 읽기'
     try {
       const config = JSON.parse(await fs.promises.readFile(path.join(dir, 'config.json'), 'utf8'))
       if (typeof config['oauth:tokenCacheV2'] !== 'string') { failures.push('tokenCacheV2 없음'); continue }
-      const state = JSON.parse(await fs.promises.readFile(path.join(dir, 'Local State'), 'utf8'))
-      if (typeof state.os_crypt?.encrypted_key !== 'string') { failures.push('encrypted_key 없음'); continue }
-      const wrapped = Buffer.from(state.os_crypt.encrypted_key, 'base64')
-      if (wrapped.subarray(0, 5).toString() !== 'DPAPI') { failures.push('DPAPI 접두사 없음'); continue }
-      step = 'DPAPI 키 복호화'
-      const key = await unprotectKey(wrapped.subarray(5))
-      step = 'OAuth 캐시 복호화'
       let cache: unknown
-      try { cache = decryptClaudeCache(config['oauth:tokenCacheV2'], key) }
-      finally { key.fill(0) }
+      try { cache = await openClaudeCache(dir, config['oauth:tokenCacheV2']) }
+      catch (e) { if (e instanceof StepError) { failures.push(e.bare ? e.step : `${e.step} 실패`); continue } throw e }
       step = '토큰 선택'
 
       let activeAccount = typeof config.lastKnownAccountUuid === 'string' && config.lastKnownAccountUuid

@@ -1,7 +1,7 @@
 {
   "name": "ai-usage-taskbar-widget",
   "version": "1.4.4",
-  "description": "Windows desktop and taskbar widget showing remaining AI usage limits for Claude, Codex, Antigravity and Grok",
+  "description": "Windows·Linux desktop and taskbar widget showing remaining AI usage limits for Claude, Codex, Antigravity and Grok",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "local:package": "powershell -NoProfile -ExecutionPolicy Bypass -File local-build.ps1 -Package",
     "publish": "npm version patch -m \"v%s\" && git push --follow-tags",
     "release": "powershell -NoProfile -ExecutionPolicy Bypass -File local-build.ps1 -Release",
-    "build:native": "powershell -ExecutionPolicy Bypass -Command \"& 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe' /target:winexe /optimize+ /out:native\\TaskbarDock.exe native\\TaskbarDock.cs\"",
+    "build:native": "node tools/build-native.mjs",
     "build": "npm run build:native && tsc && vite build",
     "update-app": "npm run build && powershell -ExecutionPolicy Bypass -Command \"Copy-Item -Path dist,dist-electron,native,public,package.json -Destination dist-release\\win-unpacked\\resources\\app -Recurse -Force; Copy-Item -Path native,public -Destination dist-release\\win-unpacked -Recurse -Force\"",
     "test": "tsc -p test && node --test \".test-build/test/**/*.test.js\"",
@@ -42,5 +42,6 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.11"
-  }
+  },
+  "homepage": "https://github.com/ngnearSINE/ai-usage-widget"
 }

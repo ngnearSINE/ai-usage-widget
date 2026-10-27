@@ -4,7 +4,7 @@
 
 > 이 저장소는 [sallyHADEV/ai-usage-taskbar-widget](https://github.com/sallyHADEV/ai-usage-taskbar-widget)을 fork해서 개인적으로 원하는 대로 고친 버전입니다. 디자인·설정 화면·작업 표시줄 도킹·Claude 팀·개인 조직·Grok 지원·자동 업데이트 등을 바꾸거나 더했습니다. 원본을 만들어 주신 분께 감사드립니다.
 
-Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았는지 Windows 바탕화면이나 작업 표시줄에서 한눈에 보여 주는 데스크톱 위젯입니다. 이미 로그인된 공식 앱·CLI의 정보를 읽기만 하므로 따로 로그인하거나 API 키를 넣을 필요가 없습니다.
+Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았는지 바탕화면이나 작업 표시줄에서 한눈에 보여 주는 데스크톱 위젯입니다. **Windows(x64·arm64)와 Ubuntu(x64·arm64)**에서 동작합니다. 이미 로그인된 공식 앱·CLI의 정보를 읽기만 하므로 따로 로그인하거나 API 키를 넣을 필요가 없습니다.
 
 ![위젯 — 종합 디자인](docs/images/widget-rich.png)
 
@@ -42,20 +42,45 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 
 ## 설치
 
-1. [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 `AI-Usage-Widget-Setup-x.y.z.exe`를 내려받아 실행합니다. 관리자 권한 없이 사용자 폴더에 설치되고 바로 시작합니다. 설치 없이 쓰려면 `AI-Usage-Widget-x.y.z-win-x64.zip`의 압축을 풀고 `AI Usage Widget.exe`를 실행합니다.
+### Windows (x64·arm64)
+
+1. [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 `AI-Usage-Widget-Setup-x.y.z.exe`를 내려받아 실행합니다. 설치 파일 하나에 x64·arm64가 함께 들어 있어 PC에 맞는 쪽이 설치됩니다. 관리자 권한 없이 사용자 폴더에 설치되고 바로 시작합니다. 설치 없이 쓰려면 `AI-Usage-Widget-x.y.z-win-x64.zip`(ARM PC는 `-win-arm64.zip`)의 압축을 풀고 `AI Usage Widget.exe`를 실행합니다.
 2. 처음 실행할 때 Windows SmartScreen 경고가 뜨면 **추가 정보 → 실행**을 누릅니다(코드 서명 인증서가 없기 때문).
 3. 위젯이 이 PC의 로그인을 자동으로 찾아 카드를 보여 줍니다. 자세한 사용법은 [사용 설명서](docs/user-guide.md)에 있습니다.
 
-설치판은 **자동으로 업데이트**됩니다. 새 버전이 나오면 뒤에서 내려받아 두고 매일 새벽 3시(PC 시계 기준, 설정에서 바꿀 수 있음)에 설치합니다. 받아 둔 새 버전이 있으면 제목줄의 **업데이트** 단추로 바로 설치할 수도 있습니다(정보·업데이트 창에서 자동 업데이트를 끌 수 있습니다). 휴대용 zip은 새 버전을 직접 내려받아야 합니다.
+Windows 설치판과 Ubuntu AppImage는 **자동으로 업데이트**됩니다. 새 버전이 나오면 뒤에서 내려받아 두고 매일 새벽 3시(PC 시계 기준, 설정에서 바꿀 수 있음)에 설치합니다. 받아 둔 새 버전이 있으면 제목줄의 **업데이트** 단추로 바로 설치할 수도 있습니다(정보·업데이트 창에서 자동 업데이트를 끌 수 있습니다). 휴대용 zip은 새 버전을 직접 내려받아야 합니다.
 
 요구 사항: Windows 11(22H2 이상 권장). 작업 표시줄 도킹은 화면 아래쪽 작업 표시줄에서만 지원합니다.
+
+### Ubuntu (x64·arm64)
+
+Releases에서 PC에 맞는 파일을 고릅니다(`uname -m`이 `x86_64`면 x64, `aarch64`면 arm64).
+
+- **AppImage(권장, 자동 업데이트)**: `AI-Usage-Widget-x.y.z-linux-x86_64.AppImage`(ARM은 `-linux-arm64.AppImage`)를 내려받아 실행 권한을 주고 실행합니다.
+
+  ```bash
+  chmod +x AI-Usage-Widget-*-linux-*.AppImage && ./AI-Usage-Widget-*-linux-*.AppImage
+  ```
+
+  AppImage는 `libfuse2`가 필요합니다. Ubuntu 24.04에서 실행되지 않으면 `sudo apt install libfuse2t64`(22.04는 `libfuse2`)를 설치하세요.
+- **deb(apt 설치)**: `AI-Usage-Widget-x.y.z-linux-amd64.deb`(ARM은 `-linux-arm64.deb`)를 내려받아 설치합니다. 자동 업데이트는 되지 않으니 새 버전 deb을 받아 다시 설치합니다.
+
+  ```bash
+  sudo apt install ./AI-Usage-Widget-*-linux-*.deb
+  ```
+
+Ubuntu에서 다른 점:
+- **작업 표시줄 도킹과 상세 팝업은 없습니다**(Windows 작업 표시줄 전용). 위젯 창과 트레이로 씁니다. 아크릴 배경도 Windows 전용이라 불투명도만 조절합니다.
+- **Claude 데스크톱 앱 계정**은 GNOME 키링에 저장된 암호로 읽습니다. 로그인해 키링이 열려 있어야 하고 `python3`가 필요합니다(Ubuntu 데스크톱 기본 설치).
+- 트레이 아이콘은 Ubuntu 기본 AppIndicator 확장으로 보입니다. 다른 데스크톱 환경에서는 트레이가 보이지 않을 수 있습니다.
+- 실제로 시험한 환경은 Ubuntu 24.04(x64, GNOME Xorg)입니다. arm64는 패키지 빌드만 확인했습니다.
 
 ## 개인정보
 
 - 로그인 정보는 이 PC 안에서 읽기만 하고, 각 서비스의 사용량 조회 주소로만 요청합니다. 로그인 정보를 만들거나 바꾸지 않으며, 사용 통계를 수집하지 않습니다.
 - 사용자가 설정의 일반 탭 → 고급 → 외부 디스플레이로 보내기를 직접 켠 경우에만 지정한 주소로 사용량 숫자를 보냅니다.
 - 자동 업데이트(설치판)는 GitHub Releases에 새 버전이 있는지만 확인하고 내려받습니다. 사용량·로그인 정보는 보내지 않습니다.
-- 설정·기록은 `%APPDATA%\ai-usage-taskbar-widget\`에 저장합니다.
+- 설정·기록은 `%APPDATA%\ai-usage-taskbar-widget\`(Ubuntu는 `~/.config/ai-usage-taskbar-widget/`)에 저장합니다.
 - Claude 모델 전용 한도와 Grok 사용량은 공식 문서에 없는 조회 방식입니다. 형식이 바뀌면 그 정보만 빠지고 나머지는 계속 표시됩니다.
 
 ---

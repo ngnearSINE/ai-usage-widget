@@ -40,6 +40,10 @@ function getPreloadPath(): string {
 app.name = 'ai-usage-taskbar-widget'
 const isPreview = process.argv.includes('--preview')
 const acrylicSupported = process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621
+/** 작업 표시줄 도킹·상세 팝업은 Windows 작업 표시줄 전용. Linux는 창(위젯) 모드만. */
+const dockSupported = process.platform === 'win32'
+// Ubuntu 24.04 등은 비특권 사용자 이름공간을 막아 AppImage의 Chromium 샌드박스가 뜨지 못한다(deb은 chrome-sandbox에 setuid가 붙어 괜찮다).
+if (process.platform === 'linux' && process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox')
 if (isPreview) {
   app.name = 'ai-usage-design-preview'
   app.setPath('userData', path.join(app.getPath('temp'), 'ai-usage-design-preview'))
@@ -123,6 +127,7 @@ function getAppState(): AppState {
   return {
     preview: isPreview,
     acrylicSupported,
+    dockSupported,
     config: accountStore.getConfig(),
     accounts,
     usages,
@@ -253,7 +258,7 @@ function showCardMenu(sender: Electron.WebContents, id: string) {
     { label: '앞으로 옮기기', enabled: index > 0, click: () => { accountStore.reorderAccount(id, 'up'); broadcastState() } },
     { label: '뒤로 옮기기', enabled: index < accounts.length - 1, click: () => { accountStore.reorderAccount(id, 'down'); broadcastState() } },
     { type: 'separator' },
-    { label: '작업 표시줄에서만 숨기기', type: 'checkbox', checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
+    { label: '작업 표시줄에서만 숨기기', type: 'checkbox', visible: dockSupported, checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
     { label: '이 카드 숨기기', click: () => { accountStore.hideAccount(id, true); broadcastState() } },
     { type: 'separator' },
     { label: '서비스 설정…', click: () => openSettingsWindow('services') },
@@ -719,6 +724,7 @@ async function animateIntoSlot(win: SurfaceWindow, to: Electron.Rectangle, ms = 
 /** floatBounds: 도킹할 때 기억해 둘 자유 창 위치·크기(빨려드는 애니메이션으로 창이 줄어든 상태가 저장되지 않도록). */
 async function setPlacement(mode: 'floating' | 'docked', floatBounds?: Electron.Rectangle) {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
+  if (mode === 'docked' && !dockSupported) return
   const previous = accountStore.getConfig()
   if (previous.placementMode === mode) return
   if (mode === 'floating') {
@@ -847,7 +853,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
       }
       win.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false)
       const display = screen.getDisplayNearestPoint(p)
-      const target = isDockTarget(p, display.bounds, display.workArea)
+      const target = dockSupported && isDockTarget(p, display.bounds, display.workArea)
       if (!target) leftDockArea = true
       showDockPreview(leftDockArea && target, p, false, ghostWidth)
     }
@@ -869,7 +875,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         return
       }
       const display = screen.getDisplayNearestPoint(last)
-      const willDock = kind === 'move' && moved && leftDockArea && isDockTarget(last, display.bounds, display.workArea)
+      const willDock = dockSupported && kind === 'move' && moved && leftDockArea && isDockTarget(last, display.bounds, display.workArea)
       if (willDock) {
         const { rect } = dockSlot(last, ghostWidth)
         const config = accountStore.getConfig()
@@ -1153,8 +1159,23 @@ function getTrayIconImage(): Electron.NativeImage {
   )
 }
 
+/** Linux 자동 시작: ~/.config/autostart의 .desktop 파일(XDG 표준). AppImage면 그 파일 경로로 실행한다. */
+const linuxAutostartFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'autostart', 'ai-usage-widget.desktop')
+function applyLinuxAutoLaunch(enable: boolean) {
+  const file = linuxAutostartFile()
+  if (!enable || !app.isPackaged) { fs.rmSync(file, { force: true }); return }
+  const exec = process.env.APPIMAGE || process.execPath
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, ['[Desktop Entry]', 'Type=Application', 'Name=AI Usage Widget', `Exec="${exec.replace(/"/g, '\\"')}" --hidden`, 'X-GNOME-Autostart-enabled=true', 'NoDisplay=false', ''].join('\n'))
+}
+
 function applyAutoLaunch(enable: boolean) {
   if (isPreview) return
+  if (process.platform === 'linux') {
+    try { applyLinuxAutoLaunch(enable) } catch (err) { console.warn('[Main] 자동 시작 파일을 쓰지 못했습니다:', err) }
+    updateTrayMenu()
+    return
+  }
   try {
     if (!app.isPackaged) {
       // 개발 모드에서는 node_modules/electron/dist/electron.exe가 인자 없이 시작프로그램에 등록되어
@@ -1181,7 +1202,8 @@ function applyAutoLaunch(enable: boolean) {
 function updateTrayMenu() {
   if (!tray || tray.isDestroyed()) return
   const config = accountStore.getConfig()
-  const isAutoStart = app.isPackaged
+  const isAutoStart = process.platform === 'linux' ? fs.existsSync(linuxAutostartFile())
+    : app.isPackaged
     ? (app.getLoginItemSettings().openAtLogin ?? config.openAtLogin ?? true)
     : (config.openAtLogin ?? false)
 
@@ -1197,12 +1219,12 @@ function updateTrayMenu() {
       enabled: config.placementMode !== 'docked',
       click: (item) => setClickThrough(item.checked)
     },
-    {
+    ...(dockSupported ? [{
       label: t('trayOpenPopup'),
       click: () => {
         showPopup(true, true)
       }
-    },
+    }] : []),
     {
       label: '설정',
       click: () => openSettingsWindow('last')
@@ -1247,8 +1269,10 @@ function createTray() {
 
   updateTrayMenu()
 
+  // Linux(AppIndicator)는 대부분 왼쪽 클릭을 메뉴로 보내지만, 클릭이 오는 환경에서는 위젯을 보이고 숨긴다.
   tray.on('click', () => {
-    togglePopup()
+    if (dockSupported) togglePopup()
+    else void toggleWidgetVisibility()
   })
 }
 
@@ -1611,7 +1635,8 @@ app.whenReady().then(() => {
 
   // 미리보기는 합성 기록으로 그래프를 보여 주고 파일에 쓰지 않는다.
   history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages()) : undefined)
-  const appIcon = [path.join(__dirname, '../public/icon.ico'), path.join(app.getAppPath(), 'public/icon.ico'), path.join(process.resourcesPath, 'public/icon.ico')].find(p => fs.existsSync(p))
+  const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+  const appIcon = [path.join(__dirname, '../public', iconFile), path.join(app.getAppPath(), 'public', iconFile), path.join(process.resourcesPath, 'public', iconFile)].find(p => fs.existsSync(p))
   // 알림을 누르면 위젯을 다시 보여 준다(숨겨 둔 경우 포함).
   updater = new Updater({
     preview: isPreview,
@@ -1635,6 +1660,8 @@ app.whenReady().then(() => {
     }
   })
 
+  // 도킹을 못 하는 OS로 설정을 옮겨 왔으면 창 모드로 시작한다.
+  if (!dockSupported && accountStore.getConfig().placementMode === 'docked') accountStore.saveConfig({ ...accountStore.getConfig(), placementMode: 'floating' })
   TaskbarDocker.warmHelper()
   refreshUsableRight()
   setupIpcHandlers()

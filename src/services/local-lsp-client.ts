@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 
@@ -23,12 +24,7 @@ export class LocalLspClient {
     try {
       // 1. Get-Process로 초고속 PID 추출 (~50ms)
       // language_server* 로 Antigravity Desktop(language_server) 및 Antigravity IDE(language_server_windows_x64) 모두 감지
-      const { stdout: pidOut } = await execAsync(
-        'powershell -NoProfile -Command "try { (Get-Process language_server* -ErrorAction SilentlyContinue).Id } catch {}"',
-        { timeout: 2500, windowsHide: true }
-      )
-
-      const pids = pidOut.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+      const pids = await listLanguageServerPids()
       if (pids.length === 0) {
         this.cachedResult = undefined
         return null
@@ -42,27 +38,13 @@ export class LocalLspClient {
         if (!pid) continue
 
         try {
-          const { stdout: cmdOut } = await execAsync(
-            `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine"`,
-            { timeout: 2500, windowsHide: true }
-          )
-
-          const cmdLine = cmdOut.trim()
+          const cmdLine = await processCommandLine(pid)
           const csrfMatch = cmdLine.match(/--csrf_token\s+([a-zA-Z0-9-]+)/i) || cmdLine.match(/--csrf_token=([a-zA-Z0-9-]+)/i)
           const csrfToken = csrfMatch ? csrfMatch[1] : undefined
           const isEnableLsp = cmdLine.includes('--enable_lsp')
 
           // 3. netstat으로 해당 PID의 127.0.0.1 LISTENING 포트 탐색
-          const { stdout: netOut } = await execAsync(`netstat -ano | findstr ${pid}`, { timeout: 2500, windowsHide: true })
-          const ports: number[] = []
-          for (const line of netOut.split('\n')) {
-            if (line.includes('LISTENING')) {
-              const m = line.match(/127\.0\.0\.1:(\d+)/)
-              if (m) {
-                ports.push(parseInt(m[1], 10))
-              }
-            }
-          }
+          const ports = await listeningPorts(pid)
 
           const uniquePorts = [...new Set(ports)]
           if (uniquePorts.length > 0) {
@@ -90,4 +72,40 @@ export class LocalLspClient {
       return this.cachedResult || null
     }
   }
+}
+
+/* OS별 프로세스 조회: Windows는 PowerShell·netstat, Linux는 pgrep·/proc·ss. */
+async function listLanguageServerPids(): Promise<string[]> {
+  const cmd = process.platform === 'win32'
+    ? 'powershell -NoProfile -Command "try { (Get-Process language_server* -ErrorAction SilentlyContinue).Id } catch {}"'
+    : 'pgrep -f language_server || true'
+  const { stdout } = await execAsync(cmd, { timeout: 2500, windowsHide: true })
+  return stdout.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+}
+async function processCommandLine(pid: number): Promise<string> {
+  if (process.platform !== 'win32') {
+    try { return (await fs.promises.readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').join(' ').trim() } catch { return '' }
+  }
+  const { stdout } = await execAsync(`powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine"`, { timeout: 2500, windowsHide: true })
+  return stdout.trim()
+}
+async function listeningPorts(pid: number): Promise<number[]> {
+  const ports: number[] = []
+  if (process.platform !== 'win32') {
+    const { stdout } = await execAsync('ss -ltnpH', { timeout: 2500 })
+    for (const line of stdout.split('\n')) {
+      if (!line.includes(`pid=${pid},`)) continue
+      const m = line.match(/127\.0\.0\.1:(\d+)/)
+      if (m) ports.push(parseInt(m[1], 10))
+    }
+    return ports
+  }
+  const { stdout } = await execAsync(`netstat -ano | findstr ${pid}`, { timeout: 2500, windowsHide: true })
+  for (const line of stdout.split('\n')) {
+    if (line.includes('LISTENING')) {
+      const m = line.match(/127\.0\.0\.1:(\d+)/)
+      if (m) ports.push(parseInt(m[1], 10))
+    }
+  }
+  return ports
 }

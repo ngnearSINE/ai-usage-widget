@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, ModelQuotaDetail, QuotaInfo } from '../common/types.js'
+import { findExecutable } from './platform-paths.js'
 
 type AgyErrorCode =
   | 'ANTIGRAVITY_CLI_NOT_FOUND'
@@ -48,20 +49,12 @@ const CLI_TIMEOUT_MS = 15000
 export class AntigravityCliClient {
   private static cachedPath?: string
 
-  /** PATH → %LOCALAPPDATA%\agy\bin 순으로 agy.exe 탐색 */
+  /** PATH(·Linux 사용자 설치 위치) → %LOCALAPPDATA%\agy\bin 순으로 agy 탐색 */
   private static findAgy(): string | null {
     if (this.cachedPath && fs.existsSync(this.cachedPath)) return this.cachedPath
-    const dirs = (process.env.PATH || '').split(path.delimiter)
-    dirs.push(path.join(process.env.LOCALAPPDATA || '', 'agy', 'bin'))
-    for (const dir of dirs) {
-      if (!dir) continue
-      const candidate = path.join(dir, 'agy.exe')
-      if (fs.existsSync(candidate)) {
-        this.cachedPath = candidate
-        return candidate
-      }
-    }
-    return null
+    const found = findExecutable('agy') || (process.env.LOCALAPPDATA ? findExecutable('agy', [path.join(process.env.LOCALAPPDATA, 'agy', 'bin')]) : null)
+    if (found) this.cachedPath = found
+    return found
   }
 
   /** 읽기 전용 슬래시 명령: 에이전트 턴/쿼터 소비/대화 생성 없이 JSON만 반환 (CLI >= 1.1.11) */

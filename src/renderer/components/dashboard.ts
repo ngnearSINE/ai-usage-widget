@@ -201,12 +201,13 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
   const design = designOf(state.config)
   updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
-    <header class="dashboard-header"><div class="window-handle" data-window-drag title="끌어서 창 이동 · 아래로 끌면 도킹"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+    <header class="dashboard-header"><div class="window-handle" data-window-drag title="${state.dockSupported === false ? '끌어서 창 이동' : '끌어서 창 이동 · 아래로 끌면 도킹'}"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+      <span class="header-clock num" data-clock aria-hidden="true"></span>
       ${updatePill(state)}
+      <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? '항상 위 켜짐 · 눌러서 끄기' : '항상 위 꺼짐 · 눌러서 켜기'}" aria-label="항상 위에 표시">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool" data-view-menu aria-haspopup="menu" title="메뉴 · 지금 디자인: ${DESIGNS.find(d => d[0] === design)![1]}" aria-label="메뉴">${icon('menu')}</button>
-      <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? '항상 위 켜짐 · 눌러서 끄기' : '항상 위 꺼짐 · 눌러서 켜기'}" aria-label="항상 위에 표시">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
       <button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button></header>
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
     <div class="toast" role="status" aria-live="polite"></div>
@@ -254,14 +255,17 @@ function layoutCards() {
   const warnN = all.filter(u => severity(serviceModel(u), x.warn, x.crit)).length
   const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
   const last = state.lastRefreshedAt ? Date.parse(state.lastRefreshedAt) : NaN
-  const updated = Number.isFinite(last) ? `갱신 ${hm(last)}${W > 420 ? ` · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''}` : '--'
+  const centered = W >= 520
+  const updated = Number.isFinite(last) ? `갱신 ${hm(last)}${centered ? ` · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''}` : '--'
   const status = host.querySelector<HTMLElement>('[data-status]')
+  const clock = host.querySelector<HTMLElement>('[data-clock]')
+  if (clock) clock.textContent = centered && !state.preview ? updated : ''
   const lock = state.config.clickThrough ? `<span class="lock-badge" title="클릭 통과 잠금 중">${icon('lock')}잠김${state.config.shortcuts?.lock ? ` · ${escapeText(state.config.shortcuts.lock)}로 풀기` : ''}</span> · ` : ''
   const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
   if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
-    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b> · ${state.preview ? '미리보기' : updated}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? ' · 미리보기' : centered ? '' : ` · ${updated}`}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
 }
 
 /* ---------- 메뉴 ---------- */

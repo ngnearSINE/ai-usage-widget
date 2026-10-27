@@ -150,7 +150,7 @@ function renderPreview() {
   // 스테이지에 맞게 축소만 한다(확대하지 않음).
   const k = Math.min(1, (stage.clientWidth - 32) / W, (stage.clientHeight - 32) / H)
   updateMarkup(inner, `<div class="pv-win" style="width:${W}px;height:${H}px;transform:scale(${k.toFixed(3)})">
-    <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div><span class="tool" aria-hidden="true">${icon('refresh')}</span><span class="tool" aria-hidden="true">${icon('sliders')}</span><span class="tool" aria-hidden="true" title="${DESIGNS.find(d => d[0] === design)![1]}">${icon('menu')}</span></div>
+    <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>${W >= 520 && state.lastRefreshedAt ? `<span class="header-clock num" aria-hidden="true">${previewClock()}</span>` : ''}<span class="tool pin on" aria-hidden="true">${icon('pinFill')}</span><span class="tool" aria-hidden="true">${icon('refresh')}</span><span class="tool" aria-hidden="true">${icon('sliders')}</span><span class="tool" aria-hidden="true" title="${DESIGNS.find(d => d[0] === design)![1]}">${icon('menu')}</span></div>
     <div class="dashboard-content">${grid}</div></div>`)
   inner.style.width = `${Math.round(W * k)}px`; inner.style.height = `${Math.round(H * k)}px`
   const cap = root.querySelector<HTMLElement>('[data-caption]')
@@ -169,6 +169,13 @@ const segmentRaw = (current: string, options: string[][], attr: string, id: stri
 const barChoice = (a: AccountConfig) => !a.barColor ? 'brand' : a.barColor === 'green' ? 'green' : 'custom'
 const barSwatch = (a: AccountConfig, brand?: string) => /^#[\da-f]{6}$/i.test(a.barColor || '') ? a.barColor! : hex(brand)
 /** 연속 변화 미리보기 띠: 남은 양 100%(왼쪽) → 0%(오른쪽). */
+/** 미리보기 제목줄 가운데 시각: 위젯과 같은 '갱신 · 다음' */
+function previewClock() {
+  const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const last = Date.parse(state.lastRefreshedAt || '')
+  return Number.isFinite(last) ? `갱신 ${hm(last)} · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''
+}
+
 function colorScale(c: WidgetConfig, warn: number) {
   if (c.colorMode !== 'smooth' || c.colorByUsage === false) return hint(`남은 양이 주의 ${warn}%·위험 ${Math.min(warn, c.critPercent ?? 10)}% 아래로 내려가는 순간 색이 바뀌어요.`)
   const crit = Math.min(warn, c.critPercent ?? 10), top = Math.max(SMOOTH_START, warn + 1)
@@ -207,7 +214,7 @@ function displayTab(c: WidgetConfig) {
       + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
-      + `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`)
+      + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
 }
 
 /** 서비스×항목 표. 맨 윗줄 '모든 서비스'는 일괄 변경(값이 섞이면 '일부'). 카드 우클릭 메뉴에서도 바꿀 수 있다. */
@@ -237,7 +244,7 @@ function servicesTab(s: AppState) {
     const detail = open ? `<div class="svc-detail" id="svc-detail-${id}">
         <label class="field"><span>이름</span><input type="text" class="text-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
         <div class="field"><span>평소 색</span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접 고르기']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div><small class="field-note">여유가 있을 때 막대·원형 그래프와 작업 표시줄 막대에 쓰는 색이에요.</small></div>
-        <div class="field"><span>보일 곳</span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${visibilityOf(a) === v}" title="${d}">${t}</button>`).join('')}</div><small class="field-note">${visibilityOf(a) === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요.' : visibilityOf(a) === 'window' ? '작업 표시줄에 붙였을 때는 빼요.' : '어디에도 보이지 않아요. 사용량 조회는 계속해요.'}</small></div>
+        <div class="field"><span>보일 곳</span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${visibilityOf(a) === v}" title="${d}">${t}</button>`).join('')}</div><small class="field-note">${visibilityOf(a) === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요.' : visibilityOf(a) === 'window' ? '작업 표시줄에 붙였을 때는 빼요.' : '어디에도 보이지 않아요. 사용량 조회는 계속해요.'}</small></div>
         ${scopedNames.length ? `<label class="setting-row"><span><b>${escapeText(scopedNames.join('·'))} 한도 표시</b><small>팀 요금제의 모델 전용 주간 한도를 카드에 함께 보여 줘요.</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
         <div class="field"><span>순서</span><div class="svc-actions"><button class="ghost-button" data-order="up" data-id="${id}" ${index === 0 ? 'disabled' : ''}>${icon('up')}앞으로</button><button class="ghost-button" data-order="down" data-id="${id}" ${index === s.accounts.length - 1 ? 'disabled' : ''}>${icon('down')}뒤로</button><button class="ghost-button danger" data-remove="${id}">${icon('close')}목록에서 빼기</button></div></div>
       </div>` : ''
@@ -351,10 +358,10 @@ function generalTab(s: AppState) {
       ${errors.length ? hint(`등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.`, 'warn-text') : ''}`)
     + advanced('general', section('모니터 구성별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
         + `${hint(`저장된 구성 ${saved}개`)}${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
-      + section('작업 표시줄에 붙였을 때', toggle('doubleClickToOpenPopup', '두 번 눌러야 상세 보기 열기', '끄면 한 번만 눌러도 열려요.', !!c.doubleClickToOpenPopup)
+      + (s.dockSupported === false ? '' : section('작업 표시줄에 붙였을 때', toggle('doubleClickToOpenPopup', '두 번 눌러야 상세 보기 열기', '끄면 한 번만 눌러도 열려요.', !!c.doubleClickToOpenPopup)
         + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
         + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
-        + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.'))
+        + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.')))
       + section('설정 백업', `<div class="svc-actions"><button class="ghost-button" data-backup="export">${icon('arrow')}파일로 내보내기</button><button class="ghost-button" data-backup="import">${icon('plus')}파일에서 불러오기</button></div>${hint('화면·알림 설정과 카드 목록을 파일 하나로 저장해요. 로그인 정보는 담지 않아요. 다른 PC로 옮기거나 다시 설치할 때 쓰세요.')}`)
       + section('외부 디스플레이로 보내기', toggle('apiPushEnabled', '사용량 보내기', '확인할 때마다 아래 주소로 사용량을 HTTP POST로 보내요(책상 위 작은 화면 등).', !!c.apiPushEnabled)
         + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>

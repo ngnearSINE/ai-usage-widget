@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
+import { exeName } from './platform-paths.js'
 
 /**
  * Grok 사용량. Grok CLI가 로그인해 둔 토큰(~/.grok/auth.json)을 읽기만 하고,
@@ -81,7 +82,7 @@ export function grokUsageFromBilling(account: AccountConfig, monthly: unknown, c
 export class GrokCliClient {
   /** Grok CLI가 설치됐거나 로그인 기록이 있는지(감지용). */
   public static isInstalled() {
-    return fs.existsSync(grokAuthPath()) || fs.existsSync(path.join(os.homedir(), '.grok', 'bin', 'grok.exe'))
+    return fs.existsSync(grokAuthPath()) || fs.existsSync(path.join(os.homedir(), '.grok', 'bin', exeName('grok')))
   }
 
   public static async fetchUsage(account: AccountConfig): Promise<AccountUsage> {

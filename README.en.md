@@ -4,7 +4,7 @@
 
 > **Note:** This is a personally modified fork of [sallyHADEV/ai-usage-taskbar-widget](https://github.com/sallyHADEV/ai-usage-taskbar-widget). This English README describes an earlier version. The [Korean README](README.md) and the [user guide (Korean)](docs/user-guide.md) are up to date.
 
-A lightweight Windows desktop widget that sits on the taskbar and monitors, in real time, the 5-hour session quota, weekly usage, and reset countdowns of multiple AI accounts (Antigravity, Claude, Codex, and custom AI).
+A lightweight desktop widget for Windows (x64·arm64) and Ubuntu (x64·arm64; window mode only — see the Korean README for install notes) that sits on the taskbar and monitors, in real time, the 5-hour session quota, weekly usage, and reset countdowns of multiple AI accounts (Antigravity, Claude, Codex, and custom AI).
 
 ![Screenshot](img/01.png)
 

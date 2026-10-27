@@ -3,8 +3,8 @@ import test from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createCipheriv, randomBytes } from 'node:crypto'
-import { decryptClaudeCache, selectClaudeDesktopToken, parseClaudeDesktopLiveUsage, findClaudeDataDirs, parseRetryAfterMs } from '../src/services/claude-desktop-oauth.js'
+import { createCipheriv, pbkdf2Sync, randomBytes } from 'node:crypto'
+import { decryptClaudeCache, decryptClaudeCacheLinux, selectClaudeDesktopToken, parseClaudeDesktopLiveUsage, findClaudeDataDirs, parseRetryAfterMs } from '../src/services/claude-desktop-oauth.js'
 import { refreshCountdowns } from '../src/services/claude-desktop-client.js'
 
 const account = { id: 'test', name: 'Claude', provider: 'claude' as const, enabled: true }
@@ -72,7 +72,7 @@ test('환경변수로 일반 설치와 Store 패키지 데이터 경로를 탐�
     fs.mkdirSync(path.join(root, 'Packages', 'AnthropicPBC.Claude_fixture', 'LocalCache', 'Roaming', 'Claude'), { recursive: true })
     fs.mkdirSync(path.join(root, 'Packages', 'Other_fixture'))
     assert.deepEqual(
-      findClaudeDataDirs({ APPDATA: path.join(root, 'Roaming'), LOCALAPPDATA: root }).sort(),
+      findClaudeDataDirs({ APPDATA: path.join(root, 'Roaming'), LOCALAPPDATA: root }, 'win32').sort(),
       [
         path.join(root, 'Roaming', 'Claude'),
         path.join(root, 'Packages', 'Claude_fixture', 'LocalCache', 'Roaming', 'Claude'),
@@ -80,4 +80,16 @@ test('환경변수로 일반 설치와 Store 패키지 데이터 경로를 탐�
       ].sort()
     )
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+test('Linux: ~/.config(XDG) 아래 Claude 폴더를 보고, v11·v10 캐시를 키링 암호로 푼다', () => {
+  assert.deepEqual(findClaudeDataDirs({ XDG_CONFIG_HOME: '/x/cfg' }, 'linux'), [path.join('/x/cfg', 'Claude')])
+  const plain = Buffer.from(JSON.stringify({ hello: 'world' }))
+  for (const [prefix, pw] of [['v11', 'keyring-secret'], ['v10', 'peanuts']] as const) {
+    const key = pbkdf2Sync(pw, 'saltysalt', 1, 16, 'sha1')
+    const c = createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20))
+    const blob = Buffer.concat([Buffer.from(prefix), c.update(plain), c.final()]).toString('base64')
+    assert.deepEqual(decryptClaudeCacheLinux(blob, Buffer.from(pw)), { hello: 'world' })
+  }
+  assert.throws(() => decryptClaudeCacheLinux(Buffer.from('v12xxxxxxxxxxxxxxxxxxxx').toString('base64'), Buffer.from('x')))
 })

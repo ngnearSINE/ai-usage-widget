@@ -1,4 +1,4 @@
-# 태그(v1.2.3)를 올리면 Windows 설치 파일·휴대용 zip을 만들어 GitHub Releases에 게시한다.
+# 태그(v1.2.3)를 올리면 Windows(x64·arm64 설치 파일 하나 + zip)와 Ubuntu(x64·arm64 AppImage·deb)를 만들어 GitHub Releases에 게시한다.
 # 앱의 자동 업데이트는 이 Releases의 latest.yml을 본다.
 name: Release
 
@@ -32,8 +32,8 @@ jobs:
       - run: npm run build
       - run: npm test
 
-      - name: 설치 파일·zip 만들고 Releases에 게시
-        run: npx electron-builder --win --publish always
+      - name: 설치 파일(x64·arm64 하나)·zip 만들고 Releases에 게시
+        run: npx electron-builder --win --x64 --arm64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -51,3 +51,25 @@ jobs:
           for ($i = $start + 1; $i -lt $lines.Count -and -not $lines[$i].StartsWith('## '); $i++) { $body += $lines[$i] }
           ($body -join "`n").Trim() | Set-Content notes.md -Encoding utf8
           gh release edit '${{ github.ref_name }}' --notes-file notes.md
+
+  # Windows 작업이 Releases를 만든 뒤에 올린다(동시에 올리면 릴리스가 둘 생길 수 있다).
+  # arm64 패키지도 x64 러너에서 함께 만든다(네이티브 모듈이 없어 교차 빌드 가능).
+  linux:
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: AppImage·deb(x64·arm64) 만들고 Releases에 게시
+        run: npx electron-builder --linux --x64 --arm64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
