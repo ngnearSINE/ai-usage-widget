@@ -41,7 +41,7 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 
 ## 설치
 
-1. [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 `AI Usage Widget Setup x.y.z.exe`를 내려받아 실행합니다. 관리자 권한 없이 사용자 폴더에 설치되고 바로 시작합니다. 설치 없이 쓰려면 `AI Usage Widget-x.y.z-win-x64.zip`의 압축을 풀고 `AI Usage Widget.exe`를 실행합니다.
+1. [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 `AI-Usage-Widget-Setup-x.y.z.exe`를 내려받아 실행합니다. 관리자 권한 없이 사용자 폴더에 설치되고 바로 시작합니다. 설치 없이 쓰려면 `AI-Usage-Widget-x.y.z-win-x64.zip`의 압축을 풀고 `AI Usage Widget.exe`를 실행합니다.
 2. 처음 실행할 때 Windows SmartScreen 경고가 뜨면 **추가 정보 → 실행**을 누릅니다(코드 서명 인증서가 없기 때문).
 3. 위젯이 이 PC의 로그인을 자동으로 찾아 카드를 보여 줍니다. 자세한 사용법은 [사용 설명서](docs/user-guide.md)에 있습니다.
 

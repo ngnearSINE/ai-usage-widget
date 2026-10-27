@@ -31,12 +31,12 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도(5시간·주간·월�
 
 ## 2. 설치
 
-배포본은 두 가지입니다. 하나만 고르면 됩니다.
+[Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 내려받습니다. 배포본은 두 가지이고, 하나만 고르면 됩니다.
 
 | 파일 | 설명 |
 |---|---|
-| `AI Usage Widget Setup x.y.z.exe` | **설치 파일(추천).** 관리자 권한 없이 내 사용자 폴더(`%LOCALAPPDATA%\Programs\AI Usage Widget`)에 설치하고, 시작 메뉴 바로가기와 제거 기능을 만듭니다. 설치가 끝나면 바로 실행됩니다. |
-| `AI Usage Widget-x.y.z-win-x64.zip` | **휴대용.** 아무 폴더에나 압축을 풀고 `AI Usage Widget.exe`를 실행합니다. 설치·제거 과정이 없습니다. |
+| `AI-Usage-Widget-Setup-x.y.z.exe` | **설치 파일(추천).** 관리자 권한 없이 내 사용자 폴더(`%LOCALAPPDATA%\Programs\AI Usage Widget`)에 설치하고, 시작 메뉴 바로가기와 제거 기능을 만듭니다. 설치가 끝나면 바로 실행됩니다. |
+| `AI-Usage-Widget-x.y.z-win-x64.zip` | **휴대용.** 아무 폴더에나 압축을 풀고 `AI Usage Widget.exe`를 실행합니다. 설치·제거 과정이 없습니다. |
 
 ### "Windows의 PC 보호" 경고가 뜨면
 
