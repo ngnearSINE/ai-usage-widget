@@ -862,3 +862,45 @@ body.is-popup-view #app { height:100vh; }
 .launch-field .launch-now { font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:6px; }
 .launch-field .launch-now b { color:var(--ink); font-weight:600; margin-right:6px; }
 .launch-field .launch-now b.warn-text { color:var(--warn); }
+
+/* 서비스 펼침: 묶음 카드(표시 / 바로 열기)와 아래 순서·관리 줄 */
+.svc-item.open .svc-detail { display:flex; flex-direction:column; gap:10px; padding:4px 12px 12px; }
+.sd-group { border:1px solid var(--line); border-radius:10px; background:color-mix(in srgb,var(--soft) 70%,transparent); padding:2px 12px; }
+.sd-title { font-size:11px; font-weight:700; letter-spacing:.3px; color:var(--muted); padding:10px 0 2px; }
+.sd-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 0; min-height:36px; }
+.sd-row + .sd-row, .sd-title + .sd-row { border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent); }
+.sd-title + .sd-row { border-top:0; }
+.sd-row.stack { flex-direction:column; align-items:stretch; gap:7px; }
+.sd-label b { display:block; font-size:12px; font-weight:600; color:var(--ink); }
+.sd-label small { display:block; font-size:10.5px; color:var(--muted); opacity:.85; margin-top:1px; }
+.sd-row .sd-input { width:58%; min-width:0; height:30px; }
+.sd-row .segmented button { padding:5px 8px; font-size:11.5px; }
+.sd-row .color-choice { display:flex; align-items:center; gap:8px; }
+.sd-row .color-choice .segmented { flex:1; }
+.sd-open { display:flex; align-items:center; gap:10px; padding:9px 0; }
+.sd-open + .sd-open { border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent); }
+.sd-open-ic { flex-shrink:0; width:30px; height:30px; border-radius:8px; display:grid; place-items:center; color:var(--muted); background:var(--soft); border:1px solid var(--line); }
+.sd-open-ic svg { width:16px; height:16px; }
+.sd-open-main { flex:1; min-width:0; }
+.sd-open-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.sd-open-head b { font-size:12px; font-weight:600; color:var(--ink); }
+.sd-keys { font-size:10.5px; color:var(--muted); }
+.sd-keys kbd { font-family:inherit; font-size:10px; padding:0 4px; border:1px solid var(--line-strong); border-bottom-width:2px; border-radius:4px; color:var(--muted); background:var(--soft); }
+.sd-open-val { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
+.sd-chip { flex-shrink:0; font-size:10px; font-weight:600; line-height:16px; padding:0 6px; border-radius:8px; color:var(--muted); background:var(--soft); border:1px solid var(--line); }
+.sd-chip.own { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,transparent); background:color-mix(in srgb,var(--accent) 12%,transparent); }
+.sd-chip.warn { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 40%,transparent); background:color-mix(in srgb,var(--warn) 12%,transparent); }
+.sd-path { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left; font-size:11px; color:var(--muted); font-family:"Cascadia Mono",Consolas,ui-monospace,monospace; }
+.sd-path.plain { direction:ltr; font-family:inherit; font-size:11.5px; }
+.sd-path.muted { direction:ltr; font-family:inherit; color:var(--muted); opacity:.85; }
+.sd-open-act { flex-shrink:0; display:flex; gap:4px; }
+.dashboard .icon-btn { width:28px; height:28px; display:grid; place-items:center; border-radius:7px; color:var(--muted); border:1px solid var(--line); background:transparent; }
+.dashboard .icon-btn:hover:not(:disabled) { color:var(--ink); background:var(--hover); }
+.dashboard .icon-btn:disabled { opacity:.35; }
+.dashboard .icon-btn svg { width:14px; height:14px; }
+.sd-foot { display:flex; align-items:center; justify-content:space-between; padding:2px 2px 0; }
+.sd-order { display:flex; align-items:center; gap:4px; }
+.sd-order span { font-size:11px; color:var(--muted); margin-left:4px; }
+.dashboard .text-btn { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted); padding:5px 8px; border-radius:6px; }
+.dashboard .text-btn svg { width:13px; height:13px; }
+.dashboard .text-btn.danger:hover { color:var(--danger); background:color-mix(in srgb,var(--danger) 10%,transparent); }

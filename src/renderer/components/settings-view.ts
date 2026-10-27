@@ -243,21 +243,26 @@ function displayTable(c: WidgetConfig) {
 }
 
 const visibilityOf = (a: AccountConfig) => a.hidden ? 'none' : a.hiddenInDock ? 'window' : 'all'
-/** 서비스 펼침: Ctrl·Shift+두 번 클릭으로 실행할 것. 처음에는 자동으로 찾은 것, 직접 고르면 그 파일. */
-function launchRow(a: AccountConfig, s: AppState, kind: 'cli' | 'app') {
-  const own = kind === 'cli' ? a.launchCli : a.launchApp
-  const auto = s.launchers?.[a.id]?.[kind]
-  const label = kind === 'cli' ? 'Ctrl+두 번 클릭 (CLI)' : 'Shift+두 번 클릭 (앱)'
-  const now = own ? `<b>직접 지정</b> ${escapeText(own)}` : auto ? `<b>자동</b> ${escapeText(auto)}` : '<b class="warn-text">자동으로 찾지 못했어요</b> 직접 골라 주세요'
-  return `<div class="field launch-field"><span>${label}</span><div class="launch-now" title="${escapeText(own || auto || '')}">${now}</div>
-    <div class="svc-actions"><button class="ghost-button" data-launch-pick="${kind}" data-id="${escapeText(a.id)}">${icon('pencil')}직접 고르기…</button>${own ? `<button class="ghost-button" data-launch-auto="${kind}" data-id="${escapeText(a.id)}">${icon('refresh')}자동으로</button>` : ''}</div></div>`
+/** 바로 열기 한 줄: 아이콘·이름·단축키, 아래에 무엇을 여는지(자동/직접), 오른쪽에 고르기·되돌리기. */
+function openRow(o: { ic: string; title: string; keys: string; kind: string; own?: string; auto?: string; autoText: string; missing: string; pick: string; reset: string; id: string; resetTitle: string }) {
+  // 경로만 코드 글꼴(긴 경로는 앞쪽을 줄여 끝부분이 보이게), 앱 이름·'홈 폴더'는 보통 글꼴
+  const val = (v: string) => `<span class="sd-path ${/[\\/]/.test(v) ? '' : 'plain'}">${escapeText(v)}</span>`
+  const value = o.own ? `<span class="sd-chip own">직접</span>${val(o.own)}`
+    : o.auto ? `<span class="sd-chip">${o.kind === 'cwd' ? '기본' : '자동'}</span>${val(o.auto)}`
+    : `<span class="sd-chip warn">못 찾음</span><span class="sd-path muted">${o.missing}</span>`
+  return `<div class="sd-open" title="${escapeText(o.own || o.auto || '')}"><span class="sd-open-ic">${icon(o.ic)}</span>
+    <div class="sd-open-main"><div class="sd-open-head"><b>${o.title}</b>${o.keys ? `<span class="sd-keys">${o.keys}</span>` : ''}</div><div class="sd-open-val">${value}</div></div>
+    <div class="sd-open-act"><button class="icon-btn" ${o.pick}="${o.kind}" data-id="${o.id}" title="직접 고르기" aria-label="${o.title} 직접 고르기">${icon(o.kind === 'cwd' ? 'folder' : 'pencil')}</button>${o.own ? `<button class="icon-btn" ${o.reset}="${o.kind}" data-id="${o.id}" title="${o.resetTitle}" aria-label="${o.resetTitle}">${icon('undo')}</button>` : ''}</div></div>`
 }
-
+function launchRow(a: AccountConfig, s: AppState, kind: 'cli' | 'app') {
+  return openRow({ ic: kind === 'cli' ? 'terminal' : 'app', title: kind === 'cli' ? 'CLI 열기' : '앱 열기', keys: kind === 'cli' ? '<kbd>Ctrl</kbd>+두 번 클릭' : '<kbd>Shift</kbd>+두 번 클릭',
+    kind, own: kind === 'cli' ? a.launchCli : a.launchApp, auto: s.launchers?.[a.id]?.[kind], autoText: '', missing: '이 PC에서 찾지 못했어요 · 직접 골라 주세요',
+    pick: 'data-launch-pick', reset: 'data-launch-auto', id: escapeText(a.id), resetTitle: '자동으로 찾기' })
+}
 /** CLI를 열 때 시작 폴더(기본 홈 폴더). */
 function cwdRow(a: AccountConfig) {
-  const now = a.launchCwd ? `<b>직접 지정</b> ${escapeText(a.launchCwd)}` : '<b>기본</b> 홈 폴더'
-  return `<div class="field launch-field"><span>CLI 시작 폴더</span><div class="launch-now" title="${escapeText(a.launchCwd || '홈 폴더')}">${now}</div>
-    <div class="svc-actions"><button class="ghost-button" data-cwd-pick="${escapeText(a.id)}">${icon('pencil')}폴더 고르기…</button>${a.launchCwd ? `<button class="ghost-button" data-cwd-reset="${escapeText(a.id)}">${icon('refresh')}홈 폴더로</button>` : ''}</div></div>`
+  return openRow({ ic: 'folder', title: 'CLI 시작 폴더', keys: '', kind: 'cwd', own: a.launchCwd, auto: '홈 폴더', autoText: '', missing: '',
+    pick: 'data-cwd-pick', reset: 'data-cwd-reset', id: escapeText(a.id), resetTitle: '홈 폴더로' })
 }
 
 function statusOf(a: AccountConfig, s: AppState): [string, string] {
@@ -274,13 +279,25 @@ function servicesTab(s: AppState) {
     const [status, tone] = statusOf(a, s), open = expanded === a.id
     const sub = [status, a.orgUuid && u?.tier ? escapeText(u.tier) : ''].filter(Boolean).join(' · ')
     const scopedNames = u?.scopedQuotas?.map(x => x.label) || u?.scopedHidden || []
+    const vis = visibilityOf(a)
+    const visNote = vis === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요' : vis === 'window' ? '작업 표시줄에 붙였을 때는 빼요' : '어디에도 안 보여요(조회는 계속해요)'
+    // 펼친 서비스: 표시 / 바로 열기 / 순서·관리 세 묶음
     const detail = open ? `<div class="svc-detail" id="svc-detail-${id}">
-        <label class="field"><span>이름</span><input type="text" class="text-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
-        <div class="field"><span>평소 색</span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접 고르기']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div><small class="field-note">여유가 있을 때 막대·원형 그래프와 작업 표시줄 막대에 쓰는 색이에요.</small></div>
-        <div class="field"><span>보일 곳</span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${visibilityOf(a) === v}" title="${d}">${t}</button>`).join('')}</div><small class="field-note">${visibilityOf(a) === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요.' : visibilityOf(a) === 'window' ? '작업 표시줄에 붙였을 때는 빼요.' : '어디에도 보이지 않아요. 사용량 조회는 계속해요.'}</small></div>
-        ${scopedNames.length ? `<label class="setting-row"><span><b>${escapeText(scopedNames.join('·'))} 한도 표시</b><small>팀 요금제의 모델 전용 주간 한도를 카드에 함께 보여 줘요.</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
-        ${launchRow(a, s, 'cli')}${cwdRow(a)}${launchRow(a, s, 'app')}
-        <div class="field"><span>순서</span><div class="svc-actions"><button class="ghost-button" data-order="up" data-id="${id}" ${index === 0 ? 'disabled' : ''}>${icon('up')}앞으로</button><button class="ghost-button" data-order="down" data-id="${id}" ${index === s.accounts.length - 1 ? 'disabled' : ''}>${icon('down')}뒤로</button><button class="ghost-button danger" data-remove="${id}">${icon('close')}목록에서 빼기</button></div></div>
+        <div class="sd-group">
+          <div class="sd-title">표시</div>
+          <label class="sd-row"><span class="sd-label"><b>이름</b></span><input type="text" class="text-input sd-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
+          <div class="sd-row stack"><span class="sd-label"><b>평소 색</b><small>여유가 있을 때 그래프에 쓰는 색</small></span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div></div>
+          <div class="sd-row stack"><span class="sd-label"><b>보일 곳</b><small>${visNote}</small></span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${vis === v}" title="${d}">${t}</button>`).join('')}</div></div>
+          ${scopedNames.length ? `<label class="sd-row"><span class="sd-label"><b>${escapeText(scopedNames.join('·'))} 한도</b><small>모델 전용 주간 한도도 카드에</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
+        </div>
+        <div class="sd-group">
+          <div class="sd-title">바로 열기</div>
+          ${launchRow(a, s, 'cli')}${cwdRow(a)}${launchRow(a, s, 'app')}
+        </div>
+        <div class="sd-foot">
+          <div class="sd-order" role="group" aria-label="순서"><button class="icon-btn" data-order="up" data-id="${id}" ${index === 0 ? 'disabled' : ''} title="앞으로" aria-label="앞으로">${icon('up')}</button><button class="icon-btn" data-order="down" data-id="${id}" ${index === s.accounts.length - 1 ? 'disabled' : ''} title="뒤로" aria-label="뒤로">${icon('down')}</button><span>순서</span></div>
+          <button class="text-btn danger" data-remove="${id}">${icon('trash')}목록에서 빼기</button>
+        </div>
       </div>` : ''
     return `<div class="svc-item ${open ? 'open' : ''}" data-svc="${id}">
       <div class="svc-row"><button class="svc-head" data-expand="${id}" aria-expanded="${open}" aria-controls="svc-detail-${id}">${renderAiIcon(a.provider, a.name, s.config.iconStyle, 28)}<span class="svc-text"><b>${name}</b><small><i class="dot ${tone}"></i>${sub}</small></span>${icon('chev')}</button>
@@ -564,9 +581,9 @@ function bindEvents() {
   })
   body.querySelectorAll<HTMLElement>('[data-cwd-pick]').forEach(el => el.onclick = async () => {
     const dir = await window.api.pickFolder('CLI를 열 때 시작할 폴더 고르기')
-    if (dir) run(window.api.setAccountDisplay(el.dataset.cwdPick!, { launchCwd: dir }), '시작 폴더를 저장하지 못했어요.')
+    if (dir) run(window.api.setAccountDisplay(el.dataset.id!, { launchCwd: dir }), '시작 폴더를 저장하지 못했어요.')
   })
-  body.querySelectorAll<HTMLElement>('[data-cwd-reset]').forEach(el => el.onclick = () => run(window.api.setAccountDisplay(el.dataset.cwdReset!, { launchCwd: '' }), '홈 폴더로 되돌리지 못했어요.'))
+  body.querySelectorAll<HTMLElement>('[data-cwd-reset]').forEach(el => el.onclick = () => run(window.api.setAccountDisplay(el.dataset.id!, { launchCwd: '' }), '홈 폴더로 되돌리지 못했어요.'))
   body.querySelectorAll<HTMLElement>('[data-launch-auto]').forEach(el => el.onclick = () => {
     const kind = el.dataset.launchAuto as 'cli' | 'app'
     run(window.api.setAccountDisplay(el.dataset.id!, kind === 'cli' ? { launchCli: '' } : { launchApp: '' }), '자동으로 되돌리지 못했어요.')
