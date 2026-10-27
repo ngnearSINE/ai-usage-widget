@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { parseClaudeDesktopLiveUsage, parseRetryAfterMs, readClaudeDesktopTokens } from './claude-desktop-oauth.js'
+import { cliNeedsRelogin } from './claude-cli-refresh.js'
 
 /**
  * Claude 조직(팀/개인)별 사용량. 한 계정(이메일)이 여러 조직에 속할 수 있고 한도와 로그인 토큰은 조직마다 따로다.
@@ -53,7 +54,7 @@ export function groupClaudeOrgs(found: Array<{ token: ClaudeToken; profile: Clau
 
 /**
  * CLI 로그인이 만료된 조직과 만료된 지 몇 시간인지. 조직은 CLI 설정(~/.claude.json의 oauthAccount)에서 읽는다.
- * 위젯은 다른 앱의 로그인 정보를 바꾸지 않으므로 직접 새로 고치지 않고, 사용자가 claude를 실행하도록 안내한다.
+ * 만료되고 10분이 지나면 위젯이 대신 갱신한다(claude-cli-refresh). 그 전이나 갱신 토큰까지 끝났을 때 이 안내를 쓴다.
  */
 export function cliExpiredOrg(): { orgUuid: string; hours: number } | null {
   const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
@@ -65,8 +66,9 @@ export function cliExpiredOrg(): { orgUuid: string; hours: number } | null {
     return typeof orgUuid === 'string' && orgUuid ? { orgUuid, hours: (Date.now() - oauth.expiresAt) / 3600e3 } : null
   } catch { return null }
 }
-export const cliExpiredMessage = (hours: number) =>
-  `Claude Code CLI 로그인이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 터미널에서 claude를 한 번 실행하면 다시 연결돼요`
+export const cliExpiredMessage = (hours: number) => cliNeedsRelogin()
+  ? 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 터미널에서 claude를 실행해 다시 로그인해 주세요'
+  : `Claude Code CLI 토큰이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 위젯이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)`
 
 /** CLI 로그인 파일은 있는데 토큰이 만료된 상태(어느 조직인지 아직 모름). */
 export function cliTokenExpired(): boolean {

@@ -18,6 +18,7 @@ import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
 import { Updater } from './updater.js'
+import { setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
@@ -39,6 +40,7 @@ function getPreloadPath(): string {
 // 일관된 userData 경로 유지 (개발/프로덕션 동일 설정 공유)
 app.name = 'ai-usage-taskbar-widget'
 const isPreview = process.argv.includes('--preview')
+setCliRefreshEnabled(!isPreview)
 const acrylicSupported = process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621
 /** 작업 표시줄 도킹·상세 팝업은 Windows 작업 표시줄 전용. Linux는 창(위젯) 모드만. */
 const dockSupported = process.platform === 'win32'

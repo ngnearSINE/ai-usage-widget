@@ -5,6 +5,7 @@ import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
 import { GrokCliClient } from './grok-cli-client.js'
 import { ClaudeOrgs, cliTokenExpired } from './claude-orgs.js'
+import { refreshCliTokenIfExpired } from './claude-cli-refresh.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { retainedUsage } from '../common/widget-layout.js'
@@ -142,7 +143,9 @@ export class QuotaManager {
     try {
       // Claude 조직(팀/개인)을 찾아 계정 목록에 맞춘다. 실패해도 나머지 조회는 계속한다.
       try {
-        const orgs = await ClaudeOrgs.discover()
+        // Claude CLI 토큰이 만료되고 10분이 지나도록 아무도 갱신하지 않았으면 대신 갱신한다(쓰는 중인 토큰은 건드리지 않음).
+        const cli = await refreshCliTokenIfExpired().catch(() => 'failed' as const)
+        const orgs = await ClaudeOrgs.discover(cli === 'refreshed')
         this.accountStore.syncClaudeOrgs(orgs.map(o => ({ orgUuid: o.orgUuid, label: o.label, fromCli: o.tokens.some(t => t.source === 'cli') })), cliTokenExpired())
       } catch (err) {
         console.warn('[QuotaManager] Claude 조직 확인 실패', err)
