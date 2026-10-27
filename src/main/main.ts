@@ -171,6 +171,10 @@ function broadcastState() {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.webContents.send(IPC_CHANNELS.STATE_CHANGED, state)
   }
+  // 정보·업데이트 창도 확인 중·받는 중·준비됨을 바로 보여 준다
+  if (aboutWindow && !aboutWindow.isDestroyed()) {
+    aboutWindow.webContents.send(IPC_CHANNELS.STATE_CHANGED, state)
+  }
 }
 
 
@@ -354,7 +358,7 @@ function openAboutWindow() {
   if (aboutWindow && !aboutWindow.isDestroyed()) { if (aboutWindow.isMinimized()) aboutWindow.restore(); aboutWindow.show(); aboutWindow.focus(); return }
   hidePopup(true)
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
-  const area = screen.getDisplayMatching(anchor).workArea, width = 440, height = Math.min(600, area.height - 40)
+  const area = screen.getDisplayMatching(anchor).workArea, width = 460, height = Math.min(680, area.height - 40)
   const win = aboutWindow = new SurfaceWindow({
     x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
     show: false, title: 'AI 사용량 정보', resizable: false, maximizable: false, minimizable: false, autoHideMenuBar: true,

@@ -818,3 +818,42 @@ body.is-popup-view #app { height:100vh; }
 .stale-chip.pending::before { content:'…'; color:#fff; background:var(--accent); font-size:9px; line-height:9px; }
 .card-head:has(.stale-chip) .stale-mark.pending { display:none; }
 :root[data-motion="none"] .stale-mark.pending i { animation:none; opacity:.8; }
+
+/* 정보·업데이트 창: 상태 → (새 버전이면) 버전 변화·바뀌는 점 → 단추, 설정은 따로 */
+.about-hero .ver-pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11.5px; font-weight:600; color:var(--ink); background:var(--soft); border:1px solid var(--line); font-variant-numeric:tabular-nums; }
+.about-hero .ver-sub { margin-left:6px; font-size:11px; color:var(--dim); }
+.up-card { display:flex; flex-direction:column; gap:12px; padding:14px; }
+.up-state { display:flex; align-items:flex-start; gap:12px; }
+.up-state b { display:block; font-size:13.5px; font-weight:650; color:var(--ink); letter-spacing:-.2px; }
+.up-state p { margin-top:2px; font-size:11.5px; color:var(--muted); line-height:1.5; }
+.up-icon { flex-shrink:0; width:32px; height:32px; border-radius:9px; display:grid; place-items:center; }
+.up-icon svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.up-icon.good { color:var(--good); background:color-mix(in srgb,var(--good) 14%,transparent); }
+.up-icon.accent { color:var(--accent); background:color-mix(in srgb,var(--accent) 16%,transparent); }
+.up-icon.bad { color:var(--danger); background:color-mix(in srgb,var(--danger) 14%,transparent); }
+.up-icon.info, .up-icon.spin { color:var(--muted); background:var(--soft); }
+.up-icon.spin svg, .about-root .spin svg { animation:upSpin 1s linear infinite; }
+.about-root .spin { display:inline-grid; }
+@keyframes upSpin { to { transform:rotate(360deg); } }
+.up-version { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+.up-version .v-old { padding:2px 9px; border-radius:10px; font-size:12px; color:var(--muted); background:var(--soft); text-decoration:line-through; text-decoration-color:color-mix(in srgb,var(--muted) 50%,transparent); }
+.up-version .v-arrow { color:var(--dim); }
+.up-version .v-new { padding:2px 9px; border-radius:10px; font-size:12px; font-weight:700; color:#1b1830; background:var(--accent); }
+.up-news { padding:10px 12px; border-radius:8px; background:var(--soft); border:1px solid var(--line); }
+.up-news-head { font-size:11px; font-weight:650; color:var(--muted); margin-bottom:6px; }
+.up-news ul { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:5px; font-size:11.5px; line-height:1.5; color:var(--muted); max-height:180px; overflow:auto; }
+.up-news li b { color:var(--ink); font-weight:600; }
+.up-news .link-button { margin-top:6px; }
+.up-progress { height:5px; border-radius:3px; background:var(--track); overflow:hidden; }
+.up-progress i { display:block; height:100%; background:var(--accent); transition:width .3s; }
+.up-card .primary-button.wide, .up-card .secondary-button { margin-top:0; height:34px; font-size:12.5px; }
+.up-card .primary-button svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
+.up-card .primary-button:disabled, .up-card .secondary-button:disabled { opacity:.65; cursor:default; filter:none; }
+.up-hint { font-size:11px; color:var(--dim); line-height:1.5; margin-top:-4px; }
+.up-settings { padding:4px 14px; }
+.up-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; }
+.up-row + .up-row { border-top:1px solid var(--line); }
+.up-row b { display:block; font-size:12px; font-weight:600; color:var(--ink); }
+.up-row small { display:block; font-size:11px; color:var(--dim); margin-top:1px; }
+.up-row.is-disabled { opacity:.5; }
+.up-row .hour-select { min-width:104px; height:30px; }

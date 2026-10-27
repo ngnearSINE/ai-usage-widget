@@ -147,7 +147,8 @@ export interface UpdateState {
   version?: string
   percent?: number
   message?: string
-  checkedAt?: string
+  checkedAt?: string // 마지막으로 확인을 마친 시각
+  notes?: string // 새 버전에서 바뀌는 점(릴리스 설명, 마크다운 목록)
 }
 
 export interface AppState {

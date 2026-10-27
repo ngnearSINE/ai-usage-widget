@@ -14,6 +14,16 @@ const { autoUpdater } = updaterPkg
 const CHECK_EVERY_MS = 6 * 3600e3
 const FIRST_CHECK_MS = 30e3
 
+/** electron-updater가 주는 릴리스 설명(HTML 또는 목록)을 '- 항목' 줄로 바꾼다. */
+function notesFromInfo(raw: unknown): string | undefined {
+  const text = Array.isArray(raw) ? raw.map(n => (n as { note?: string })?.note || '').join('\n') : typeof raw === 'string' ? raw : ''
+  if (!text) return undefined
+  const lines = text.replace(/<li[^>]*>/gi, '\n- ').replace(/<\/(p|li|h\d)>/gi, '\n').replace(/<strong>|<\/strong>|<b>|<\/b>/gi, '**').replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .split('\n').map(l => l.trim()).filter(Boolean)
+  return lines.join('\n') || undefined
+}
+
 export class Updater {
   state: UpdateState
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -29,12 +39,15 @@ export class Updater {
     // 자동 업데이트가 꺼져 있으면 받아 두기만 하고, 사용자가 '업데이트'를 누를 때만 설치한다.
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.logger = null
-    autoUpdater.on('checking-for-update', () => this.set({ status: 'checking' }))
-    autoUpdater.on('update-available', info => this.set({ status: 'downloading', version: info.version, percent: 0 }))
+    autoUpdater.on('checking-for-update', () => this.set({ status: 'checking', checkedAt: this.state.checkedAt }))
+    autoUpdater.on('update-available', info => {
+      this.set({ status: 'downloading', version: info.version, percent: 0, checkedAt: new Date().toISOString(), notes: notesFromInfo(info.releaseNotes) })
+      void this.loadNotes(info.version)
+    })
     autoUpdater.on('download-progress', p => this.set({ ...this.state, status: 'downloading', percent: Math.round(p.percent) }))
     autoUpdater.on('update-not-available', () => this.set({ status: 'latest', checkedAt: new Date().toISOString() }))
     autoUpdater.on('update-downloaded', info => {
-      this.set({ status: 'ready', version: info.version })
+      this.set({ ...this.state, status: 'ready', version: info.version, percent: 100 })
       // 새벽 확인에서 받은 것이면 그 자리에서 설치한다(사용 중에 갑자기 다시 시작하지 않도록 시간대 안에서만).
       if (this.auto && inNightlyWindow(new Date(), this.hour)) { this.install(); return }
       this.opts.onReady(info.version)
@@ -57,6 +70,18 @@ export class Updater {
   }
 
   private set(next: UpdateState) { this.state = next; this.opts.onChange() }
+
+  /** 새 버전의 릴리스 설명(마크다운)을 GitHub에서 읽는다. 실패하면 updater가 준 설명을 그대로 둔다. */
+  private async loadNotes(version: string) {
+    try {
+      const res = await fetch(`https://api.github.com/repos/ngnearSINE/ai-usage-widget/releases/tags/v${encodeURIComponent(version)}`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ai-usage-widget' }, signal: AbortSignal.timeout(10000), redirect: 'follow',
+      })
+      if (!res.ok) return
+      const body = (await res.json() as { body?: unknown }).body
+      if (typeof body === 'string' && body.trim() && this.state.version === version) this.set({ ...this.state, notes: body.trim() })
+    } catch { /* 설명이 없어도 업데이트는 된다 */ }
+  }
 
   /** 자동 업데이트를 켜거나 끈다. 켜면 시작 30초 뒤와 6시간마다 확인해 받아 두고, 매일 새벽 3시에 설치하고 다시 시작한다. */
   schedule(enabled: boolean, hour = 3) {
