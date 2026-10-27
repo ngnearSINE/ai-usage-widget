@@ -79,6 +79,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
   })
   container.addEventListener('dblclick', e => {
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
-    if (card) void window.api.setFocus(card.dataset.card!)
+    if (card && (e.ctrlKey || e.shiftKey)) void window.api.openServiceTool(e.ctrlKey ? 'cli' : 'app', card.dataset.card!)
+    else if (card) void window.api.setFocus(card.dataset.card!)
   })
 }

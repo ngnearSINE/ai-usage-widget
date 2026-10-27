@@ -344,6 +344,13 @@ function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string
   menuEl.querySelector<HTMLElement>('[aria-checked="true"],button')?.focus({ preventScroll: true })
 }
 
+/** CLI·앱 열기(못 찾으면 안내). */
+async function openTool(kind: 'cli' | 'app', id: string) {
+  const ok = await window.api.openServiceTool(kind, id).catch(() => false)
+  const name = lastState?.accounts.find(a => a.id === id)?.name || '이 서비스'
+  notify(ok ? `${name} ${kind === 'cli' ? 'CLI를 터미널에서' : '앱을'} 여는 중이에요.` : `이 PC에서 ${name} ${kind === 'cli' ? 'CLI' : '앱'}을 찾지 못했어요.`)
+}
+
 function notify(message: string) {
   const toast = host.querySelector<HTMLElement>('.toast')
   if (!toast) return
@@ -396,6 +403,8 @@ function bindDelegated(container: HTMLElement) {
   container.addEventListener('dblclick', async e => {
     const t = e.target as HTMLElement, card = t.closest<HTMLElement>('[data-card]')
     if (!card || t.closest('button')) return
+    // Ctrl+두 번 클릭: CLI, Shift+두 번 클릭: 데스크톱 앱, 그냥 두 번 클릭: 집중 모드
+    if (e.ctrlKey || e.shiftKey) { void openTool(e.ctrlKey ? 'cli' : 'app', card.dataset.card!); return }
     void window.api.setFocus(card.dataset.card!)
   })
   // 카드를 끌어 순서를 바꾼다(버튼 위에서 시작한 끌기와 오른쪽 단추는 제외).

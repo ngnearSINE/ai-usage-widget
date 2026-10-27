@@ -857,3 +857,8 @@ body.is-popup-view #app { height:100vh; }
 .up-row small { display:block; font-size:11px; color:var(--dim); margin-top:1px; }
 .up-row.is-disabled { opacity:.5; }
 .up-row .hour-select { min-width:104px; height:30px; }
+
+/* 서비스별 Ctrl·Shift+두 번 클릭 실행 대상 */
+.launch-field .launch-now { font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:6px; }
+.launch-field .launch-now b { color:var(--ink); font-weight:600; margin-right:6px; }
+.launch-field .launch-now b.warn-text { color:var(--warn); }

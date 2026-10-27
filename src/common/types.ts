@@ -58,6 +58,8 @@ export interface AccountConfig {
   orgUuid?: string // Claude 조직(팀/개인). 있으면 그 조직 토큰으로 조회한다
   showScoped?: boolean // 모델 전용 한도(Fable 등) 보기. 기본 켬
   hiddenInDock?: boolean // 작업표시줄 도킹 화면에서만 숨김. 위젯 창에는 보인다
+  launchCli?: string // Ctrl+두 번 클릭으로 실행할 CLI(직접 지정, 비우면 자동으로 찾음)
+  launchApp?: string // Shift+두 번 클릭으로 실행할 앱(직접 지정, 비우면 자동으로 찾음)
   homeDir?: string // 두 번째 계정: 그 서비스 CLI의 로그인 폴더(Codex CODEX_HOME, Grok GROK_HOME)
   barColor?: string // 그래프 평소 색: 없음=서비스 색, 'green', '#rrggbb'
   customMock?: {
@@ -158,6 +160,7 @@ export interface AppState {
   version?: string // 앱 버전(설정 창 '정보')
   guideAvailable?: boolean // 사용 설명서 PDF를 열 수 있는지
   acrylicSupported?: boolean
+  launchers?: Record<string, { cli?: string; app?: string }> // 자동으로 찾은 CLI·앱(설정 화면 표시용)
   dockSupported?: boolean // 작업 표시줄 도킹 가능(Windows만)
   config: WidgetConfig
   accounts: AccountConfig[]

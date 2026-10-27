@@ -243,6 +243,16 @@ function displayTable(c: WidgetConfig) {
 }
 
 const visibilityOf = (a: AccountConfig) => a.hidden ? 'none' : a.hiddenInDock ? 'window' : 'all'
+/** 서비스 펼침: Ctrl·Shift+두 번 클릭으로 실행할 것. 처음에는 자동으로 찾은 것, 직접 고르면 그 파일. */
+function launchRow(a: AccountConfig, s: AppState, kind: 'cli' | 'app') {
+  const own = kind === 'cli' ? a.launchCli : a.launchApp
+  const auto = s.launchers?.[a.id]?.[kind]
+  const label = kind === 'cli' ? 'Ctrl+두 번 클릭 (CLI)' : 'Shift+두 번 클릭 (앱)'
+  const now = own ? `<b>직접 지정</b> ${escapeText(own)}` : auto ? `<b>자동</b> ${escapeText(auto)}` : '<b class="warn-text">자동으로 찾지 못했어요</b> 직접 골라 주세요'
+  return `<div class="field launch-field"><span>${label}</span><div class="launch-now" title="${escapeText(own || auto || '')}">${now}</div>
+    <div class="svc-actions"><button class="ghost-button" data-launch-pick="${kind}" data-id="${escapeText(a.id)}">${icon('pencil')}직접 고르기…</button>${own ? `<button class="ghost-button" data-launch-auto="${kind}" data-id="${escapeText(a.id)}">${icon('refresh')}자동으로</button>` : ''}</div></div>`
+}
+
 function statusOf(a: AccountConfig, s: AppState): [string, string] {
   const u = s.usages.find(u => u.id === a.id)
   if (!a.enabled) return ['조회 꺼짐', 'off']
@@ -262,6 +272,7 @@ function servicesTab(s: AppState) {
         <div class="field"><span>평소 색</span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접 고르기']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div><small class="field-note">여유가 있을 때 막대·원형 그래프와 작업 표시줄 막대에 쓰는 색이에요.</small></div>
         <div class="field"><span>보일 곳</span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${visibilityOf(a) === v}" title="${d}">${t}</button>`).join('')}</div><small class="field-note">${visibilityOf(a) === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요.' : visibilityOf(a) === 'window' ? '작업 표시줄에 붙였을 때는 빼요.' : '어디에도 보이지 않아요. 사용량 조회는 계속해요.'}</small></div>
         ${scopedNames.length ? `<label class="setting-row"><span><b>${escapeText(scopedNames.join('·'))} 한도 표시</b><small>팀 요금제의 모델 전용 주간 한도를 카드에 함께 보여 줘요.</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
+        ${launchRow(a, s, 'cli')}${launchRow(a, s, 'app')}
         <div class="field"><span>순서</span><div class="svc-actions"><button class="ghost-button" data-order="up" data-id="${id}" ${index === 0 ? 'disabled' : ''}>${icon('up')}앞으로</button><button class="ghost-button" data-order="down" data-id="${id}" ${index === s.accounts.length - 1 ? 'disabled' : ''}>${icon('down')}뒤로</button><button class="ghost-button danger" data-remove="${id}">${icon('close')}목록에서 빼기</button></div></div>
       </div>` : ''
     return `<div class="svc-item ${open ? 'open' : ''}" data-svc="${id}">
@@ -540,6 +551,14 @@ function bindEvents() {
     run(window.api.setAccountDisplay(id, { barColor: v }), '색을 저장하지 못했어요.')
   })
   body.querySelectorAll<HTMLInputElement>('[data-barcolor-pick]').forEach(el => el.onchange = () => run(window.api.setAccountDisplay(el.dataset.barcolorPick!, { barColor: el.value }), '색을 저장하지 못했어요.'))
+  body.querySelectorAll<HTMLElement>('[data-launch-pick]').forEach(el => el.onclick = async () => {
+    const kind = el.dataset.launchPick as 'cli' | 'app', file = await window.api.pickFile(kind)
+    if (file) run(window.api.setAccountDisplay(el.dataset.id!, kind === 'cli' ? { launchCli: file } : { launchApp: file }), '실행할 것을 저장하지 못했어요.')
+  })
+  body.querySelectorAll<HTMLElement>('[data-launch-auto]').forEach(el => el.onclick = () => {
+    const kind = el.dataset.launchAuto as 'cli' | 'app'
+    run(window.api.setAccountDisplay(el.dataset.id!, kind === 'cli' ? { launchCli: '' } : { launchApp: '' }), '자동으로 되돌리지 못했어요.')
+  })
   body.querySelectorAll<HTMLInputElement>('[data-scoped]').forEach(el => el.onchange = () => run(window.api.setAccountDisplay(el.dataset.scoped!, { showScoped: el.checked }), '표시 설정을 저장하지 못했어요.'))
   body.querySelectorAll<HTMLElement>('[data-order]').forEach(el => el.onclick = () => run(window.api.reorderAccount(el.dataset.id!, el.dataset.order as 'up' | 'down'), '순서를 저장하지 못했어요.'))
   body.querySelectorAll<HTMLElement>('[data-remove]').forEach(el => el.onclick = () => {

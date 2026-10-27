@@ -19,6 +19,7 @@ import { ownColor } from '../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
 import { Updater } from './updater.js'
 import { setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
+import { findApp, findCli, openApp, openCli, warmLaunchers } from './service-launch.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
@@ -146,6 +147,7 @@ function getAppState(): AppState {
     preview: isPreview,
     acrylicSupported,
     dockSupported,
+    launchers,
     config: accountStore.getConfig(),
     accounts,
     usages,
@@ -256,10 +258,13 @@ function restoreLayout() {
 }
 // 서비스 종류별 사용량 웹페이지. 렌더러는 계정 ID만 보내고 주소는 여기서 정한다.
 /** 카드 우클릭 메뉴. 기본 메뉴라 작은 위젯에서도 잘리지 않는다. */
-function showCardMenu(sender: Electron.WebContents, id: string) {
+async function showCardMenu(sender: Electron.WebContents, id: string) {
   const acc = accountStore.getAccounts().find(a => a.id === id)
   const win = BrowserWindow.fromWebContents(sender)
   if (!acc || !win) return
+  // 이 서비스의 CLI·데스크톱 앱(못 찾으면 흐리게)
+  const cli = acc.launchCli || findCli(acc.provider), app = acc.launchApp || await findApp(acc.provider).catch(() => null)
+  if (win.isDestroyed()) return
   const cfg = accountStore.getConfig(), usage = quotaManager?.getUsages().find(u => u.id === id)
   const save = (patch: Partial<WidgetConfig>) => { accountStore.saveConfig({ ...accountStore.getConfig(), ...sanitizeConfigPatch(patch) }); broadcastState() }
   const src = cfg.valueSource?.[id] || 'weekly', disp = displayOf(cfg, id)
@@ -267,7 +272,11 @@ function showCardMenu(sender: Electron.WebContents, id: string) {
   const url = servicePageUrl(id)
   Menu.buildFromTemplate([
     { label: acc.name, enabled: false },
-    { label: '집중 모드', type: 'checkbox', checked: focusId === id, accelerator: 'Esc', registerAccelerator: false, click: () => setFocus(id) },
+    // Esc는 집중 모드를 끌 때만 쓰이므로 켜져 있을 때만 보여 준다
+    { label: '집중 모드', type: 'checkbox', checked: focusId === id, ...(focusId === id ? { accelerator: 'Esc', registerAccelerator: false } : {}), click: () => setFocus(id) },
+    { type: 'separator' },
+    { label: 'CLI 열기  (Ctrl+두 번 클릭)', enabled: !!cli, click: () => { openCli(acc) } },
+    { label: '앱 열기  (Shift+두 번 클릭)', enabled: !!app, click: () => { void openApp(acc) } },
     { type: 'separator' },
     { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
     ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
@@ -353,6 +362,18 @@ const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'history', 'ge
 type SettingsTab = typeof SETTINGS_TABS[number]
 // 설정 창도 위젯과 같은 배경(불투명도·아크릴)을 쓰도록 테두리 없는 공통 창으로 만들고, 창 단추는 화면이 그린다.
 let aboutWindow: SurfaceWindow | null = null
+/** 계정마다 자동으로 찾은 CLI·앱. 설정 화면에 보여 주려고 따로 기억한다. */
+let launchers: Record<string, { cli?: string; app?: string }> = {}
+async function refreshLaunchers() {
+  const next: typeof launchers = {}
+  for (const a of accountStore.getAccounts()) {
+    const app = await findApp(a.provider).catch(() => null)
+    next[a.id] = { cli: findCli(a.provider) || undefined, app: app?.name }
+  }
+  launchers = next
+  broadcastState()
+}
+
 /** '정보·업데이트' 창. 하나만 띄운다. */
 function openAboutWindow() {
   if (aboutWindow && !aboutWindow.isDestroyed()) { if (aboutWindow.isMinimized()) aboutWindow.restore(); aboutWindow.show(); aboutWindow.focus(); return }
@@ -372,6 +393,7 @@ function openAboutWindow() {
 }
 
 function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Rectangle) {
+  void refreshLaunchers()
   if (!SETTINGS_TABS.includes(tab)) tab = 'design'
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.webContents.send(IPC_CHANNELS.SETTINGS_TAB, tab)
@@ -1447,8 +1469,14 @@ function setupIpcHandlers() {
     if (!file) return false
     return (await shell.openPath(file)) === ''
   })
-  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown; barColor?: unknown }) => {
-    const clean: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string } = {}
+  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown; barColor?: unknown; launchCli?: unknown; launchApp?: unknown }) => {
+    const clean: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string; launchCli?: string; launchApp?: string } = {}
+    // 직접 지정한 실행 대상: 있는 파일의 절대 경로만, 빈 값이면 자동으로 되돌린다.
+    for (const k of ['launchCli', 'launchApp'] as const) {
+      const v = patch?.[k]
+      if (v === '') clean[k] = undefined
+      else if (typeof v === 'string' && path.isAbsolute(v) && fs.existsSync(v)) clean[k] = v
+    }
     if (typeof patch?.showScoped === 'boolean') clean.showScoped = patch.showScoped
     if (typeof patch?.hiddenInDock === 'boolean') clean.hiddenInDock = patch.hiddenInDock
     // 평소 색: 'brand'(서비스 색으로 되돌림)·'green'·'#rrggbb'만 받는다.
@@ -1581,6 +1609,14 @@ function setupIpcHandlers() {
     if (typeof url !== 'string' || !/^https:\/\/github\.com\/(ngnearSINE\/ai-usage-widget|sallyHADEV\/ai-usage-taskbar-widget)(\/[\w./-]*)?$/.test(url)) return false
     await shell.openExternal(url); return true
   })
+  ipcMain.handle(IPC_CHANNELS.PICK_FILE, async (event, kind: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || undefined
+    const filters = process.platform === 'win32'
+      ? [{ name: kind === 'cli' ? '실행 파일' : '프로그램·바로 가기', extensions: kind === 'cli' ? ['exe', 'cmd', 'bat'] : ['exe', 'lnk', 'url'] }, { name: '모든 파일', extensions: ['*'] }]
+      : [{ name: '모든 파일', extensions: ['*'] }]
+    const r = await dialog.showOpenDialog(win!, { title: kind === 'cli' ? 'Ctrl+두 번 클릭으로 실행할 CLI 고르기' : 'Shift+두 번 클릭으로 실행할 앱 고르기', properties: ['openFile'], filters })
+    return r.canceled ? null : r.filePaths[0] || null
+  })
   ipcMain.handle(IPC_CHANNELS.PICK_FOLDER, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) || undefined
     const r = await dialog.showOpenDialog(win!, { title: '로그인 폴더 고르기', properties: ['openDirectory', 'createDirectory'] })
@@ -1646,6 +1682,12 @@ function setupIpcHandlers() {
   })
   ipcMain.handle(IPC_CHANNELS.SET_FOCUS, (_event, id: unknown) => setFocus(typeof id === 'string' ? id : null))
   ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))
+  // Ctrl+두 번 클릭은 CLI, Shift+두 번 클릭은 데스크톱 앱. 못 찾으면 false.
+  ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_TOOL, async (_event, kind: unknown, id: unknown) => {
+    const acc = accountStore.getAccounts().find(a => a.id === String(id))
+    if (!acc) return false
+    return kind === 'cli' ? openCli(acc) : kind === 'app' ? openApp(acc) : false
+  })
 
   ipcMain.handle(IPC_CHANNELS.DETECT_LOCAL_APPS, async () => {
     return await LocalAppDetector.detectAll()
@@ -1699,6 +1741,8 @@ app.whenReady().then(() => {
   // 도킹을 못 하는 OS로 설정을 옮겨 왔으면 창 모드로 시작한다.
   if (!dockSupported && accountStore.getConfig().placementMode === 'docked') accountStore.saveConfig({ ...accountStore.getConfig(), placementMode: 'floating' })
   TaskbarDocker.warmHelper()
+  warmLaunchers()
+  void refreshLaunchers()
   refreshUsableRight()
   setupIpcHandlers()
   restoreLayout()
