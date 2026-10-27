@@ -1275,7 +1275,7 @@ function setupIpcHandlers() {
     }
 
     // 갱신 주기 변경 시 폴링 인터벌 동적 재적용
-    if (patch.autoUpdate !== undefined) updater?.schedule(nextConfig.autoUpdate !== false)
+    if (patch.autoUpdate !== undefined || patch.updateHour !== undefined) updater?.schedule(nextConfig.autoUpdate !== false, nextConfig.updateHour ?? 3)
     if (patch.refreshIntervalSec !== undefined && prevConfig.refreshIntervalSec !== nextConfig.refreshIntervalSec) {
       if (!isPreview) quotaManager.startPolling(nextConfig.refreshIntervalSec, false)
     }
@@ -1616,9 +1616,9 @@ app.whenReady().then(() => {
   updater = new Updater({
     preview: isPreview,
     onChange: () => { broadcastState(); updateTrayMenu() },
-    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : '새벽 3시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.', () => openAboutWindow()),
+    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : `${accountStore.getConfig().updateHour ?? 3}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.`, () => openAboutWindow()),
   })
-  updater.schedule(accountStore.getConfig().autoUpdate !== false)
+  updater.schedule(accountStore.getConfig().autoUpdate !== false, accountStore.getConfig().updateHour ?? 3)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {
     if (!widgetWindow || widgetWindow.isDestroyed()) return
     widgetManuallyHidden = false

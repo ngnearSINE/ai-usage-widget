@@ -769,3 +769,7 @@ body.is-popup-view #app { height:100vh; }
 /* 제목줄 '업데이트' 단추: 받아 둔 새 버전이 있을 때만 */
 .dashboard .update-pill { flex-shrink:0; height:20px; padding:0 8px; margin-right:4px; border-radius:10px; font-size:11px; font-weight:600; color:#fff; background:var(--accent); -webkit-app-region:no-drag; white-space:nowrap; }
 .dashboard .update-pill:hover { filter:brightness(1.12); }
+
+/* 자동 업데이트 설치 시각 */
+.dashboard .hour-select { width:auto; min-width:96px; }
+.about-card .inline-field { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:8px 0; }

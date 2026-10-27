@@ -265,6 +265,13 @@ function layoutCards() {
 }
 
 /* ---------- 메뉴 ---------- */
+/** 자동 업데이트 설치 시각 표기와 고르기. */
+export const hourLabel = (h: number) => `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}시`
+export function updateHourSelect(state: AppState) {
+  const cur = state.config.updateHour ?? 3
+  return `<select class="text-input short hour-select" data-update-hour aria-label="자동 업데이트 설치 시각" ${state.config.autoUpdate === false ? 'disabled' : ''}>${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === cur ? 'selected' : ''}>${hourLabel(h)}</option>`).join('')}</select>`
+}
+
 /** 새 버전을 받아 두었으면 제목줄에 짧은 '업데이트' 단추(마우스를 올리면 전체 안내). */
 export function updatePill(state: AppState) {
   const u = state.update

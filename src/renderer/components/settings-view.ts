@@ -6,7 +6,7 @@ import { downsample, previewHistory } from '../../common/history.js'
 import type { HistoryPoint } from '../../common/types.js'
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext } from './usage-views.js'
-import { applyAppearance, escapeText, icon } from './dashboard.js'
+import { applyAppearance, escapeText, icon, updateHourSelect } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
 import { SMOOTH_START } from '../../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, displaySummary, setDisplay, setDisplayAll, type DisplayKey } from '../../common/display-options.js'
@@ -360,6 +360,7 @@ function generalTab(s: AppState) {
         + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>
         <label class="field"><span>화면 번호</span><input type="number" class="text-input short" data-api-screen min="1" step="1" value="${c.apiScreen ?? 1}"></label>`), '고급 설정')
     + section('정보', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}<span class="update-line ${updateTone(s)}">${updateText(s)}</span></p>`
+      + (s.update && s.update.status !== 'unsupported' || s.preview ? `<label class="field"><span>자동 업데이트 설치 시각</span>${updateHourSelect(s)}</label>${hint('새 버전은 미리 받아 두고 이 시각(PC 시계 기준)에 설치하고 다시 시작해요. PC가 꺼져 있거나 잠자기였으면 2시간 안에 켜질 때 설치하고, 아니면 다음 날로 미뤄요.')}` : '')
       + `<button class="secondary-button" data-open-about>${icon('refresh')}정보·업데이트 열기</button>`
       + (s.guideAvailable ? `<button class="secondary-button" data-open-guide>${icon('book')}사용 설명서 열기</button>` : ''))
 }
@@ -413,6 +414,7 @@ function bindEvents() {
   const onClickOf = (sel: string, fn: (e: MouseEvent) => unknown) => { const el = body.querySelector<HTMLElement>(sel); if (el) el.onclick = fn }
   body.querySelectorAll<HTMLDetailsElement>('[data-adv]').forEach(el => el.ontoggle = () => { if (el.open) openAdvanced.add(el.dataset.adv!); else openAdvanced.delete(el.dataset.adv!) })
   body.querySelectorAll<HTMLElement>('[data-config]').forEach(el => el.onclick = () => { void update({ [el.dataset.config!]: el.dataset.value }) })
+  body.querySelectorAll<HTMLSelectElement>('[data-update-hour]').forEach(el => el.onchange = () => { void update({ updateHour: Number(el.value) }) })
   body.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach(el => el.onchange = () => { void update({ [el.dataset.toggle!]: el.checked }) })
   body.querySelectorAll<HTMLInputElement>('[data-dall]').forEach(el => { el.indeterminate = el.dataset.mixed === 'true'; el.onchange = () => { void update(setDisplayAll(config(), el.dataset.dall as DisplayKey, el.checked)) } })
   body.querySelectorAll<HTMLInputElement>('[data-d1]').forEach(el => el.onchange = () => { void update(setDisplay(config(), el.dataset.id!, el.dataset.d1 as DisplayKey, el.checked)) })

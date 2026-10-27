@@ -29,6 +29,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   placementMode: oneOf('docked', 'floating'),
   colorMode: oneOf('step', 'smooth'),
   autoUpdate: bool,
+  updateHour: num(0, 23),
   warnTint: bool,
   popupBounds: v => rect(v) ?? SKIP,
   warnTintLevel: oneOf('soft', 'medium', 'strong'),

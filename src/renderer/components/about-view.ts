@@ -1,5 +1,5 @@
 import type { AppState } from '../../common/types.js'
-import { applyAppearance, escapeText, icon } from './dashboard.js'
+import { applyAppearance, escapeText, icon, hourLabel, updateHourSelect } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
 import changelog from '../../../CHANGELOG.md?raw'
 
@@ -31,10 +31,10 @@ export function renderAbout(container: HTMLElement, s: AppState) {
   const statusText = !u || u.status === 'unsupported' ? '자동 업데이트는 설치판에서만 돼요. 휴대용(zip)은 새 버전을 직접 내려받아 주세요.'
     : u.status === 'checking' ? '새 버전을 확인하고 있어요…'
     : u.status === 'downloading' ? `새 버전 ${escapeText(u.version || '')}을 받고 있어요`
-    : u.status === 'ready' ? `새 버전 ${escapeText(u.version || '')}이 준비됐어요. ${s.config.autoUpdate === false ? '아래 단추나 위젯 제목줄의 ‘업데이트’를 누르면 설치돼요.' : '새벽 3시나 앱을 끌 때 설치돼요. 지금 바로 설치할 수도 있어요.'}`
+    : u.status === 'ready' ? `새 버전 ${escapeText(u.version || '')}이 준비됐어요. ${s.config.autoUpdate === false ? '아래 단추나 위젯 제목줄의 ‘업데이트’를 누르면 설치돼요.' : `${hourLabel(s.config.updateHour ?? 3)}나 앱을 끌 때 설치돼요. 지금 바로 설치할 수도 있어요.`}`
     : u.status === 'latest' ? '최신 버전을 쓰고 있어요.'
     : u.status === 'error' ? escapeText(u.message || '업데이트를 확인하지 못했어요.')
-    : s.config.autoUpdate === false ? '자동 업데이트가 꺼져 있어요. ‘업데이트 확인’으로 직접 받을 수 있어요.' : '6시간마다 새 버전을 확인해 받아 두고, 새벽 3시에 설치해요.'
+    : s.config.autoUpdate === false ? '자동 업데이트가 꺼져 있어요. ‘업데이트 확인’으로 직접 받을 수 있어요.' : `6시간마다 새 버전을 확인해 받아 두고, ${hourLabel(s.config.updateHour ?? 3)}에 설치해요.`
   const tone = u?.status === 'ready' ? 'good' : u?.status === 'error' ? 'bad' : ''
   const supported = u && u.status !== 'unsupported'
   const list = showAll ? all : mine ? [mine] : []
@@ -45,6 +45,7 @@ export function renderAbout(container: HTMLElement, s: AppState) {
       <section class="about-card">
         <div class="about-card-head"><b>업데이트</b>${supported ? `<label class="setting-row inline"><span>자동 업데이트</span><input class="switch" type="checkbox" data-auto ${s.config.autoUpdate !== false ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></label>` : ''}</div>
         <p class="about-status ${tone}">${statusText}</p>
+        ${supported ? `<label class="field inline-field"><span>자동 설치 시각</span>${updateHourSelect(s)}</label>` : ''}
         ${u?.status === 'downloading' ? `<div class="about-progress"><i style="width:${u.percent ?? 0}%"></i></div>` : ''}
         ${supported ? (u!.status === 'ready' ? `<button class="primary-button wide" data-install>${icon('refresh')}다시 시작해 ${escapeText(u!.version || '')} 설치</button>`
           : `<button class="secondary-button" data-check ${['checking', 'downloading'].includes(u!.status) ? 'disabled' : ''}>${icon('refresh')}지금 확인</button>`) : `<button class="secondary-button" data-link="${REPO}/releases/latest">${icon('arrow')}Releases에서 내려받기</button>`}
@@ -75,6 +76,7 @@ export function renderAbout(container: HTMLElement, s: AppState) {
   container.addEventListener('change', e => {
     const t = e.target as HTMLInputElement
     if (t.matches('[data-auto]')) void window.api.updateConfig({ autoUpdate: t.checked })
+    if (t.matches('[data-update-hour]')) void window.api.updateConfig({ updateHour: Number(t.value) })
   })
   window.addEventListener('keydown', e => { if (e.key === 'Escape') window.api.windowControl('close') })
 }

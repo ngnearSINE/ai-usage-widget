@@ -85,6 +85,7 @@ export interface WidgetConfig {
   warnTintLevel?: 'soft' | 'medium' | 'strong' // 세기(기본 은은하게)
   warnTintOrigin?: 'edge' | 'corners' | 'corner' | 'center' // 진한 곳(기본 테두리)
   autoUpdate?: boolean // 새 버전 자동 확인·다운로드(기본 켬, 설치판만)
+  updateHour?: number // 자동 설치 시각(PC 시각 0~23시, 기본 3시)
   colorMode?: 'step' | 'smooth' // 경고색으로 바뀌는 방식: 기준에서 한 번에(기본) / 남은 양에 따라 부드럽게
   showUsedPercent?: boolean // true: 소모량(%) 표시, false/미설정: 남은량(%) 표시 (작업표시줄 바)
   placementMode?: 'docked' | 'floating' // 작업표시줄 내부 도킹 vs 작업표시줄 바로 위 플로팅

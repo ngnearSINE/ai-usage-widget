@@ -11,3 +11,10 @@ test('새벽 3시 자동 설치: 다음 3시까지 남은 시간과 설치 시�
   assert.ok(!inNightlyWindow(new Date(2026, 9, 27, 5, 0)), '5시가 넘으면 사용 중일 수 있어 미룸')
   assert.ok(!inNightlyWindow(new Date(2026, 9, 27, 2, 59)))
 })
+
+test('설치 시각을 바꾸면 그 시각부터 2시간, 자정을 넘어도', () => {
+  assert.equal(msUntilNightly(new Date(2026, 9, 27, 22, 0), 23), 3600e3)
+  assert.ok(inNightlyWindow(new Date(2026, 9, 28, 0, 30), 23))
+  assert.ok(!inNightlyWindow(new Date(2026, 9, 28, 1, 0), 23))
+  assert.ok(!inNightlyWindow(new Date(2026, 9, 27, 3, 0), 23))
+})

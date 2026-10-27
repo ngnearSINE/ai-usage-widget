@@ -20,6 +20,7 @@ export class Updater {
   private nightlyTimer: ReturnType<typeof setTimeout> | undefined
   private manual = false
   private auto = true
+  private hour = 3
 
   constructor(private readonly opts: { preview: boolean; onChange: () => void; onReady: (version: string) => void; onError?: (message: string) => void }) {
     this.state = { status: this.supported() ? 'idle' : 'unsupported' }
@@ -35,7 +36,7 @@ export class Updater {
     autoUpdater.on('update-downloaded', info => {
       this.set({ status: 'ready', version: info.version })
       // 새벽 확인에서 받은 것이면 그 자리에서 설치한다(사용 중에 갑자기 다시 시작하지 않도록 시간대 안에서만).
-      if (this.auto && inNightlyWindow(new Date())) { this.install(); return }
+      if (this.auto && inNightlyWindow(new Date(), this.hour)) { this.install(); return }
       this.opts.onReady(info.version)
     })
     autoUpdater.on('error', err => {
@@ -55,9 +56,10 @@ export class Updater {
   private set(next: UpdateState) { this.state = next; this.opts.onChange() }
 
   /** 자동 업데이트를 켜거나 끈다. 켜면 시작 30초 뒤와 6시간마다 확인해 받아 두고, 매일 새벽 3시에 설치하고 다시 시작한다. */
-  schedule(enabled: boolean) {
+  schedule(enabled: boolean, hour = 3) {
     clearTimeout(this.timer); clearTimeout(this.nightlyTimer)
     this.auto = enabled
+    this.hour = hour
     if (this.state.status === 'unsupported') return
     autoUpdater.autoInstallOnAppQuit = enabled
     if (!enabled) return
@@ -66,12 +68,12 @@ export class Updater {
     const nightly = () => {
       this.nightlyTimer = setTimeout(() => {
         // 잠자기에서 늦게 깨어난 경우 시간대를 벗어났으면 건너뛴다.
-        if (inNightlyWindow(new Date())) {
+        if (inNightlyWindow(new Date(), this.hour)) {
           if (this.state.status === 'ready') this.install()
           else void this.check(false) // 받기를 마치면 update-downloaded에서 설치
         }
         nightly()
-      }, Math.min(msUntilNightly(new Date()), 2 ** 31 - 1))
+      }, Math.min(msUntilNightly(new Date(), this.hour), 2 ** 31 - 1))
     }
     nightly()
   }
