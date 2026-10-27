@@ -794,3 +794,7 @@ body.is-popup-view #app { height:100vh; }
 .heat-dir .mid { border:1px dashed var(--line); border-radius:4px; }
 .heat-side-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
 .heat-side-row small { color:var(--dim); font-size:11px; }
+
+/* 경고 배경 기본값으로 */
+.heat-reset-row { display:flex; justify-content:flex-end; margin-top:8px; }
+.heat-reset-row .ghost-button:disabled { opacity:.45; cursor:default; }

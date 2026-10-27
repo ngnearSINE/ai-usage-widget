@@ -168,6 +168,10 @@ const hint = (text: string, cls = '') => `<p class="setting-hint ${cls}">${text}
 const segmentRaw = (current: string, options: string[][], attr: string, id: string, label: string) => `<div class="segmented" role="group" aria-label="${label}">${options.map(([value, text]) => `<button ${attr}="${value}" data-id="${id}" aria-pressed="${current === value}">${text}</button>`).join('')}</div>`
 const barChoice = (a: AccountConfig) => !a.barColor ? 'brand' : a.barColor === 'green' ? 'green' : 'custom'
 const barSwatch = (a: AccountConfig, brand?: string) => /^#[\da-f]{6}$/i.test(a.barColor || '') ? a.barColor! : hex(brand)
+/** 경고 배경 처음 값. 켜기·끄기는 따로 두고 모양만 되돌린다. */
+const HEAT_DEFAULTS = { warnTintStrength: 30, warnTintSpread: 30, warnTintOrigin: 'edge', warnTintSide: 'top-left' } as const
+const isHeatDefault = (c: WidgetConfig) => (c.warnTintStrength ?? 30) === 30 && (c.warnTintSpread ?? 30) === 30 && heatPlacement(c).origin === 'edge' && heatPlacement(c).side === 'top-left'
+
 /** '한쪽'의 방향 고르기: 카드 모양 3×3에서 가장자리 8칸. */
 const HEAT_SIDES: Array<[HeatSide | '', string, string]> = [
   ['top-left', '↖', '왼쪽 위'], ['top', '↑', '위'], ['top-right', '↗', '오른쪽 위'],
@@ -220,7 +224,8 @@ function displayTab(c: WidgetConfig) {
       + toggle('warnTint', '경고 배경 색', '남은 양이 줄수록 카드 배경이 노랑에서 빨강으로 은은하게 바뀌어요. 테두리는 칠하지 않아요.', c.warnTint !== false)
       + `<div class="${c.warnTint === false ? 'is-disabled' : ''}">${slider('warnTintStrength', '세기', 0, 100, c.warnTintStrength ?? 30, '%')}${slider('warnTintSpread', '퍼짐', 0, 100, c.warnTintSpread ?? 30, '%')}
         <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', heatPlacement(c).origin, [['edge', '테두리'], ['center', '가운데'], ['side', '한쪽']], '경고 배경이 진한 곳')}
-        ${heatPlacement(c).origin === 'side' ? heatSidePicker(heatPlacement(c).side) : ''}</div></div>`
+        ${heatPlacement(c).origin === 'side' ? heatSidePicker(heatPlacement(c).side) : ''}</div>
+        <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div>`
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
       + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
@@ -432,6 +437,7 @@ function bindEvents() {
   const onClickOf = (sel: string, fn: (e: MouseEvent) => unknown) => { const el = body.querySelector<HTMLElement>(sel); if (el) el.onclick = fn }
   body.querySelectorAll<HTMLDetailsElement>('[data-adv]').forEach(el => el.ontoggle = () => { if (el.open) openAdvanced.add(el.dataset.adv!); else openAdvanced.delete(el.dataset.adv!) })
   body.querySelectorAll<HTMLElement>('[data-config]').forEach(el => el.onclick = () => { void update({ [el.dataset.config!]: el.dataset.value }) })
+  body.querySelectorAll<HTMLElement>('[data-heat-reset]').forEach(el => el.onclick = () => { void update({ ...HEAT_DEFAULTS }); notify('경고 배경을 기본값으로 되돌렸어요.') })
   body.querySelectorAll<HTMLSelectElement>('[data-update-hour]').forEach(el => el.onchange = () => { void update({ updateHour: Number(el.value) }) })
   body.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach(el => el.onchange = () => { void update({ [el.dataset.toggle!]: el.checked }) })
   body.querySelectorAll<HTMLInputElement>('[data-dall]').forEach(el => { el.indeterminate = el.dataset.mixed === 'true'; el.onchange = () => { void update(setDisplayAll(config(), el.dataset.dall as DisplayKey, el.checked)) } })
