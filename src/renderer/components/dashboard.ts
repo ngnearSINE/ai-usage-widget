@@ -270,14 +270,16 @@ function layoutCards() {
   const warnN = all.filter(u => severity(serviceModel(u), x.warn, x.crit, x.per ? x.per(u.id).showPace : x.showPace)).length
   const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
   const last = state.lastRefreshedAt ? Date.parse(state.lastRefreshedAt) : NaN
-  const updated = Number.isFinite(last) ? `갱신 ${hm(last)}${W > 420 ? ` · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''}` : '--'
+  // 마지막·다음 갱신 시각은 제목줄에 쓰지 않고 새로고침 단추의 설명으로만 보여 준다.
+  const refreshBtn = host.querySelector<HTMLElement>('[data-action="refresh"]')
+  if (refreshBtn) refreshBtn.title = Number.isFinite(last) ? `새로고침 · 마지막 갱신 ${hm(last)} · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : '새로고침'
   const status = host.querySelector<HTMLElement>('[data-status]')
   const lock = state.config.clickThrough ? `<span class="lock-badge" title="클릭 통과 잠금 중">${icon('lock')}잠김${state.config.shortcuts?.lock ? ` · ${escapeText(state.config.shortcuts.lock)}로 풀기` : ''}</span> · ` : ''
   const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
   if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
-    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? '<span data-pv-fallback hidden> · 미리보기</span>' : ` · ${updated}`}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? '<span data-pv-fallback hidden> · 미리보기</span>' : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
   tickClock(true)
 }
 

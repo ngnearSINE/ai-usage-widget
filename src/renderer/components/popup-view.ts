@@ -32,9 +32,9 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
     : `<div class="empty-state">${icon(loading ? 'refresh' : 'grid')}<h2>${loading ? '서비스를 확인하고 있어요' : '표시할 서비스가 없어요'}</h2><button class="secondary-button" data-open-settings="services">서비스 관리</button></div>`
   updateMarkup(container, `<div class="dashboard popup-v2 ${animate ? 'popup-enter' : ''} ${focusName ? 'focus-mode' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
-    <header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status">${focusName ? `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>` : ''}<b>${loading ? '확인 중' : `${list.length}개`}</b>${updated && !state.preview ? ` · ${escapeText(updated)}` : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>
+    <header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status">${focusName ? `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>` : ''}<b>${loading ? '확인 중' : `${list.length}개`}</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>
       ${updatePill(state)}
-      <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-pop="refresh" title="새로고침" aria-label="사용량 새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
+      <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-pop="refresh" title="${updated ? `새로고침 · 마지막 갱신 ${updated}` : '새로고침'}" aria-label="사용량 새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-pop="float" title="창으로 펼치기" aria-label="작업 표시줄에서 떼어 창으로 펼치기">${icon('expand')}</button>
       <button class="tool" data-open-settings="design" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool" data-pop="close" title="닫기 (Esc)" aria-label="닫기">${icon('close')}</button></header>
