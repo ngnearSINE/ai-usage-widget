@@ -43,6 +43,8 @@ export const api = {
     ipcRenderer.on(IPC_CHANNELS.SETTINGS_TAB, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.SETTINGS_TAB, handler)
   },
+  checkUpdate: (): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
+  installUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
   openGuide: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_GUIDE),
   detectLocalApps: (): Promise<any[]> => ipcRenderer.invoke(IPC_CHANNELS.DETECT_LOCAL_APPS),
   scheduleHidePopup: (delayMs?: number): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.SCHEDULE_HIDE_POPUP, delayMs),

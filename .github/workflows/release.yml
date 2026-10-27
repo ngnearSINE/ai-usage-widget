@@ -1,0 +1,38 @@
+# 태그(v1.2.3)를 올리면 Windows 설치 파일·휴대용 zip을 만들어 GitHub Releases에 게시한다.
+# 앱의 자동 업데이트는 이 Releases의 latest.yml을 본다.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 태그와 package.json 버전 확인
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "package.json 버전($v)과 태그(${{ github.ref_name }})가 다릅니다." }
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: 설치 파일·zip 만들고 Releases에 게시
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -331,8 +331,25 @@ function generalTab(s: AppState) {
       + section('외부 디스플레이로 보내기', toggle('apiPushEnabled', '사용량 보내기', '확인할 때마다 아래 주소로 사용량을 HTTP POST로 보내요(책상 위 작은 화면 등).', !!c.apiPushEnabled)
         + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>
         <label class="field"><span>화면 번호</span><input type="number" class="text-input short" data-api-screen min="1" step="1" value="${c.apiScreen ?? 1}"></label>`), '고급 설정')
-    + section('정보', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}</p>${s.guideAvailable ? `<button class="secondary-button" data-open-guide>${icon('book')}사용 설명서 열기</button>` : ''}`)
+    + section('정보와 업데이트', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}<span class="update-line ${updateTone(s)}">${updateText(s)}</span></p>`
+      + (s.update && s.update.status !== 'unsupported' ? toggle('autoUpdate', '자동 업데이트', '새 버전이 나오면 뒤에서 내려받고, 다음에 앱을 다시 시작할 때 설치해요.', c.autoUpdate !== false)
+        + (s.update.status === 'ready' ? `<button class="primary-button wide" data-update-install>${icon('refresh')}다시 시작해 ${escapeText(s.update.version || '')} 설치</button>`
+          : `<button class="secondary-button" data-update-check ${['checking', 'downloading'].includes(s.update.status) ? 'disabled' : ''}>${icon('refresh')}지금 확인</button>`)
+        : hint('자동 업데이트는 설치판에서만 돼요. 휴대용(zip)은 새 버전을 직접 내려받아 주세요.'))
+      + (s.guideAvailable ? `<button class="secondary-button" data-open-guide>${icon('book')}사용 설명서 열기</button>` : ''))
 }
+function updateText(s: AppState) {
+  const u = s.update
+  if (!u || u.status === 'unsupported' || u.status === 'idle') return ''
+  const at = u.checkedAt ? new Date(u.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''
+  return u.status === 'checking' ? '새 버전 확인 중…'
+    : u.status === 'downloading' ? `새 버전 ${escapeText(u.version || '')} 받는 중 ${u.percent ?? 0}%`
+    : u.status === 'ready' ? `새 버전 ${escapeText(u.version || '')} 준비됨`
+    : u.status === 'latest' ? `최신 버전이에요${at ? ` · ${at} 확인` : ''}`
+    : `${escapeText(u.message || '업데이트를 확인하지 못했어요')}${at ? ` · ${at}` : ''}`
+}
+const updateTone = (s: AppState) => s.update?.status === 'ready' ? 'good' : s.update?.status === 'error' ? 'bad' : ''
+
 function shortcutFromEvent(e: KeyboardEvent): string | null {
   const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[]
   // 한글 입력 상태에서는 e.key가 자모로 오므로 글쇠 위치(e.code)로 읽는다.
@@ -418,6 +435,8 @@ function bindEvents() {
   if (ep) ep.onchange = () => { const v = ep.value.trim(); if (/^https?:\/\/\S+$/i.test(v)) void update({ apiEndpoint: v }); else { notify('http:// 또는 https://로 시작하는 주소를 넣어 주세요.'); ep.value = state.config.apiEndpoint || 'http://localhost:8080/api/usage' } }
   const scr = body.querySelector<HTMLInputElement>('[data-api-screen]')
   if (scr) scr.onchange = () => { const v = parseInt(scr.value, 10); if (v >= 1) void update({ apiScreen: v }); else scr.value = String(state.config.apiScreen ?? 1) }
+  onClickOf('[data-update-check]', () => run(window.api.checkUpdate(), '업데이트를 확인하지 못했어요.'))
+  onClickOf('[data-update-install]', () => run(window.api.installUpdate(), '업데이트를 설치하지 못했어요.'))
   onClickOf('[data-open-guide]', () => run(window.api.openGuide().then(ok => { if (!ok) notify('사용 설명서를 찾지 못했어요.') }), '사용 설명서를 열지 못했어요.'))
 
   // 기록

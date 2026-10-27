@@ -76,6 +76,7 @@ export interface WidgetConfig {
   refreshIntervalSec: number // 갱신 주기 (기본 60초)
   showWeeklyLimit: boolean
   colorByUsage: boolean // 사용량에 따른 색상 변화 (안전:그린 -> 주의:오렌지 -> 위험:레드)
+  autoUpdate?: boolean // 새 버전 자동 확인·다운로드(기본 켬, 설치판만)
   colorMode?: 'step' | 'smooth' // 경고색으로 바뀌는 방식: 기준에서 한 번에(기본) / 남은 양에 따라 부드럽게
   showUsedPercent?: boolean // true: 소모량(%) 표시, false/미설정: 남은량(%) 표시 (작업표시줄 바)
   placementMode?: 'docked' | 'floating' // 작업표시줄 내부 도킹 vs 작업표시줄 바로 위 플로팅
@@ -123,8 +124,18 @@ export interface WidgetConfig {
 /** 사용 기록 한 점: [시각(ms), 5시간 남은 %, 주간 남은 %]. 없는 한도는 null. */
 export type HistoryPoint = [number, number | null, number | null]
 
+/** 자동 업데이트 상태. unsupported는 휴대용 zip·개발 실행처럼 스스로 업데이트할 수 없는 경우. */
+export interface UpdateState {
+  status: 'unsupported' | 'idle' | 'checking' | 'downloading' | 'ready' | 'latest' | 'error'
+  version?: string
+  percent?: number
+  message?: string
+  checkedAt?: string
+}
+
 export interface AppState {
   preview?: boolean
+  update?: UpdateState
   version?: string // 앱 버전(설정 창 '정보')
   guideAvailable?: boolean // 사용 설명서 PDF를 열 수 있는지
   acrylicSupported?: boolean

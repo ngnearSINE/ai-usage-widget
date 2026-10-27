@@ -2,6 +2,8 @@
 
 **한국어** | [English](README.en.md)
 
+> 이 저장소는 [sallyHADEV/ai-usage-taskbar-widget](https://github.com/sallyHADEV/ai-usage-taskbar-widget)을 fork해서 개인적으로 원하는 대로 고친 버전입니다. 디자인·설정 화면·작업 표시줄 도킹·Claude 팀·개인 조직·Grok 지원·자동 업데이트 등을 바꾸거나 더했습니다. 원본을 만들어 주신 분께 감사드립니다.
+
 Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았는지 Windows 바탕화면이나 작업 표시줄에서 한눈에 보여 주는 데스크톱 위젯입니다. 이미 로그인된 공식 앱·CLI의 정보를 읽기만 하므로 따로 로그인하거나 API 키를 넣을 필요가 없습니다.
 
 ![위젯 — 종합 디자인](docs/images/widget-rich.png)
@@ -21,7 +23,6 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 - **알림과 기록**: 여유 부족, 소진 예상, 리셋, 남는 주간 여유를 Windows 알림으로 알려 주고, 사용량을 30일 동안 기록해 그래프로 보여 줍니다.
 - **편의 기능**: 트레이 아이콘에 남은 %, 클릭 통과 잠금, 전역 단축키(`Ctrl+Alt+U` 보이기, `Ctrl+Alt+L` 잠금, `Ctrl+Alt+D` 디자인), 모니터 구성별 배치 기억, 카드 두 번 누르면 공식 사용량 페이지 열기.
 - **배경**: Windows Terminal처럼 '불투명도 + 아크릴 켬/끔'으로 정하고 위젯·팝업·설정 창에 함께 적용합니다.
-- **외부 디스플레이**: 사용량을 HTTP로 보내 책상 위 작은 화면(GeekMagic SmallTV)에 띄울 수 있습니다.
 
 | 막대 | 작업 표시줄 도킹 | 설정 창 |
 |---|---|---|
@@ -40,9 +41,11 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 
 ## 설치
 
-1. `AI Usage Widget Setup x.y.z.exe`를 실행합니다. 관리자 권한 없이 사용자 폴더에 설치되고 바로 시작합니다. 설치 없이 쓰려면 `AI Usage Widget-x.y.z-win-x64.zip`의 압축을 풀고 `AI Usage Widget.exe`를 실행합니다.
+1. [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 `AI Usage Widget Setup x.y.z.exe`를 내려받아 실행합니다. 관리자 권한 없이 사용자 폴더에 설치되고 바로 시작합니다. 설치 없이 쓰려면 `AI Usage Widget-x.y.z-win-x64.zip`의 압축을 풀고 `AI Usage Widget.exe`를 실행합니다.
 2. 처음 실행할 때 Windows SmartScreen 경고가 뜨면 **추가 정보 → 실행**을 누릅니다(코드 서명 인증서가 없기 때문).
 3. 위젯이 이 PC의 로그인을 자동으로 찾아 카드를 보여 줍니다. 자세한 사용법은 [사용 설명서](docs/user-guide.md)에 있습니다.
+
+설치판은 **자동으로 업데이트**됩니다. 새 버전이 나오면 뒤에서 내려받고, 다음에 앱을 다시 시작할 때 설치합니다(설정 → 일반 → 정보와 업데이트에서 끄거나 바로 설치할 수 있습니다). 휴대용 zip은 새 버전을 직접 내려받아야 합니다.
 
 요구 사항: Windows 11(22H2 이상 권장). 작업 표시줄 도킹은 화면 아래쪽 작업 표시줄에서만 지원합니다.
 
@@ -50,14 +53,9 @@ Claude, Codex(ChatGPT), Antigravity, Grok의 사용 한도가 얼마나 남았�
 
 - 로그인 정보는 이 PC 안에서 읽기만 하고, 각 서비스의 사용량 조회 주소로만 요청합니다. 로그인 정보를 만들거나 바꾸지 않으며, 사용 통계를 수집하지 않습니다.
 - 사용자가 설정의 일반 탭 → 고급 → 외부 디스플레이로 보내기를 직접 켠 경우에만 지정한 주소로 사용량 숫자를 보냅니다.
+- 자동 업데이트(설치판)는 GitHub Releases에 새 버전이 있는지만 확인하고 내려받습니다. 사용량·로그인 정보는 보내지 않습니다.
 - 설정·기록은 `%APPDATA%\ai-usage-taskbar-widget\`에 저장합니다.
 - Claude 모델 전용 한도와 Grok 사용량은 공식 문서에 없는 조회 방식입니다. 형식이 바뀌면 그 정보만 빠지고 나머지는 계속 표시됩니다.
-
-## 외부 디스플레이 (GeekMagic SmallTV)
-
-설정 창 **일반** 탭 → **고급** → **외부 디스플레이로 보내기**에서 사용량 보내기를 켜고 엔드포인트 URL(기본 `http://localhost:8080/api/usage`)과 화면 번호를 지정하면, 갱신할 때마다 사용량을 HTTP POST로 보냅니다. ESP8266 기반 SmallTV용 커스텀 펌웨어는 [`firmware/README.md`](firmware/README.md)를 참고하세요.
-
-![GeekMagic SmallTV 외부 디스플레이](img/02-smalltv.webp)
 
 ---
 
@@ -82,7 +80,13 @@ npm run release         # 배포본 만들기(아래 참고)
 
 같은 빌드 캐시에서 실행 중인 위젯이 있으면 먼저 트레이에서 종료하세요(보조 프로그램 파일을 다시 쓰기 때문). 캐시를 쓰지 않고 프로젝트 안에서 직접 다루려면 `npm install` 뒤 `npm run build`, `npm start`, `npm test`를 씁니다.
 
-### 배포본 만들기 (`npm run release`)
+### 새 버전 배포 (`npm run publish`)
+
+1. `master`에 변경을 커밋한 뒤 `npm run publish`를 실행합니다. 버전 마지막 자리를 1 올려 커밋하고 `v1.2.3` 태그를 붙여 올립니다.
+2. 태그가 올라가면 GitHub Actions(`.github/workflows/release.yml`)가 Windows에서 빌드·테스트하고, 설치 파일·zip·업데이트 정보(`latest.yml`)를 [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases)에 올립니다. PC를 켜 둘 필요가 없습니다.
+3. 설치해 쓰는 앱은 6시간마다(시작 30초 뒤 한 번) 새 버전을 확인합니다.
+
+### 이 PC에서 배포본 만들기 (`npm run release`)
 
 1. 빌드 캐시 사본에서 버전 마지막 자리를 1 올립니다(1.4.1 → 1.4.2).
 2. 빌드합니다. C# 컴파일 임시 파일 오류(`CVT1108`)가 나면 자동으로 다시 시도합니다.
@@ -101,7 +105,6 @@ npm run release         # 배포본 만들기(아래 참고)
 | `native/TaskbarDock.cs` | 작업 표시줄 도킹·좌우 이동, 마우스 감시, 창 투명도·아크릴 유지를 맡는 보조 프로그램. 앱이 상주 모드(`serve`)로 한 번 띄워 명령을 보냅니다 |
 | `test/` | 단위 테스트(`node --test`) |
 | `docs/` | 사용 설명서와 화면 사진 |
-| `firmware/` | 외부 디스플레이 펌웨어 |
 
 ### 알려진 한계
 

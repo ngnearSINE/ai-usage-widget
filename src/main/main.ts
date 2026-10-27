@@ -16,6 +16,7 @@ import { detectLang, setLang, t } from '../common/i18n.js'
 import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
+import { Updater } from './updater.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
@@ -45,6 +46,7 @@ if (isPreview) {
 // Windows 알림에 쓰는 앱 ID. 시작 메뉴 바로가기가 없는 로컬 빌드에서는 이 ID가 알림 머리에 그대로 보이므로 읽을 수 있는 이름으로 둔다.
 if (process.platform === 'win32') app.setAppUserModelId(isPreview ? 'AI 사용량 (미리보기)' : 'AI 사용량')
 let notifier: UsageNotifier | null = null
+let updater: Updater | null = null
 let history: UsageHistory | null = null
 let shortcutErrors: string[] = []
 
@@ -119,7 +121,8 @@ function getAppState(): AppState {
     history: history?.recent(),
     shortcutErrors,
     version: app.getVersion(),
-    guideAvailable: guideKnown ??= !!guidePath()
+    guideAvailable: guideKnown ??= !!guidePath(),
+    update: updater?.state
   }
 }
 
@@ -1137,6 +1140,10 @@ function updateTrayMenu() {
         quotaManager.refreshAll().then(() => broadcastState())
       }
     },
+    // 설치판에서만: 새 버전이 받아져 있으면 바로 설치, 아니면 확인
+    ...(updater && updater.state.status !== 'unsupported' ? [updater.state.status === 'ready'
+      ? { label: `새 버전 ${updater.state.version} 설치하고 다시 시작`, click: () => { updater?.install() } }
+      : { label: updater.state.status === 'downloading' ? `새 버전 받는 중… ${updater.state.percent ?? 0}%` : '업데이트 확인', enabled: updater.state.status !== 'downloading' && updater.state.status !== 'checking', click: () => { void updater?.check(true) } }] : []),
     { type: 'separator' },
     {
       label: t('trayQuit'),
@@ -1184,6 +1191,7 @@ function setupIpcHandlers() {
     }
 
     // 갱신 주기 변경 시 폴링 인터벌 동적 재적용
+    if (patch.autoUpdate !== undefined) updater?.schedule(nextConfig.autoUpdate !== false)
     if (patch.refreshIntervalSec !== undefined && prevConfig.refreshIntervalSec !== nextConfig.refreshIntervalSec) {
       if (!isPreview) quotaManager.startPolling(nextConfig.refreshIntervalSec, false)
     }
@@ -1289,6 +1297,8 @@ function setupIpcHandlers() {
   })
   // 계정 표시 설정(모델 전용 한도 보기·작업표시줄에서만 숨김). 정해진 키만 받는다.
   // 사용 설명서 PDF: 설치본은 실행 파일 옆 '사용 설명서.pdf', 개발 중에는 프로젝트의 docs/user-guide.pdf.
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async () => { await updater?.check(true); return getAppState() })
+  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, () => updater?.install() ?? false)
   ipcMain.handle(IPC_CHANNELS.OPEN_GUIDE, async () => {
     const file = guidePath()
     if (!file) return false
@@ -1414,6 +1424,12 @@ app.whenReady().then(() => {
   history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages()) : undefined)
   const appIcon = [path.join(__dirname, '../public/icon.ico'), path.join(app.getAppPath(), 'public/icon.ico'), path.join(process.resourcesPath, 'public/icon.ico')].find(p => fs.existsSync(p))
   // 알림을 누르면 위젯을 다시 보여 준다(숨겨 둔 경우 포함).
+  updater = new Updater({
+    preview: isPreview,
+    onChange: () => { broadcastState(); updateTrayMenu() },
+    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, '앱을 다시 시작하면 설치돼요. 설정 → 일반에서 바로 설치할 수도 있어요.', () => openSettingsWindow('general')),
+  })
+  updater.schedule(accountStore.getConfig().autoUpdate !== false)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {
     if (!widgetWindow || widgetWindow.isDestroyed()) return
     widgetManuallyHidden = false

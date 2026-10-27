@@ -28,6 +28,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   notifyPace: bool, notifyReset: bool, notifyUnused: bool, trayShowNumber: bool, clickThrough: bool, rememberPerMonitor: bool,
   placementMode: oneOf('docked', 'floating'),
   colorMode: oneOf('step', 'smooth'),
+  autoUpdate: bool,
   apiEndpoint: v => typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) && v.length <= 500 ? v.trim() : SKIP,
   apiScreen: num(1, 999),
   appearance: oneOf('dark', 'light', 'system'),

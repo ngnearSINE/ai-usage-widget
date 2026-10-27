@@ -2,7 +2,7 @@
 
 [한국어](README.md) | **English**
 
-> **Note:** This English README describes an earlier version. The [Korean README](README.md) and the [user guide (Korean)](docs/user-guide.md) are up to date.
+> **Note:** This is a personally modified fork of [sallyHADEV/ai-usage-taskbar-widget](https://github.com/sallyHADEV/ai-usage-taskbar-widget). This English README describes an earlier version. The [Korean README](README.md) and the [user guide (Korean)](docs/user-guide.md) are up to date.
 
 A lightweight Windows desktop widget that sits on the taskbar and monitors, in real time, the 5-hour session quota, weekly usage, and reset countdowns of multiple AI accounts (Antigravity, Claude, Codex, and custom AI).
 

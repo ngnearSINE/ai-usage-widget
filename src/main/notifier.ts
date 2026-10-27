@@ -25,6 +25,17 @@ export class UsageNotifier {
     return events.length
   }
 
+  /** 사용량과 관계없는 안내(새 버전 준비 등). 알림을 꺼 두었어도 보낸다. */
+  notice(title: string, body: string, onClick?: () => void) {
+    if (!Notification.isSupported()) return false
+    const n = new Notification({ title, body, icon: this.icon, silent: true })
+    this.live.add(n)
+    n.on('click', () => { this.live.delete(n); (onClick || this.onClick)() })
+    n.on('close', () => this.live.delete(n))
+    n.show()
+    return true
+  }
+
   /** 설정 창의 '테스트 알림 보내기'. 실제 판정과 같은 문장 형식으로 보낸다. */
   test() {
     return this.show('Claude Code 5시간 한도 18% 남음', '리셋까지 2시간 41분 · 지금 속도면 1시간 5분 뒤 소진 예상 (테스트 알림)')

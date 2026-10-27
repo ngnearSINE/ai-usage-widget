@@ -13,6 +13,8 @@ export const IPC_CHANNELS = {
   RENAME_ACCOUNT: 'account:rename-account',
   ACCOUNT_DISPLAY: 'account:display',
   OPEN_GUIDE: 'app:open-guide',
+  UPDATE_CHECK: 'app:update-check',
+  UPDATE_INSTALL: 'app:update-install',
   TIP_SHOW: 'tip:show',
   TIP_HIDE: 'tip:hide',
   BEGIN_INTERACTION: 'window:begin-interaction',

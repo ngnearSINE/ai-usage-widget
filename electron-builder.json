@@ -3,6 +3,14 @@
   "appId": "io.github.aiusagewidget.app",
   "productName": "AI Usage Widget",
   "asar": false,
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "ngnearSINE",
+      "repo": "ai-usage-widget",
+      "releaseType": "release"
+    }
+  ],
   "directories": {
     "output": "dist-release"
   },

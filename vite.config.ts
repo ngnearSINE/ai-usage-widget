@@ -12,7 +12,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['electron', 'open', 'node:sqlite']
+              external: ['electron', 'open', 'node:sqlite', 'electron-updater']
             }
           }
         }

@@ -644,3 +644,10 @@ body.is-popup-view #app { height:100vh; }
 :root[data-appearance="light"] .dashboard .link-button,
 :root[data-appearance="light"] .dashboard .ghost-button.accent,
 :root[data-appearance="light"] .settings-root .slider-setting output { color:color-mix(in srgb,var(--accent) 55%,#000); }
+
+/* 정보와 업데이트 */
+.update-line { display:block; margin-top:4px; font-size:11px; color:var(--muted); }
+.update-line.good { color:var(--good); }
+.update-line.bad { color:var(--danger); }
+.dashboard .primary-button.wide { width:100%; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:6px; }
+.dashboard .primary-button svg { width:14px; height:14px; }
