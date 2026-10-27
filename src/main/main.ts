@@ -48,6 +48,15 @@ if (isPreview) {
 if (process.platform === 'win32') app.setAppUserModelId(isPreview ? 'AI 사용량 (미리보기)' : 'AI 사용량')
 let notifier: UsageNotifier | null = null
 let updater: Updater | null = null
+/** 집중 모드: 이 계정 하나만 보인다. 앱을 다시 켜면 풀린다(저장하지 않음). */
+let focusId: string | null = null
+function setFocus(id: string | null) {
+  const next = id && accountStore.getAccounts().some(a => a.id === id) ? (focusId === id ? null : id) : null
+  if (next === focusId) return
+  focusId = next
+  broadcastState()
+  if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds()
+}
 let history: UsageHistory | null = null
 let shortcutErrors: string[] = []
 
@@ -123,7 +132,8 @@ function getAppState(): AppState {
     shortcutErrors,
     version: app.getVersion(),
     guideAvailable: guideKnown ??= !!guidePath(),
-    update: updater?.state
+    update: updater?.state,
+    focus: focusId && usages.some(u => u.id === focusId) ? focusId : undefined
   }
 }
 
@@ -230,6 +240,7 @@ function showCardMenu(sender: Electron.WebContents, id: string) {
   const url = servicePageUrl(id)
   Menu.buildFromTemplate([
     { label: acc.name, enabled: false },
+    { label: '집중 모드', type: 'checkbox', checked: focusId === id, accelerator: 'Esc', registerAccelerator: false, click: () => setFocus(id) },
     { type: 'separator' },
     { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
     ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
@@ -628,7 +639,8 @@ function saveFloatingBounds() {
 
 function dockWidth() {
   const state=getAppState()
-  return Math.max(80,24+136*visibleUsages(state.usages,state.accounts,state.config,true).length)
+  const n = state.focus ? 1 : visibleUsages(state.usages,state.accounts,state.config,true).length
+  return Math.max(80,24+136*n)
 }
 
 /** 마우스를 놓으면 위젯이 들어갈 작업표시줄 자리. 미리보기와 실제 도킹이 같은 계산을 쓴다. */
@@ -881,6 +893,8 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         win.setBounds(bounds)
         accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: bounds })
         rememberLayout()
+        // 끄는 동안 내려놓았던 키보드 포커스를 돌려준다(제목줄을 누른 뒤 숫자키·Esc가 다른 창으로 가지 않게).
+        if (!win.isDestroyed() && !accountStore.getConfig().clickThrough) win.focus()
       }
     }
     endInteraction = finish
@@ -932,15 +946,34 @@ async function positionPopupWindow() {
     widgetW = currentWidgetWidth
   }
 
+  const saved = config.popupBounds
+  if (saved) {
+    const area = screen.getDisplayMatching(saved).workArea
+    popupPlacing = true
+    popupWindow.setBounds(fitWindow({ ...saved, width: Math.min(saved.width, area.width), height: Math.min(saved.height, area.height) }, area))
+    popupPlacing = false
+    return
+  }
   const popupPos = calculatePopupPosition(widgetX, widgetW, POPUP_WIDTH, POPUP_HEIGHT, widgetY)
 
+  popupPlacing = true
   popupWindow.setBounds({
     x: popupPos.x,
     y: popupPos.y,
     width: POPUP_WIDTH,
     height: POPUP_HEIGHT
   })
+  popupPlacing = false
 }
+
+/** 팝업을 옮기거나 키우면 그 위치·크기를 기억한다(앱이 자리를 잡는 동안의 변경은 빼고). */
+let popupPlacing = false
+let popupSaveTimer: ReturnType<typeof setTimeout> | undefined
+function savePopupBounds(b: Electron.Rectangle) {
+  clearTimeout(popupSaveTimer)
+  popupSaveTimer = setTimeout(() => accountStore.saveConfig({ ...accountStore.getConfig(), popupBounds: { x: b.x, y: b.y, width: b.width, height: b.height } }), 300)
+}
+let popupResize: { edge: string; start: Electron.Rectangle; origin: Electron.Point } | null = null
 
 function createPopupWindow() {
   const config = accountStore.getConfig()
@@ -955,7 +988,7 @@ function createPopupWindow() {
     height: POPUP_HEIGHT,
     alwaysOnTop: true,
     skipTaskbar: true,
-    resizable: false,
+    resizable: false, // 크기는 화면 안 손잡이로 바꾼다(투명 창은 Windows 기본 가장자리 끌기가 안 됨)
     show: false,
     title: 'AI 사용량 · 상세',
     webPreferences: {
@@ -966,6 +999,7 @@ function createPopupWindow() {
   }, currentSurfaceKind())
   popupWindow.on('page-title-updated', event => event.preventDefault())
   popupWindow.on('resize',()=>{if(popupWindow)applyWindowShape(popupWindow,'native')})
+  popupWindow.on('moved', () => { if (popupWindow === win && !popupPlacing && win.isVisible()) savePopupBounds(win.getBounds()) })
 
   popupWindow.setAlwaysOnTop(true, 'screen-saver', 9999)
 
@@ -1508,6 +1542,49 @@ function setupIpcHandlers() {
     if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
     return { ok: true, message: `'${label}' 카드를 추가했어요.`, state: getAppState() }
   })
+  // Ctrl+1~5 크기: 위젯 창(자유 창)과 작업 표시줄 팝업. 왼쪽 위를 그대로 두고 화면 안으로 맞춘다.
+  ipcMain.handle(IPC_CHANNELS.SIZE_PRESET, (event, n: number) => {
+    const i = Math.round(Number(n)) - 1
+    if (!(i >= 0 && i < 5)) return null
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const labels = ['아주 작게', '작게', '보통', '크게', '아주 크게']
+    if (win && win === widgetWindow && accountStore.getConfig().placementMode === 'floating') {
+      const st = getAppState(), cards = Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
+      const sizes: Array<[number, number]> = [[220, 0], [320, 240], [480, 360], [700, 560], [980, 700]]
+      const [w, h0] = sizes[i], h = Math.max(h0, minWindowHeight(w, cards, gap))
+      const b = win.getBounds(), area = screen.getDisplayMatching(b).workArea
+      const next = fitWindow({ x: b.x, y: b.y, width: Math.min(w, area.width), height: Math.min(h, area.height) }, area)
+      win.setBounds(next)
+      accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: next })
+      rememberLayout()
+      return labels[i]
+    }
+    if (win && win === popupWindow) {
+      const sizes: Array<[number, number]> = [[300, 240], [360, 380], [420, 500], [520, 640], [640, 820]]
+      const b = win.getBounds(), area = screen.getDisplayMatching(b).workArea, [w, h] = sizes[i]
+      const next = fitWindow({ x: b.x + b.width - Math.min(w, area.width), y: b.y + b.height - Math.min(h, area.height), width: Math.min(w, area.width), height: Math.min(h, area.height) }, area)
+      win.setBounds(next)
+      savePopupBounds(next)
+      return labels[i]
+    }
+    return null
+  })
+  // 팝업 크기 조절: 화면 안 손잡이를 끄는 동안 커서 좌표로 창 크기를 바꾼다.
+  ipcMain.on(IPC_CHANNELS.POPUP_RESIZE, (event, phase: string, edge?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win !== popupWindow) return
+    if (phase === 'start' && typeof edge === 'string' && /^(n|s|e|w|ne|nw|se|sw)$/.test(edge)) { popupResize = { edge, start: win.getBounds(), origin: screen.getCursorScreenPoint() }; return }
+    if (!popupResize) return
+    const p = screen.getCursorScreenPoint(), dx = p.x - popupResize.origin.x, dy = p.y - popupResize.origin.y, s = popupResize.start, e = popupResize.edge
+    let { x, y, width, height } = s
+    if (e.includes('e')) width = Math.max(280, s.width + dx)
+    if (e.includes('w')) { width = Math.max(280, s.width - dx); x = s.x + s.width - width }
+    if (e.includes('s')) height = Math.max(200, s.height + dy)
+    if (e.includes('n')) { height = Math.max(200, s.height - dy); y = s.y + s.height - height }
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+    if (phase === 'end') { popupResize = null; savePopupBounds(win.getBounds()) }
+  })
+  ipcMain.handle(IPC_CHANNELS.SET_FOCUS, (_event, id: unknown) => setFocus(typeof id === 'string' ? id : null))
   ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))
 
   ipcMain.handle(IPC_CHANNELS.DETECT_LOCAL_APPS, async () => {

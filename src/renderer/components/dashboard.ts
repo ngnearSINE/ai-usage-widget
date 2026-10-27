@@ -1,5 +1,6 @@
 import type { AccountUsage, AppState, QuotaInfo, WidgetConfig } from '../../common/types.js'
 import { barColor } from '../../common/bar-color.js'
+import { initCardGlow } from './card-glow.js'
 import { displayOf } from '../../common/display-options.js'
 import { visibleUsages } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
@@ -11,6 +12,8 @@ const paths: Record<string, string> = {
   sliders: '<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8a7 7 0 0 1 11.6-2L20 9M4 15l2.3 3A7 7 0 0 0 18 16"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  pin: '<path d="M9 4h6l-1 6 3 3v1H7v-1l3-3z"/><path d="M12 14v6"/>',
+  pinFill: '<path d="M9 4h6l-1 6 3 3v1H7v-1l3-3z" fill="currentColor"/><path d="M12 14v6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>',
   book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 21.5A2.5 2.5 0 0 1 6.5 19H20"/>',
@@ -52,6 +55,8 @@ export function applyAppearance(config: WidgetConfig) {
   document.documentElement.dataset.bar = config.barStyle || 'silk'
   document.documentElement.dataset.motion = config.motion || 'subtle'
   document.documentElement.dataset.acrylic = String(config.useAcrylic !== false)
+  document.documentElement.dataset.heatLevel = config.warnTintLevel || 'soft'
+  document.documentElement.dataset.heatOrigin = config.warnTintOrigin || 'edge'
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
   document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
   document.documentElement.style.setProperty('--font-scale', String(number(config.fontScale, 85, 130, 100) / 100))
@@ -91,6 +96,7 @@ export function openDesign() { void window.api.openSettings('design') }
 const designOf = (config: WidgetConfig): DesignId => (DESIGNS.some(d => d[0] === config.design) ? config.design : 'rich') as DesignId
 function shownUsages(state: AppState) {
   let list = visibleUsages(state.usages, state.accounts, state.config)
+  if (state.focus && list.some(u => u.id === state.focus)) return list.filter(u => u.id === state.focus)
   if (previewOrder) { const at = new Map(previewOrder.map((id, i) => [id, i])); return [...list].sort((a, b) => (at.get(a.id) ?? 999) - (at.get(b.id) ?? 999)) }
   // 여유가 적은 순 정렬은 연결된 서비스끼리만, 연결 안 된 카드는 뒤로.
   return state.config.sortLowFirst
@@ -192,12 +198,13 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
   applyAppearance(state.config)
   if (!force && (busy || dragId)) return
   const design = designOf(state.config)
-  updateMarkup(container, `<div class="dashboard">
+  updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
     <header class="dashboard-header"><div class="window-handle" data-window-drag title="끌어서 창 이동 · 아래로 끌면 도킹"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
       <button class="view-btn" data-view-menu aria-haspopup="menu" title="보기 바꾸기">${DESIGNS.find(d => d[0] === design)![1]}${icon('chev')}</button>
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
+      <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? '항상 위 켜짐 · 눌러서 끄기' : '항상 위 꺼짐 · 눌러서 켜기'}" aria-label="항상 위에 표시">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
       <button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button></header>
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
     <div class="toast" role="status" aria-live="polite"></div>
@@ -243,9 +250,13 @@ function layoutCards() {
   // 제목줄 상태: 연결 수·마지막 확인·주의 수, 페이지가 나뉘면 페이지 넘김.
   const connected = state.usages.filter(u => ['ready', 'stale'].includes(u.status)).length
   const warnN = all.filter(u => severity(serviceModel(u), x.warn, x.crit)).length
-  const updated = state.lastRefreshedAt ? new Date(state.lastRefreshedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '--'
+  const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const last = state.lastRefreshedAt ? Date.parse(state.lastRefreshedAt) : NaN
+  const updated = Number.isFinite(last) ? `갱신 ${hm(last)}${W > 420 ? ` · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''}` : '--'
   const status = host.querySelector<HTMLElement>('[data-status]')
   const lock = state.config.clickThrough ? `<span class="lock-badge" title="클릭 통과 잠금 중">${icon('lock')}잠김${state.config.shortcuts?.lock ? ` · ${escapeText(state.config.shortcuts.lock)}로 풀기` : ''}</span> · ` : ''
+  const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
+  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
     : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b> · ${state.preview ? '미리보기' : updated}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
@@ -288,6 +299,7 @@ async function update(patch: Partial<WidgetConfig>) {
 function bindDelegated(container: HTMLElement) {
   if (delegated) return
   delegated = true
+  initCardGlow(container)
   container.addEventListener('click', e => {
     const t = e.target as HTMLElement
     const view = t.closest<HTMLElement>('[data-view-menu]')
@@ -307,17 +319,18 @@ function bindDelegated(container: HTMLElement) {
         { key: 'all', label: '모든 카드에 같은 기준 적용', run: () => { const all: Record<string, ValueSource> = {}; for (const u of lastState.usages) all[u.id] = now; void update({ valueSource: all }) } }])
       return
     }
+    if (t.closest('[data-focus-off]')) { void window.api.setFocus(null); return }
     const pg = t.closest<HTMLElement>('[data-page]')
     if (pg) { pageIndex = (pageIndex + Number(pg.dataset.page) + pageCount) % pageCount; layoutCards(); return }
     if (menuEl && !t.closest('.menu')) closeMenu()
   })
   container.addEventListener('keydown', e => { if (e.key === 'Escape' && menuEl) { e.stopPropagation(); closeMenu() } }, true)
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menuEl && lastState?.focus) void window.api.setFocus(null) })
   // 카드를 두 번 누르면 그 서비스의 사용량 페이지를 연다(한 번 누르기는 끌어서 순서 바꾸기와 겹치지 않게 비워 둔다).
   container.addEventListener('dblclick', async e => {
     const t = e.target as HTMLElement, card = t.closest<HTMLElement>('[data-card]')
     if (!card || t.closest('button')) return
-    try { if (!await window.api.openServicePage(card.dataset.card!)) notify('이 서비스는 열 수 있는 사용량 페이지가 없어요.') }
-    catch { notify('사용량 페이지를 열지 못했어요.') }
+    void window.api.setFocus(card.dataset.card!)
   })
   // 카드를 끌어 순서를 바꾼다(버튼 위에서 시작한 끌기와 오른쪽 단추는 제외).
   container.addEventListener('pointerdown', e => {
@@ -332,9 +345,11 @@ function bindDelegated(container: HTMLElement) {
     e.preventDefault()
     void window.api.showCardMenu?.(card.dataset.card!)
   })
-  // 숫자키 1~6으로 디자인 바꾸기(글자 입력 중이 아닐 때)
+  // 숫자키 1~6으로 디자인 바꾸기, Ctrl+1~5로 크기 바꾸기(글자 입력 중이 아닐 때)
   document.addEventListener('keydown', e => {
-    if (e.ctrlKey || e.altKey || e.metaKey || (e.target as HTMLElement).closest?.('input,textarea')) return
+    if ((e.target as HTMLElement).closest?.('input,textarea')) return
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) { e.preventDefault(); void window.api.sizePreset(Number(e.code.slice(5))).then(label => { if (label) notify(`크기: ${label}`) }); return }
+    if (e.ctrlKey || e.altKey || e.metaKey) return
     const n = Number(e.key)
     if (n >= 1 && n <= DESIGNS.length && !e.repeat) { void update({ design: DESIGNS[n - 1][0] }); notify(`디자인: ${DESIGNS[n - 1][1]}`) }
   })
@@ -347,6 +362,7 @@ function bindEvents(container: HTMLElement, state: AppState) {
     switch (el.dataset.action) {
       case 'refresh': try { await window.api.refreshQuota() } catch { notify('새로고침에 실패했어요.') }; break
       case 'hide': await window.api.hideWidget(); break
+      case 'pin': { const on = lastState.config.alwaysOnTop === false; await update({ alwaysOnTop: on }); notify(on ? '항상 위에 표시해요.' : '다른 창 뒤로 갈 수 있어요.'); break }
     }
   })
   container.querySelectorAll<HTMLElement>('[data-window-drag],[data-resize]').forEach(el => el.onpointerdown = e => {

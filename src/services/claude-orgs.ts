@@ -20,6 +20,16 @@ export interface ClaudeOrg extends ClaudeProfile { label: string; kind: string; 
 
 const KIND: Record<string, string> = { claude_team: '팀', claude_enterprise: '엔터프라이즈' }
 
+/** 플랜 배지. 등급 문자열 예: default_claude_max_20x, default_claude_max_5x. 모르면 조직 종류로. */
+export function claudePlan(orgType: string, rateTier?: string): string {
+  const t = (rateTier || '').toLowerCase(), mult = /(\d+)x/.exec(t)?.[1]
+  if (orgType === 'claude_team') return mult ? `Team ${mult}x` : 'Team'
+  if (orgType === 'claude_enterprise') return 'Enterprise'
+  if (t.includes('max') || orgType === 'claude_max') return mult ? `Max ${mult}x` : 'Max'
+  if (orgType === 'claude_pro' || t.includes('pro')) return 'Pro'
+  return orgType ? orgType.replace(/^claude_/, '').replace(/^\w/, c => c.toUpperCase()) : ''
+}
+
 /** 카드 기본 이름: 팀은 조직 이름, 개인은 이메일 앞부분. */
 export function claudeOrgLabel(p: Pick<ClaudeProfile, 'orgType' | 'orgName' | 'email'>) {
   const kind = KIND[p.orgType] || '개인'
@@ -150,7 +160,7 @@ export class ClaudeOrgs {
       }
       if (!res.ok) { lastStatus = res.status; await res.body?.cancel().catch(() => {}); continue }
       const usage = parseClaudeDesktopLiveUsage(await res.json(), account)
-      const result: AccountUsage = { ...usage, name: account.name || org.label, email: org.email, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}`, dataSource: t.source === 'cli' ? 'claude-cli' : 'claude-desktop-live' }
+      const result: AccountUsage = { ...usage, name: account.name || org.label, email: org.email, plan: claudePlan(org.orgType, org.rateTier) || undefined, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}`, dataSource: t.source === 'cli' ? 'claude-cli' : 'claude-desktop-live' }
       this.lastUsage.set(orgUuid, { at: Date.now(), usage: result })
       return result
     }

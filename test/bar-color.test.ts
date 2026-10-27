@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { barColor, ownColor } from '../src/common/bar-color.js'
+import { barColor, heatOf, ownColor } from '../src/common/bar-color.js'
 
 const o = { on: true, warn: 20, crit: 10 }
 
@@ -31,4 +31,14 @@ test('평소 색 설정은 막대 색 스타일이 덮지 않도록 var(--own)�
   assert.equal(ownColor('green'), 'var(--own,var(--good))')
   assert.equal(ownColor('#12ab34'), 'var(--own,#12ab34)')
   assert.equal(ownColor('red;background:url(x)'), undefined)
+})
+
+test('경고 배경 세기: 여유 50% 이상은 0, 위험 기준에서 1, 그 사이는 연속', () => {
+  assert.equal(heatOf(80, 20, 10), 0)
+  assert.equal(heatOf(50, 20, 10), 0)
+  assert.equal(heatOf(10, 20, 10), 1)
+  assert.equal(heatOf(0, 20, 10), 1)
+  const a = heatOf(40, 20, 10), b = heatOf(25, 20, 10)
+  assert.ok(a > 0 && a < b && b < 1, '남은 양이 줄수록 진해진다')
+  assert.equal(heatOf(80, 20, 10, true), 0.18, '속도 주의면 여유가 있어도 살짝')
 })

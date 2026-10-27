@@ -27,6 +27,7 @@ export interface AccountUsage {
   brandColor: string // #FF6B4A, #4285F4, #00D1B2, #D946EF 등
   email?: string
   tier?: string
+  plan?: string // 플랜 배지(예: Team, Max 20x, Pro, Plus)
   dataSource?: 'claude-cli' | 'claude-desktop' | 'claude-desktop-live'
   projectId?: string
   // 'stale' = 마지막 성공 실측값을 그대로 보여주는 중 (갱신 실패). updatedAt은 그 실측 시각을 유지한다
@@ -79,6 +80,10 @@ export interface WidgetConfig {
   colorByUsage: boolean // 사용량에 따른 색상 변화 (안전:그린 -> 주의:오렌지 -> 위험:레드)
   displayByAccount?: Record<string, Partial<Record<'showUsed' | 'showPace' | 'showReset', boolean>>> // 서비스별 보여 줄 정보
   notifyQuiet?: { enabled: boolean; start: string; end: string } // 알림 쉬는 시간(HH:MM, 자정을 넘을 수 있음). 그 사이 알림은 건너뜀
+  popupBounds?: { x: number; y: number; width: number; height: number } // 작업 표시줄 팝업 위치·크기(옮기거나 키우면 기억)
+  warnTint?: boolean // 경고 배경 색(기본 켬)
+  warnTintLevel?: 'soft' | 'medium' | 'strong' // 세기(기본 은은하게)
+  warnTintOrigin?: 'edge' | 'corners' | 'corner' | 'center' // 진한 곳(기본 테두리)
   autoUpdate?: boolean // 새 버전 자동 확인·다운로드(기본 켬, 설치판만)
   colorMode?: 'step' | 'smooth' // 경고색으로 바뀌는 방식: 기준에서 한 번에(기본) / 남은 양에 따라 부드럽게
   showUsedPercent?: boolean // true: 소모량(%) 표시, false/미설정: 남은량(%) 표시 (작업표시줄 바)
@@ -138,6 +143,7 @@ export interface UpdateState {
 
 export interface AppState {
   preview?: boolean
+  focus?: string // 집중 모드로 보고 있는 계정(일시적, 저장하지 않음)
   update?: UpdateState
   version?: string // 앱 버전(설정 창 '정보')
   guideAvailable?: boolean // 사용 설명서 PDF를 열 수 있는지

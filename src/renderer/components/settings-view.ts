@@ -200,6 +200,9 @@ function displayTab(c: WidgetConfig) {
     + section('여유가 적을 때', slider('warnPercent', '주의(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
       + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
       + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'smooth' ? 'smooth' : 'step', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
+      + toggle('warnTint', '경고 배경 색', '남은 양이 줄수록 카드 배경이 노랑에서 빨강으로 은은하게 바뀌어요. 테두리는 칠하지 않아요.', c.warnTint !== false)
+      + `<div class="${c.warnTint === false ? 'is-disabled' : ''}"><div class="field"><span>세기</span>${segment('warnTintLevel', c.warnTintLevel || 'soft', [['soft', '은은하게'], ['medium', '보통'], ['strong', '진하게']], '경고 배경 세기')}</div>
+        <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', c.warnTintOrigin || 'edge', [['edge', '테두리'], ['corners', '네 모서리'], ['corner', '한 모서리'], ['center', '가운데']], '경고 배경이 진한 곳')}</div></div>`
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
       + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')

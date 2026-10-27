@@ -414,6 +414,7 @@ class CodexAppServerConn {
       brandColor: '#6366F1',
       email,
       tier: `${planName} (공식 app-server)`,
+      plan: planName,
       status: 'ready',
       isWeeklyOnly,
       primaryQuota: {

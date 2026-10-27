@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { claudeOrgLabel, groupClaudeOrgs, type ClaudeToken } from '../src/services/claude-orgs.js'
+import { claudeOrgLabel, claudePlan, groupClaudeOrgs, type ClaudeToken } from '../src/services/claude-orgs.js'
 import { listClaudeDesktopTokens } from '../src/services/claude-desktop-oauth.js'
 import { syncClaudeOrgAccounts } from '../src/common/claude-org-sync.js'
 import type { AccountConfig } from '../src/common/types.js'
@@ -68,4 +68,14 @@ test('CLI 토큰이 만료돼 조직을 모르면 예전 카드를 묶지 않고
   const orgs = [{ orgUuid: 'team-1', label: 'Claude 팀', fromCli: false }, { orgUuid: 'me-1', label: 'Claude 개인', fromCli: false }]
   assert.equal(syncClaudeOrgAccounts(acc, [], orgs, true).changed, false)
   assert.equal(syncClaudeOrgAccounts(acc, [], orgs, false).accounts[0].orgUuid, 'team-1', '만료가 아니면 전처럼 묶는다')
+})
+
+test('플랜 배지: 조직 종류와 사용량 등급', () => {
+  assert.equal(claudePlan('claude_team', 'default_claude_max_5x'), 'Team 5x')
+  assert.equal(claudePlan('claude_team'), 'Team')
+  assert.equal(claudePlan('claude_max', 'default_claude_max_20x'), 'Max 20x')
+  assert.equal(claudePlan('', 'default_claude_max_5x'), 'Max 5x')
+  assert.equal(claudePlan('claude_pro'), 'Pro')
+  assert.equal(claudePlan('claude_enterprise'), 'Enterprise')
+  assert.equal(claudePlan(''), '')
 })

@@ -25,6 +25,13 @@ export function barColor(left: number, base: string, o: BarColorOptions): string
   return mix('var(--danger)', 'var(--warn)', (warn - left) / Math.max(1, warn - crit))
 }
 
+/** 카드 경고 배경의 정도(0~1). 0이면 칠하지 않는다. */
+export function heatOf(lowestLeft: number, warn: number, crit: number, paceWarn = false): number {
+  const top = Math.max(SMOOTH_START, warn + 1), c = Math.max(0, Math.min(warn, crit))
+  const h = lowestLeft >= top ? 0 : Math.min(1, (top - lowestLeft) / Math.max(1, top - c))
+  return Math.max(h, paceWarn ? 0.18 : 0)
+}
+
 /**
  * 계정 설정의 평소 색을 CSS 색으로. 서비스 색이면 undefined(막대 색 스타일이 그대로 적용).
  * 직접 고른 색은 var(--own, …)로 감싸 막대 색 스타일(오로라 등)이 덮어쓰지 않게 한다(그 스타일은 style에 var(--가 없을 때만 적용).

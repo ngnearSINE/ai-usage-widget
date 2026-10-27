@@ -1,9 +1,9 @@
 import type { AccountUsage, HistoryPoint, WidgetConfig } from '../../common/types.js'
 import {
-  cardBody, fitDesign, fmtDuration, fmtDurationShort, formOf, paceWarning, pickWindow, richScale, richTier, serviceModel, severity, unusedWeekly, windowsOf, worstWindow,
+  cardBody, fitDesign, lowestLeft, fmtDuration, fmtDurationShort, formOf, paceWarning, pickWindow, richScale, richTier, serviceModel, severity, unusedWeekly, windowsOf, worstWindow,
   type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
-import { barColor, type ColorMode } from '../../common/bar-color.js'
+import { barColor, heatOf, type ColorMode } from '../../common/bar-color.js'
 import { displayOf } from '../../common/display-options.js'
 
 /** 대시보드 카드 렌더러. 디자인마다 기본 형태와 작은 카드 형태가 있고, 작아져도 다른 디자인으로 바꿔 그리지 않는다. */
@@ -15,6 +15,7 @@ export interface ViewContext {
   showUsed: boolean
   colorByUsage: boolean
   colorMode: ColorMode
+  heatOn: boolean
   iconStyle: WidgetConfig['iconStyle']
   source: (id: string) => ValueSource
   /** 서비스별 보여 줄 정보(없으면 위의 전체 값) */
@@ -26,7 +27,7 @@ export function viewContext(config: WidgetConfig, history?: Record<string, Histo
   return {
     warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)), showPace: config.showPace !== false,
     showReset: config.showResetTime !== false, showUsed: !!config.showUsedPercent, colorByUsage: config.colorByUsage !== false,
-    colorMode: config.colorMode === 'smooth' ? 'smooth' : 'step', iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
+    colorMode: config.colorMode === 'smooth' ? 'smooth' : 'step', heatOn: config.warnTint !== false, iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
     per: id => displayOf(config, id),
   }
 }
@@ -111,9 +112,29 @@ function headline(m: ServiceModel, x: ViewContext) {
 }
 function noteOf(w: QuotaWindow) {
   if (w.used === 0) return { t: '아직 쓰지 않음', hot: false }
-  if (w.runsOut) return { t: `이 속도면 ${fmtDuration(w.toEmptyMs)} 뒤 소진`, hot: paceWarning(w) }
+  if (w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 소진(예상)`, hot: paceWarning(w) }
   if (w.pace !== null && w.pace > 1.15) return { t: '시간보다 빠르게 쓰는 중', hot: false }
   return { t: w.elapsed === null ? '리셋 시각 정보 없음' : '리셋 전까지 여유', hot: false }
+}
+
+/** 넓은 카드의 한도 이름: 세션(5시간)·주간 · 전체 모델·주간 · Fable */
+function fullLabel(m: ServiceModel, w: QuotaWindow) {
+  if (m.scoped.includes(w)) return `주간 · ${w.label}`
+  if (w.period === '5h') return '세션 (5시간)'
+  if (w.key === 'weekly' && m.scoped.length) return '주간 · 전체 모델'
+  return w.label
+}
+/** 리셋 시각: 하루 안이면 시:분, 넘으면 월/일(요일) 시:분 */
+function resetClock(ms: number) {
+  const d = new Date(Date.now() + ms), p = (n: number) => String(n).padStart(2, '0')
+  return ms < 20 * 3600e3 ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+/** 속도 칩: 고르게 썼을 때보다 얼마나 남았는지(주기의 3%가 지나기 전에는 숨김). */
+function paceChip(w: QuotaWindow) {
+  if (w.expectedLeft === null || w.elapsed === null || w.elapsed < .03) return ''
+  const d = Math.round(w.left - w.expectedLeft)
+  if (Math.abs(d) < 3) return '<span class="pace-chip even" data-tip="고르게 쓰는 속도와 비슷해요">적정</span>'
+  return d > 0 ? `<span class="pace-chip good" data-tip="고르게 썼을 때보다 ${d}% 더 남았어요">여유 +${d}%</span>` : `<span class="pace-chip hot" data-tip="고르게 썼을 때보다 ${-d}% 더 썼어요">빠름 ${d}%</span>`
 }
 
 /* ---------- 종합: 크기 단계 ---------- */
@@ -121,10 +142,14 @@ function rich(m: ServiceModel, x: ViewContext, b: { w: number; h: number }) {
   const t = richTier(b.w, b.h), { main } = pickWindow(m, x.source(m.id)), h = headline(m, x), ws = windowsOf(m)
   const k = ['mw', 'ml', 'l', 'lw'].includes(t) ? richScale(b.w, b.h) : 1
   const big = (size: number) => num(x, main, size)
-  const resetText = (w: QuotaWindow) => w.resetMs === null ? '' : b.w >= 260 ? `리셋 ${fmtDuration(w.resetMs)} 뒤` : b.w >= 150 ? fmtDurationShort(w.resetMs) : ''
+  // 줄이 실제로 쓰는 폭: 큰 숫자가 왼쪽에 있는 넓은 카드는 오른쪽 절반쯤만 쓴다.
+  const rowW = ['l', 'lw', 'ml'].includes(t) ? b.w * .55 : b.w
+  const resetText = (w: QuotaWindow) => w.resetMs === null ? '' : rowW >= 260 ? `리셋 ${fmtDuration(w.resetMs)} 뒤` : rowW >= 150 ? fmtDurationShort(w.resetMs) : ''
   const row = (w: QuotaWindow, withNote: boolean) => {
-    const n = noteOf(w)
-    return `<div class="row"><div class="row-top"><span class="lbl">${w.label}</span><span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span><span class="cap row-reset">${resetText(w)}</span></div>${bar(x, m, w)}${withNote ? `<div class="row-note ${n.hot ? 'hot' : ''}">${n.t}</div>` : ''}</div>`
+    const n = noteOf(w), wide = rowW >= 240
+    // 넓으면: 윗줄 = 이름·속도 칩·숫자, 막대 아래 줄 = 메모(왼쪽)·리셋까지 남은 시간과 시각(오른쪽)
+    if (wide && withNote) return `<div class="row"><div class="row-top wide"><span class="lbl">${esc(fullLabel(m, w))}</span>${paceChip(w)}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span></div>${bar(x, m, w)}<div class="row-sub"><span class="row-note ${n.hot ? 'hot' : ''}" data-tip="${n.t}">${n.t}</span>${w.resetMs === null ? '' : `<span class="cap row-reset">리셋 : ${fmtDurationShort(w.resetMs)} 뒤 · ${resetClock(w.resetMs)}</span>`}</div></div>`
+    return `<div class="row"><div class="row-top"><span class="lbl">${wide ? esc(fullLabel(m, w)) : esc(w.label)}</span>${wide ? paceChip(w) : ''}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span><span class="cap row-reset">${resetText(w)}</span></div>${bar(x, m, w)}${withNote ? `<div class="row-note ${n.hot ? 'hot' : ''}">${n.t}</div>` : ''}</div>`
   }
   const inline = (w: QuotaWindow, reset: boolean) => `<div class="inline-row ${reset ? 'with-reset' : ''}"><span class="lbl">${w.label}</span>${bar(x, m, w)}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span>${reset ? `<span class="cap">${w.resetMs === null ? '' : fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
   // 모델 전용 주간 한도(Fable 등)는 큰 카드에 줄을 더한다. 자리가 모자라면 덜 중요한 글부터 뺀다:
@@ -188,12 +213,16 @@ function ringSVG(m: ServiceModel, x: ViewContext, size: number, center: QuotaWin
     return `<path d="${arc(50, 50, r, A0, A0 + SW)}" stroke="var(--svg-track2)" stroke-width="${sw}" fill="none"/><path d="${arc(50, 50, r, A0, A0 + SW * Math.max(.001, shown(x, w) / 100))}" stroke="${color(x, m, w)}" stroke-width="${sw}" fill="none"/>${e === null ? '' : `<line x1="${50 + (r - sw * .75) * Math.cos(pa)}" y1="${50 + (r - sw * .75) * Math.sin(pa)}" x2="${50 + (r + sw * .75) * Math.cos(pa)}" y2="${50 + (r + sw * .75) * Math.sin(pa)}" stroke="var(--svg-tick)" stroke-width="1.2"/>`}`
   }
   const outer = m.ww || m.w5!, inner = m.ww && m.w5 ? m.w5 : null
-  return `<svg viewBox="0 0 100 100" width="${Math.round(size)}" height="${Math.round(size)}" style="flex-shrink:0" aria-hidden="true">${ring(42, outer)}${inner ? ring(42 - sw - 4, inner) : ''}${center ? `<text x="50" y="${size < 60 ? 58 : 55}" text-anchor="middle" fill="${valColor(x, center)}" font-size="${size < 60 ? 24 : 19}" font-weight="650" font-family="Segoe UI Variable Display,Segoe UI" letter-spacing="-.8">${shown(x, center)}<tspan font-size="${size < 60 ? 10 : 8}" fill="var(--dim)">%</tspan></text>` : ''}</svg>`
+  // 모델 전용 한도(Fable 등)가 보이면 가장 안쪽에 고리를 하나 더(그릴 자리가 있을 때만)
+  const third = inner && m.scoped[0] && size >= 70 ? m.scoped[0] : null
+  const fs = third ? 16 : size < 60 ? 24 : 19
+  return `<svg viewBox="0 0 100 100" width="${Math.round(size)}" height="${Math.round(size)}" style="flex-shrink:0" aria-hidden="true">${ring(42, outer)}${inner ? ring(42 - sw - 4, inner) : ''}${third ? ring(42 - 2 * (sw + 4), third) : ''}${center ? `<text x="50" y="${third ? 55.5 : size < 60 ? 58 : 55}" text-anchor="middle" fill="${valColor(x, center)}" font-size="${fs}" font-weight="650" font-family="Segoe UI Variable Display,Segoe UI" letter-spacing="-.8">${shown(x, center)}<tspan font-size="${size < 60 ? 10 : 8}" fill="var(--dim)">%</tspan></text>` : ''}</svg>`
 }
 function rings(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o: 'h' | 'v' }) {
   const { main } = pickWindow(m, x.source(m.id)), v = b.o === 'v', side = Math.max(60, Math.min(v ? b.w : b.w * .58, v ? b.h * .74 : b.h))
   const lg = (w: QuotaWindow, where: string) => `<div class="lg"><span class="lbl"><i class="dot" style="background:${color(x, m, w)}"></i>${w.label}${v || !where ? '' : ` · ${where}`}</span><span class="num" style="color:${valColor(x, w)}">${shown(x, w)}%</span></div>`
-  const legend = b.w > 230 || v ? `<div class="legend">${m.ww ? lg(m.ww, m.w5 ? '바깥' : '') : ''}${m.w5 ? lg(m.w5, m.ww ? '안쪽' : '') : ''}</div>` : ''
+  const third = m.ww && m.w5 && m.scoped[0] && side >= 70 ? m.scoped[0] : null
+  const legend = b.w > 230 || v ? `<div class="legend">${m.ww ? lg(m.ww, m.w5 ? '바깥' : '') : ''}${m.w5 ? lg(m.w5, m.ww ? (third ? '가운데' : '안쪽') : '') : ''}${third ? lg(third, '가장 안쪽') : ''}</div>` : ''
   return `<div class="svgwrap ${v ? 'v' : ''}">${ringSVG(m, x, side, main)}${legend}</div>`
 }
 function timeline(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o: 'h' | 'v' }) {
@@ -370,6 +399,11 @@ function compactCard(u: AccountUsage, m: ServiceModel, design: DesignId, x: View
 export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, box: { w: number; h: number }, style = '') {
   if (x.per) x = { ...x, ...x.per(u.id), per: undefined }
   const m = serviceModel(u)
+  // 경고 배경: 남은 양에 따라 노랑→빨강으로 은은하게(카드 테두리는 칠하지 않는다)
+  if (x.heatOn && m.available) {
+    const heat = heatOf(lowestLeft(m), x.warn, x.crit, windowsOf(m).some(paceWarning))
+    if (heat > 0) style = `--heat:${heat.toFixed(3)};${style}`
+  }
   if (!m.available || !windowsOf(m).length) return offlineCard(u, x, box, style)
   if (formOf(design, box.w, box.h) === 'compact') return compactCard(u, m, design, x, box, style)
   const sev = severity(m, x.warn, x.crit), lo = Math.min(...windowsOf(m).map(w => w.left))
@@ -385,6 +419,6 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
   return `<div ${cardAttrs(u, sev, '', style)} data-tip="${cardTip(u, m, x)}">
-    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

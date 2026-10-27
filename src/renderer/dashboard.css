@@ -695,3 +695,70 @@ body.is-popup-view #app { height:100vh; }
 .field-inline { display:flex; gap:6px; }
 .field-inline .text-input { flex:1; min-width:0; }
 .settings-root .setting-hint code { font-family:Consolas,monospace; font-size:10.5px; padding:1px 4px; border-radius:4px; background:var(--soft); color:var(--ink); }
+
+/* ---------- 경고 배경: 테두리는 중립, 배경에 노랑→빨강 그라데이션 ---------- */
+@property --glow { syntax:'<number>'; inherits:true; initial-value:0; }
+.ucard { isolation:isolate; }
+.ucard.sev-warn, .ucard.sev-crit { border-color:var(--line); box-shadow:inset 0 1px 0 var(--card-highlight); }
+:root { --heat-max:.13; }
+:root[data-heat-level="medium"] { --heat-max:.2; }
+:root[data-heat-level="strong"] { --heat-max:.28; }
+:root[data-appearance="light"] { --heat-max:.11; }
+:root[data-appearance="light"][data-heat-level="medium"] { --heat-max:.17; }
+:root[data-appearance="light"][data-heat-level="strong"] { --heat-max:.24; }
+.ucard[style*="--heat:"]::before {
+  content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
+  --heat-c:color-mix(in oklab, var(--danger) calc(var(--heat) * 100%), var(--warn));
+  --heat-k:color-mix(in srgb, var(--heat-c) calc((.3 + var(--heat) * .7) * var(--heat-max) * 100%), transparent);
+  background:radial-gradient(ellipse 120% 120% at 50% 50%, transparent 38%, var(--heat-k) 100%);
+  transition:opacity .4s;
+}
+:root[data-heat-origin="corners"] .ucard[style*="--heat:"]::before { background:radial-gradient(circle at 0 0, var(--heat-k), transparent 55%), radial-gradient(circle at 100% 0, var(--heat-k), transparent 55%), radial-gradient(circle at 0 100%, var(--heat-k), transparent 55%), radial-gradient(circle at 100% 100%, var(--heat-k), transparent 55%); }
+:root[data-heat-origin="corner"] .ucard[style*="--heat:"]::before { background:radial-gradient(ellipse 140% 140% at 0 0, var(--heat-k), transparent 70%); }
+:root[data-heat-origin="center"] .ucard[style*="--heat:"]::before { background:radial-gradient(ellipse 85% 85% at 50% 50%, var(--heat-k), transparent 100%); }
+
+/* ---------- 마우스 빛: 테두리 스포트라이트 + 옅은 안쪽 빛, 서서히 켜고 끈다 ---------- */
+.service-grid .ucard, .pop-list .ucard { --glow:0; transition:--glow .45s ease, border-color .25s, box-shadow .25s, transform .2s; }
+.service-grid .ucard:hover, .pop-list .ucard:hover { --glow:1; }
+.service-grid .ucard::after, .pop-list .ucard::after {
+  content:""; position:absolute; inset:0; z-index:2; border-radius:inherit; pointer-events:none; padding:1.5px;
+  background:
+    radial-gradient(220px circle at var(--mx, -200px) var(--my, -200px), rgb(140 185 255 / calc(var(--glow) * 1)), rgb(124 170 255 / calc(var(--glow) * .35)) 40%, transparent 75%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude;
+}
+.service-grid .ucard > :first-child, .pop-list .ucard > :first-child { position:relative; }
+.service-grid .ucard, .pop-list .ucard { background-image:radial-gradient(320px circle at var(--mx, -400px) var(--my, -400px), rgb(110 160 255 / calc(var(--glow) * .11)), transparent 70%); }
+:root[data-appearance="light"] .service-grid .ucard::after, :root[data-appearance="light"] .pop-list .ucard::after {
+  background:radial-gradient(220px circle at var(--mx, -200px) var(--my, -200px), rgb(60 110 230 / calc(var(--glow) * .85)), rgb(60 110 230 / calc(var(--glow) * .25)) 40%, transparent 75%);
+}
+:root[data-motion="off"] .ucard::after { display:none; }
+:root[data-motion="off"] .service-grid .ucard, :root[data-motion="off"] .pop-list .ucard { background-image:none; }
+@media (prefers-reduced-motion:reduce) { .service-grid .ucard::after, .pop-list .ucard::after { display:none; } }
+
+/* 종합 카드 보강: 플랜 배지·속도 칩 */
+.plan-pill { flex-shrink:0; font-size:10px; font-weight:600; line-height:16px; padding:0 6px; border-radius:8px; border:1px solid var(--line-strong); color:var(--muted); background:var(--soft); white-space:nowrap; }
+.pace-chip { flex-shrink:0; font-size:9.5px; font-weight:600; line-height:15px; padding:0 5px; border-radius:7px; margin-left:6px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.pace-chip.good { color:var(--good); background:color-mix(in srgb,var(--good) 12%,transparent); }
+.pace-chip.hot { color:var(--warn); background:color-mix(in srgb,var(--warn) 14%,transparent); }
+.pace-chip.even { color:var(--muted); background:var(--soft); }
+
+.dashboard .tool.pin.on { color:var(--accent); }
+
+/* 팝업: 제목줄로 옮기기 */
+.popup-v2 .dashboard-header { -webkit-app-region:drag; }
+.popup-v2 .dashboard-header .tool, .popup-v2 .dashboard-header button { -webkit-app-region:no-drag; }
+.popup-v2 .window-handle { cursor:default; }
+
+/* 집중 모드: 그 서비스 하나만, 제목줄은 자동 숨김(위쪽 가장자리에 마우스를 올리면 나타남) */
+.dashboard.focus-mode .dashboard-header { position:absolute; left:0; right:0; top:0; z-index:6; opacity:0; pointer-events:none; transform:translateY(-6px); transition:opacity .14s ease, transform .14s ease; background:rgb(var(--surface)); box-shadow:0 4px 12px rgba(0,0,0,.25); }
+.dashboard.focus-mode .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
+.dashboard.focus-mode:has(.header-hot:hover) .dashboard-header, .dashboard.focus-mode .dashboard-header:hover, .dashboard.focus-mode:has(.menu) .dashboard-header { opacity:1; pointer-events:auto; transform:none; }
+.dashboard .focus-chip { display:inline-flex; align-items:center; gap:4px; height:20px; padding:0 8px; border-radius:10px; font-size:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.dashboard .focus-chip:hover { background:color-mix(in srgb,var(--accent) 24%,transparent); }
+.popup-v2.focus-mode .pop-list { padding-top:8px; }
+.popup-v2.focus-mode .pop-card { flex:1; height:auto!important; }
+
+.row-sub { display:flex; align-items:baseline; gap:8px; min-width:0; }
+.row-sub .row-note { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.row-sub .row-reset { flex-shrink:0; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.row-top.wide .row-val { margin-left:auto; }
