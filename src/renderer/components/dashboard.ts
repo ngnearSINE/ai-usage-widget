@@ -81,7 +81,7 @@ export function applyAppearance(config: WidgetConfig) {
   document.documentElement.style.setProperty('--heat-soft-pct', `${(Math.max(0, spread - 30) / 70 * 35).toFixed(1)}%`)
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
   document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
-  document.documentElement.style.setProperty('--font-scale', String(number(config.fontScale, 85, 130, 100) / 100))
+  document.documentElement.style.setProperty('--font-scale', '1') // 스케일은 창 전체 확대·축소로(메인 프로세스)
   document.documentElement.style.setProperty('--card-gap', `${number(config.cardGap, 4, 16, 6)}px`)
   if (!mediaQuery) {
     mediaQuery = matchMedia('(prefers-color-scheme: light)')

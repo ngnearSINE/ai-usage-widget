@@ -127,7 +127,9 @@ function previewSize(): [number, number] {
 function renderPreview() {
   const stage = root?.querySelector<HTMLElement>('[data-stage]'), inner = root?.querySelector<HTMLElement>('[data-stage-inner]')
   if (!stage || !inner || !state) return
-  const cfg = config(), [W, H] = previewSize()
+  const cfg = config(), [W0, H0] = previewSize()
+  // 스케일: 위젯은 창 크기(W0×H0) 안에 1/스케일만큼의 CSS 픽셀로 그려진다. 설정 창도 같은 스케일이라 그대로 맞추면 실제 모습과 같다.
+  const zoom = number(cfg.fontScale, 80, 150, 100) / 100, W = Math.round(W0 / zoom), H = Math.round(H0 / zoom)
   const usages = usePreviewSample() ? previewUsages() : state.usages
   const accounts = usePreviewSample() ? usages.map(u => ({ id: u.id, name: u.name, provider: u.provider, enabled: true })) : state.accounts
   let list = visibleUsages(usages, accounts, cfg)
@@ -154,7 +156,7 @@ function renderPreview() {
     <div class="dashboard-content">${grid}</div></div>`)
   inner.style.width = `${Math.round(W * k)}px`; inner.style.height = `${Math.round(H * k)}px`
   const cap = root.querySelector<HTMLElement>('[data-caption]')
-  if (cap) cap.textContent = `${W}×${H}${size === 'current' ? ' (지금 위젯 크기)' : ''}${k < 1 ? ` · ${Math.round(k * 100)}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
+  if (cap) cap.textContent = `${W0}×${H0}${size === 'current' ? ' (지금 위젯 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${k < 1 ? ` · ${Math.round(k * zoom * 100)}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
 }
 
 /* ---------- 공통 조각 ---------- */
@@ -191,7 +193,7 @@ function previewClock() {
 
 /** 연속 변화 미리보기 띠: 남은 양 100%(왼쪽) → 0%(오른쪽). */
 function colorScale(c: WidgetConfig, warn: number) {
-  if (c.colorMode !== 'smooth' || c.colorByUsage === false) return hint(`남은 양이 주의 ${warn}%·위험 ${Math.min(warn, c.critPercent ?? 10)}% 아래로 내려가는 순간 색이 바뀌어요.`)
+  if (c.colorMode === 'step' || c.colorByUsage === false) return hint(`남은 양이 주의 ${warn}%·위험 ${Math.min(warn, c.critPercent ?? 10)}% 아래로 내려가는 순간 색이 바뀌어요.`)
   const crit = Math.min(warn, c.critPercent ?? 10), top = Math.max(SMOOTH_START, warn + 1)
   const stop = (left: number) => 100 - left
   return `<div class="color-scale" aria-hidden="true" style="background:linear-gradient(90deg,var(--accent) 0%,var(--accent) ${stop(top)}%,var(--warn) ${stop(warn)}%,var(--danger) ${stop(crit)}%,var(--danger) 100%)"></div><div class="color-scale-labels">${[100, top, warn, crit, 0].filter((v, i, a) => a.indexOf(v) === i).filter((v, i, a) => i === 0 || v === 0 || a[i - 1] - v >= 8).map(v => `<span style="left:${stop(v)}%">${v}%</span>`).join('')}</div>`
@@ -209,7 +211,7 @@ function designTab(c: WidgetConfig) {
     + section('막대 색', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 먼저예요')
     + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
     + section('서비스 아이콘', segment('iconStyle', c.iconStyle === 'monochrome' ? 'monochrome' : 'color', [['color', '브랜드 색'], ['monochrome', '단색']], '서비스 아이콘'))
-    + section('크기와 간격', slider('fontScale', '글자 크기', 85, 130, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
+    + section('크기와 간격', slider('fontScale', '스케일', 80, 150, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
     + section('움직임', segment('motion', c.motion || 'subtle', [['off', '없음'], ['subtle', '은은하게'], ['expressive', '생동감 있게']], '움직임') + hint('Windows의 애니메이션 효과 끄기 설정도 함께 따라요.'))
 }
 
@@ -220,7 +222,7 @@ function displayTab(c: WidgetConfig) {
   return section('큰 숫자', `<div class="segmented" role="group" aria-label="큰 숫자 기준">${(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => `<button data-source-all="${k}" aria-pressed="${common === k}">${SOURCE_LABEL[k]}</button>`).join('')}</div>${hint(`카드에 크게 보일 한도예요. 카드마다 다르게 하려면 카드의 기준 버튼(주간 ▾)을 누르세요.${common ? '' : ' 지금은 카드마다 다르게 설정되어 있어요.'}`)}`)
     + section('여유가 적을 때', slider('warnPercent', '주의(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
       + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
-      + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'smooth' ? 'smooth' : 'step', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
+      + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'step' ? 'step' : 'smooth', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
       + toggle('warnTint', '경고 배경 색', '남은 양이 줄수록 카드 배경이 노랑에서 빨강으로 은은하게 바뀌어요. 테두리는 칠하지 않아요.', c.warnTint !== false)
       + `<div class="${c.warnTint === false ? 'is-disabled' : ''}">${slider('warnTintStrength', '세기', 0, 100, c.warnTintStrength ?? 30, '%')}${slider('warnTintSpread', '퍼짐', 0, 100, c.warnTintSpread ?? 30, '%')}
         <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', heatPlacement(c).origin, [['edge', '테두리'], ['center', '가운데'], ['side', '한쪽']], '경고 배경이 진한 곳')}

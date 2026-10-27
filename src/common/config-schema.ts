@@ -58,7 +58,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   barStyle: oneOf('silk', 'aurora', 'neon', 'segments', 'mono', 'spectrum'),
   motion: oneOf('off', 'subtle', 'expressive'),
   accentColor: v => typeof v === 'string' && /^#[\da-f]{6}$/i.test(v) ? v : SKIP,
-  fontScale: num(85, 130),
+  fontScale: num(80, 150), // 스케일(창 전체 확대·축소, %)
   cardGap: num(4, 16),
   opacity: num(0, 100),
   design: oneOf('rich', 'numeral', 'bars', 'rings', 'timeline', 'battery'),

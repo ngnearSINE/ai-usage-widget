@@ -113,7 +113,7 @@ export interface WidgetConfig {
   barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
   motion?: 'off' | 'subtle' | 'expressive'
   accentColor?: string
-  fontScale?: number
+  fontScale?: number // 스케일: 위젯·팝업·설정·정보 창 전체 확대·축소(%, 기본 100)
   cardGap?: number
   hideDisconnected?: boolean
   showResetTime?: boolean

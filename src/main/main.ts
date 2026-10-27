@@ -71,7 +71,7 @@ function growToFitCards() {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   const st = getAppState(), cards = Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length)
   const gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6)), b = widgetWindow.getBounds()
-  const minH = minWindowHeight(b.width, cards, gap)
+  const minH = Math.round(minWindowHeight(b.width / uiZoom(), cards, gap) * uiZoom())
   if (b.height >= minH) return
   const area = screen.getDisplayMatching(b).workArea
   const next = fitWindow({ ...b, height: Math.min(minH, area.height) }, area)
@@ -362,6 +362,16 @@ const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'history', 'ge
 type SettingsTab = typeof SETTINGS_TABS[number]
 // 설정 창도 위젯과 같은 배경(불투명도·아크릴)을 쓰도록 테두리 없는 공통 창으로 만들고, 창 단추는 화면이 그린다.
 let aboutWindow: SurfaceWindow | null = null
+/** 스케일(설정의 %): 창 전체 확대·축소. 작업 표시줄에 붙은 위젯은 작업 표시줄 높이에 맞춰야 하므로 늘 1. */
+const uiZoom = () => Math.max(.8, Math.min(1.5, (accountStore?.getConfig().fontScale ?? 100) / 100))
+function applyZoom() {
+  const z = uiZoom(), docked = accountStore.getConfig().placementMode === 'docked'
+  const set = (w: { isDestroyed(): boolean; webContents: Electron.WebContents } | null | undefined, f: number) => { if (w && !w.isDestroyed() && Math.abs(w.webContents.getZoomFactor() - f) > .001) w.webContents.setZoomFactor(f) }
+  set(widgetWindow, docked ? 1 : z); set(popupWindow, z); set(settingsWindow, z); set(aboutWindow, z)
+}
+/** 창이 페이지를 다시 읽으면 확대 비율이 처음으로 돌아가므로 그때마다 다시 맞춘다. */
+function keepZoom(w: { webContents: Electron.WebContents }) { w.webContents.on('did-finish-load', () => applyZoom()) }
+
 /** 계정마다 자동으로 찾은 CLI·앱. 설정 화면에 보여 주려고 따로 기억한다. */
 let launchers: Record<string, { cli?: string; app?: string }> = {}
 async function refreshLaunchers() {
@@ -385,6 +395,7 @@ function openAboutWindow() {
     show: false, title: 'AI 사용량 정보', resizable: false, maximizable: false, minimizable: false, autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
   }, currentSurfaceKind())
+  keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
   win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
   win.on('closed', () => { if (aboutWindow === win) aboutWindow = null })
@@ -410,6 +421,7 @@ function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Recta
     minWidth: 760, minHeight: 520, show: false, title: 'AI 사용량 설정', resizable: true, maximizable: true, autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
   }, currentSurfaceKind())
+  keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
   win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
   win.on('closed', () => { if (settingsWindow === win) settingsWindow = null })
@@ -622,6 +634,7 @@ function createWidgetWindow() {
       backgroundThrottling: false
     }
   }, currentSurfaceKind())
+  keepZoom(win)
 
   if (isFloating && config.alwaysOnTop !== false) {
     widgetWindow.setAlwaysOnTop(true, 'floating')
@@ -768,6 +781,7 @@ async function animateIntoSlot(win: SurfaceWindow, to: Electron.Rectangle, ms = 
 /** floatBounds: 도킹할 때 기억해 둘 자유 창 위치·크기(빨려드는 애니메이션으로 창이 줄어든 상태가 저장되지 않도록). */
 async function setPlacement(mode: 'floating' | 'docked', floatBounds?: Electron.Rectangle) {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
+  setTimeout(applyZoom, 0) // 작업 표시줄에 붙으면 1배, 창이 되면 스케일대로
   if (mode === 'docked' && !dockSupported) return
   const previous = accountStore.getConfig()
   if (previous.placementMode === mode) return
@@ -881,7 +895,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
         if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
         // 최소 높이는 지금 너비에서 보이는 카드가 모두 들어가는 높이(서비스가 하나면 카드 한 장 높이).
-        const minH = minWindowHeight(width, cardCount, cardGap)
+        const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
         if (edge.includes('s')) height = Math.max(minH, start.height + dy)
         if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
         if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
@@ -1048,6 +1062,7 @@ function createPopupWindow() {
       contextIsolation: true
     }
   }, currentSurfaceKind())
+  keepZoom(win)
   popupWindow.on('page-title-updated', event => event.preventDefault())
   popupWindow.on('resize',()=>{if(popupWindow)applyWindowShape(popupWindow,'native')})
   popupWindow.on('moved', () => { if (popupWindow === win && !popupPlacing && win.isVisible()) savePopupBounds(win.getBounds()) })
@@ -1340,6 +1355,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_event, rawPatch: unknown) => {
     const patch = sanitizeConfigPatch(rawPatch)
+    if (patch.fontScale !== undefined) setTimeout(applyZoom, 0)
     const prevConfig = accountStore.getConfig()
     // 배치 전환은 네이티브 부모 창 변경과 함께 수행한다. 일반 디자인 변경은 창 위치를 건드리지 않는다.
     const requestedMode = patch.placementMode
@@ -1650,7 +1666,7 @@ function setupIpcHandlers() {
     if (win && win === widgetWindow && accountStore.getConfig().placementMode === 'floating') {
       const st = getAppState(), cards = st.focus ? 1 : Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
       const sizes: Array<[number, number]> = [[220, 0], [320, 240], [480, 360], [700, 560], [980, 700]]
-      const [w, h0] = sizes[i], h = Math.max(h0, minWindowHeight(w, cards, gap))
+      const [w, h0] = sizes[i], h = Math.max(h0, Math.round(minWindowHeight(w / uiZoom(), cards, gap) * uiZoom()))
       const b = win.getBounds(), area = screen.getDisplayMatching(b).workArea
       const next = fitWindow({ x: b.x, y: b.y, width: Math.min(w, area.width), height: Math.min(h, area.height) }, area)
       win.setBounds(next)

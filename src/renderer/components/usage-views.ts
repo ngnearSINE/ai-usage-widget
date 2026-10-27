@@ -28,7 +28,8 @@ export function viewContext(config: WidgetConfig, history?: Record<string, Histo
   return {
     warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)), showPace: config.showPace !== false,
     showReset: config.showResetTime !== false, showUsed: !!config.showUsedPercent, colorByUsage: config.colorByUsage !== false,
-    colorMode: config.colorMode === 'smooth' ? 'smooth' : 'step', heatOn: config.warnTint !== false, iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
+    // 막대 색 기본은 '부드럽게': 카드 배경 경고색과 같은 시점(여유 50%)부터 막대도 바뀐다
+    colorMode: config.colorMode === 'step' ? 'step' : 'smooth', heatOn: config.warnTint !== false, iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
     per: id => displayOf(config, id),
   }
 }
