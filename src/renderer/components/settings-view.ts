@@ -1,4 +1,4 @@
-import type { AccountConfig, AppState, WidgetConfig } from '../../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, HeatSide } from '../../common/types.js'
 import { visibleUsages, DEFAULT_WINDOW_SIZE } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { previewUsages } from '../../common/preview-data.js'
@@ -6,7 +6,7 @@ import { downsample, previewHistory } from '../../common/history.js'
 import type { HistoryPoint } from '../../common/types.js'
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext } from './usage-views.js'
-import { applyAppearance, escapeText, icon, updateHourSelect } from './dashboard.js'
+import { applyAppearance, escapeText, icon, updateHourSelect, heatPlacement } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
 import { SMOOTH_START } from '../../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, displaySummary, setDisplay, setDisplayAll, type DisplayKey } from '../../common/display-options.js'
@@ -146,11 +146,11 @@ function renderPreview() {
     }).join('')}</div>`
     if (L.per < list.length) note = ` · ${list.length}개 중 ${L.per}개씩 페이지로 표시`
   }
-  const warnN = list.filter(u => severity(serviceModel(u), x.warn, x.crit)).length
+  const warnN = list.filter(u => severity(serviceModel(u), x.warn, x.crit, x.per ? x.per(u.id).showPace : x.showPace)).length
   // 스테이지에 맞게 축소만 한다(확대하지 않음).
   const k = Math.min(1, (stage.clientWidth - 32) / W, (stage.clientHeight - 32) / H)
   updateMarkup(inner, `<div class="pv-win" style="width:${W}px;height:${H}px;transform:scale(${k.toFixed(3)})">
-    <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>${W >= 520 && state.lastRefreshedAt ? `<span class="header-clock num" aria-hidden="true">${previewClock()}</span>` : ''}<span class="tool pin on" aria-hidden="true">${icon('pinFill')}</span><span class="tool" aria-hidden="true">${icon('refresh')}</span><span class="tool" aria-hidden="true">${icon('sliders')}</span><span class="tool" aria-hidden="true" title="${DESIGNS.find(d => d[0] === design)![1]}">${icon('menu')}</span></div>
+    <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>${W >= 520 ? `<span class="header-clock num" aria-hidden="true">${previewClock()}</span>` : ''}<span class="tool pin on" aria-hidden="true">${icon('pinFill')}</span><span class="tool" aria-hidden="true">${icon('refresh')}</span><span class="tool" aria-hidden="true">${icon('sliders')}</span><span class="tool" aria-hidden="true" title="${DESIGNS.find(d => d[0] === design)![1]}">${icon('menu')}</span></div>
     <div class="dashboard-content">${grid}</div></div>`)
   inner.style.width = `${Math.round(W * k)}px`; inner.style.height = `${Math.round(H * k)}px`
   const cap = root.querySelector<HTMLElement>('[data-caption]')
@@ -168,14 +168,24 @@ const hint = (text: string, cls = '') => `<p class="setting-hint ${cls}">${text}
 const segmentRaw = (current: string, options: string[][], attr: string, id: string, label: string) => `<div class="segmented" role="group" aria-label="${label}">${options.map(([value, text]) => `<button ${attr}="${value}" data-id="${id}" aria-pressed="${current === value}">${text}</button>`).join('')}</div>`
 const barChoice = (a: AccountConfig) => !a.barColor ? 'brand' : a.barColor === 'green' ? 'green' : 'custom'
 const barSwatch = (a: AccountConfig, brand?: string) => /^#[\da-f]{6}$/i.test(a.barColor || '') ? a.barColor! : hex(brand)
-/** 연속 변화 미리보기 띠: 남은 양 100%(왼쪽) → 0%(오른쪽). */
-/** 미리보기 제목줄 가운데 시각: 위젯과 같은 '갱신 · 다음' */
-function previewClock() {
-  const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-  const last = Date.parse(state.lastRefreshedAt || '')
-  return Number.isFinite(last) ? `갱신 ${hm(last)} · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''
+/** '한쪽'의 방향 고르기: 카드 모양 3×3에서 가장자리 8칸. */
+const HEAT_SIDES: Array<[HeatSide | '', string, string]> = [
+  ['top-left', '↖', '왼쪽 위'], ['top', '↑', '위'], ['top-right', '↗', '오른쪽 위'],
+  ['left', '←', '왼쪽'], ['', '', ''], ['right', '→', '오른쪽'],
+  ['bottom-left', '↙', '왼쪽 아래'], ['bottom', '↓', '아래'], ['bottom-right', '↘', '오른쪽 아래']]
+function heatSidePicker(current: HeatSide) {
+  const name = HEAT_SIDES.find(s => s[0] === current)?.[2] || ''
+  return `<div class="heat-side-row"><div class="heat-dir" role="group" aria-label="진하게 칠할 방향">${HEAT_SIDES.map(([v, arrow, label]) => v
+    ? `<button data-config="warnTintSide" data-value="${v}" aria-pressed="${current === v}" title="${label}" aria-label="${label}">${arrow}</button>`
+    : '<span class="mid" aria-hidden="true"></span>').join('')}</div><small>${name}에서 안쪽으로 진해져요</small></div>`
 }
 
+/** 미리보기 제목줄 가운데 시각: 위젯과 같은 현재 시각 */
+function previewClock() {
+  return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+/** 연속 변화 미리보기 띠: 남은 양 100%(왼쪽) → 0%(오른쪽). */
 function colorScale(c: WidgetConfig, warn: number) {
   if (c.colorMode !== 'smooth' || c.colorByUsage === false) return hint(`남은 양이 주의 ${warn}%·위험 ${Math.min(warn, c.critPercent ?? 10)}% 아래로 내려가는 순간 색이 바뀌어요.`)
   const crit = Math.min(warn, c.critPercent ?? 10), top = Math.max(SMOOTH_START, warn + 1)
@@ -208,8 +218,9 @@ function displayTab(c: WidgetConfig) {
       + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
       + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'smooth' ? 'smooth' : 'step', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
       + toggle('warnTint', '경고 배경 색', '남은 양이 줄수록 카드 배경이 노랑에서 빨강으로 은은하게 바뀌어요. 테두리는 칠하지 않아요.', c.warnTint !== false)
-      + `<div class="${c.warnTint === false ? 'is-disabled' : ''}"><div class="field"><span>세기</span>${segment('warnTintLevel', c.warnTintLevel || 'soft', [['soft', '은은하게'], ['medium', '보통'], ['strong', '진하게']], '경고 배경 세기')}</div>
-        <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', c.warnTintOrigin || 'edge', [['edge', '테두리'], ['corners', '네 모서리'], ['corner', '한 모서리'], ['center', '가운데']], '경고 배경이 진한 곳')}</div></div>`
+      + `<div class="${c.warnTint === false ? 'is-disabled' : ''}">${slider('warnTintStrength', '세기', 0, 100, c.warnTintStrength ?? 50, '%')}
+        <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', heatPlacement(c).origin, [['edge', '테두리'], ['center', '가운데'], ['side', '한쪽']], '경고 배경이 진한 곳')}
+        ${heatPlacement(c).origin === 'side' ? heatSidePicker(heatPlacement(c).side) : ''}</div></div>`
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
       + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
@@ -223,7 +234,7 @@ function displayTable(c: WidgetConfig) {
   const head = `<div class="dt-row dt-head"><span></span>${DISPLAY_KEYS.map(([, label, tip]) => `<span title="${tip}">${label}</span>`).join('')}</div>`
   const all = `<div class="dt-row dt-all"><span><b>모든 서비스</b></span>${DISPLAY_KEYS.map(([k, label]) => { const s = displaySummary(c, ids, k); return `<label class="dt-cell"><input type="checkbox" data-dall="${k}" ${s === 'on' ? 'checked' : ''} data-mixed="${s === 'mixed'}" aria-label="모든 서비스 ${label}"></label>` }).join('')}</div>`
   const rows = accs.map(a => { const v = displayOf(c, a.id); return `<div class="dt-row"><span class="dt-name">${renderAiIcon(a.provider, a.name, c.iconStyle, 18)}<span>${escapeText(a.name)}</span></span>${DISPLAY_KEYS.map(([k, label]) => `<label class="dt-cell"><input type="checkbox" data-d1="${k}" data-id="${escapeText(a.id)}" ${v[k] ? 'checked' : ''} aria-label="${escapeText(a.name)} ${label}"></label>`).join('')}</div>` }).join('')
-  return `<div class="dt">${head}${all}${rows}</div>${hint('쓴 양으로: 끄면 남은 양. 페이스 눈금: 고르게 썼다면 지금 남아 있어야 할 위치. 카드를 우클릭해도 바꿀 수 있어요.')}`
+  return `<div class="dt">${head}${all}${rows}</div>${hint('쓴 양으로: 끄면 남은 양. 예상 시간: 페이스 눈금(고르게 썼다면 지금 남아 있어야 할 위치)·속도 칩·소진 예상 문구. 리셋 시간: 리셋까지 남은 시간과 시각. 카드를 우클릭해도 바꿀 수 있어요.')}`
 }
 
 const visibilityOf = (a: AccountConfig) => a.hidden ? 'none' : a.hiddenInDock ? 'window' : 'all'

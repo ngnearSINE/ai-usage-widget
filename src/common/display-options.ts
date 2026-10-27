@@ -8,7 +8,7 @@ export type DisplayKey = 'showUsed' | 'showPace' | 'showReset'
 export type DisplayOptions = Record<DisplayKey, boolean>
 export const DISPLAY_KEYS: Array<[DisplayKey, string, string]> = [
   ['showUsed', '쓴 양으로', '끄면 남은 양으로 보여요'],
-  ['showPace', '페이스 눈금', '고르게 썼다면 지금 남아 있어야 할 위치'],
+  ['showPace', '예상 시간', '페이스 눈금·속도 칩·소진 예상 문구'],
   ['showReset', '리셋 시간', '리셋까지 남은 시간'],
 ]
 

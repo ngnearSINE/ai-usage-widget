@@ -99,11 +99,12 @@ export function paceWarning(w: QuotaWindow) {
   return w.resetMs - w.toEmptyMs >= PERIOD_LEN[w.period] * .15 && w.left <= 50
 }
 
-export function severity(m: ServiceModel, warn: number, crit: number): '' | 'warn' | 'crit' {
+/** pace=false면 '예상 시간'을 끈 것이라 속도(소진 예상)는 보지 않고 남은 양만 본다. */
+export function severity(m: ServiceModel, warn: number, crit: number, pace = true): '' | 'warn' | 'crit' {
   if (!m.available || !windowsOf(m).length) return ''
   const low = lowestLeft(m)
   if (low <= crit) return 'crit'
-  if (low <= warn || windowsOf(m).some(paceWarning)) return 'warn'
+  if (low <= warn || (pace && windowsOf(m).some(paceWarning))) return 'warn'
   return ''
 }
 

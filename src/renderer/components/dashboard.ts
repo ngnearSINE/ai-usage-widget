@@ -1,4 +1,4 @@
-import type { AccountUsage, AppState, QuotaInfo, WidgetConfig } from '../../common/types.js'
+import type { AccountUsage, AppState, QuotaInfo, WidgetConfig, HeatSide } from '../../common/types.js'
 import { barColor } from '../../common/bar-color.js'
 import { initCardGlow } from './card-glow.js'
 import { displayOf } from '../../common/display-options.js'
@@ -50,14 +50,24 @@ let pageIndex = 0
 let pageCount = 1
 let delegated = false
 
+/** 진한 곳: 예전 값(네 모서리→테두리, 한 모서리→한쪽 왼쪽 위)을 지금 값으로 읽는다. */
+export function heatPlacement(config: WidgetConfig): { origin: 'edge' | 'center' | 'side'; side: HeatSide } {
+  const o = config.warnTintOrigin
+  if (o === 'corner') return { origin: 'side', side: config.warnTintSide || 'top-left' }
+  return { origin: o === 'center' || o === 'side' ? o : 'edge', side: config.warnTintSide || 'top-left' }
+}
+
 export function applyAppearance(config: WidgetConfig) {
   document.documentElement.dataset.appearance = config.appearance === 'system'
     ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : config.appearance || 'dark'
   document.documentElement.dataset.bar = config.barStyle || 'silk'
   document.documentElement.dataset.motion = config.motion || 'subtle'
   document.documentElement.dataset.acrylic = String(config.useAcrylic !== false)
-  document.documentElement.dataset.heatLevel = config.warnTintLevel || 'soft'
-  document.documentElement.dataset.heatOrigin = config.warnTintOrigin || 'edge'
+  // 경고 배경: 세기는 0~100 연속값, 진한 곳은 테두리·가운데·한쪽(8방향)
+  const heat = heatPlacement(config)
+  document.documentElement.dataset.heatOrigin = heat.origin
+  document.documentElement.dataset.heatSide = heat.side
+  document.documentElement.style.setProperty('--heat-max', (number(config.warnTintStrength, 0, 100, 50) / 100 * .45).toFixed(3))
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
   document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
   document.documentElement.style.setProperty('--font-scale', String(number(config.fontScale, 85, 130, 100) / 100))
@@ -252,20 +262,38 @@ function layoutCards() {
   updateMarkup(gridHost, gridHtml)
   // 제목줄 상태: 연결 수·마지막 확인·주의 수, 페이지가 나뉘면 페이지 넘김.
   const connected = state.usages.filter(u => ['ready', 'stale'].includes(u.status)).length
-  const warnN = all.filter(u => severity(serviceModel(u), x.warn, x.crit)).length
+  const warnN = all.filter(u => severity(serviceModel(u), x.warn, x.crit, x.per ? x.per(u.id).showPace : x.showPace)).length
   const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
   const last = state.lastRefreshedAt ? Date.parse(state.lastRefreshedAt) : NaN
-  const centered = W >= 520
-  const updated = Number.isFinite(last) ? `갱신 ${hm(last)}${centered ? ` · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''}` : '--'
+  const updated = Number.isFinite(last) ? `갱신 ${hm(last)}${W > 420 ? ` · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : ''}` : '--'
   const status = host.querySelector<HTMLElement>('[data-status]')
-  const clock = host.querySelector<HTMLElement>('[data-clock]')
-  if (clock) clock.textContent = centered && !state.preview ? updated : ''
   const lock = state.config.clickThrough ? `<span class="lock-badge" title="클릭 통과 잠금 중">${icon('lock')}잠김${state.config.shortcuts?.lock ? ` · ${escapeText(state.config.shortcuts.lock)}로 풀기` : ''}</span> · ` : ''
   const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
-  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; return }
+  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
-    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? ' · 미리보기' : centered ? '' : ` · ${updated}`}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b> · ${state.preview ? '미리보기' : updated}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+  tickClock(true)
+}
+
+/**
+ * 제목줄 가운데 현재 시각. 왼쪽 상태 문구나 오른쪽 단추와 겹치면 숨긴다.
+ * force면 자리를 다시 재고, 아니면(1초마다) 분이 바뀔 때만 글자를 바꾼다.
+ */
+function tickClock(force = false) {
+  const clock = host?.querySelector<HTMLElement>('[data-clock]')
+  if (!clock) return
+  const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (!force) { if (clock.dataset.on === '1' && clock.textContent !== now) clock.textContent = now; return }
+  clock.textContent = now; clock.dataset.on = '1'
+  const header = clock.parentElement!, r = clock.getBoundingClientRect()
+  // 끌기 손잡이는 제목줄 폭을 다 차지하므로 글자(제목·상태)의 실제 끝으로 잰다.
+  const left = header.querySelector('.app-title')?.getBoundingClientRect(), right = header.querySelector('.tool, .update-pill')?.getBoundingClientRect()
+  const status = header.querySelector('[data-status]')
+  // 상태 칸은 늘어나 있을 수 있어 글자가 실제로 차지한 끝을 잰다.
+  let statusRight = left?.right ?? 0
+  if (status?.textContent) { const range = document.createRange(); range.selectNodeContents(status); statusRight = Math.max(statusRight, Math.min(range.getBoundingClientRect().right, status.getBoundingClientRect().right)) }
+  if (r.left < statusRight + 12 || (right && r.right > right.left - 12)) { clock.textContent = ''; clock.dataset.on = '' }
 }
 
 /* ---------- 메뉴 ---------- */
@@ -320,6 +348,7 @@ function bindDelegated(container: HTMLElement) {
   if (delegated) return
   delegated = true
   initCardGlow(container)
+  setInterval(() => tickClock(), 1000)
   container.addEventListener('click', e => {
     const t = e.target as HTMLElement
     const view = t.closest<HTMLElement>('[data-view-menu]')

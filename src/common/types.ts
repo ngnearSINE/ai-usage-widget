@@ -69,6 +69,9 @@ export interface AccountConfig {
   }
 }
 
+/** 경고 배경을 진하게 칠할 한쪽 방향 */
+export type HeatSide = 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
 export interface WidgetConfig {
   theme: ThemeType // '1a' | '1b' | '1c' | '1d'
   iconStyle: IconStyle // 'color' | 'monochrome'
@@ -82,8 +85,10 @@ export interface WidgetConfig {
   notifyQuiet?: { enabled: boolean; start: string; end: string } // 알림 쉬는 시간(HH:MM, 자정을 넘을 수 있음). 그 사이 알림은 건너뜀
   popupBounds?: { x: number; y: number; width: number; height: number } // 작업 표시줄 팝업 위치·크기(옮기거나 키우면 기억)
   warnTint?: boolean // 경고 배경 색(기본 켬)
-  warnTintLevel?: 'soft' | 'medium' | 'strong' // 세기(기본 은은하게)
-  warnTintOrigin?: 'edge' | 'corners' | 'corner' | 'center' // 진한 곳(기본 테두리)
+  warnTintLevel?: 'soft' | 'medium' | 'strong' // (예전) 세기 단계. warnTintStrength로 대체
+  warnTintStrength?: number // 세기 0~100(기본 50)
+  warnTintOrigin?: 'edge' | 'center' | 'side' | 'corners' | 'corner' // 진한 곳(기본 테두리). corners·corner는 예전 값
+  warnTintSide?: HeatSide // '한쪽'일 때 방향(기본 왼쪽 위)
   autoUpdate?: boolean // 새 버전 자동 확인·다운로드(기본 켬, 설치판만)
   updateHour?: number // 자동 설치 시각(PC 시각 0~23시, 기본 3시)
   colorMode?: 'step' | 'smooth' // 경고색으로 바뀌는 방식: 기준에서 한 번에(기본) / 남은 양에 따라 부드럽게
@@ -115,7 +120,7 @@ export interface WidgetConfig {
   valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
   warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)
   critPercent?: number // 남은 양이 이 값 이하이면 위험 (기본 10)
-  showPace?: boolean // 막대·링의 페이스 눈금
+  showPace?: boolean // '예상 시간': 페이스 눈금·속도 칩·소진 예상 문구
   sortLowFirst?: boolean // 여유가 적은 서비스를 앞으로
   notifyEnabled?: boolean // Windows 알림 전체 (기본 켬)
   notifyLow?: boolean // 주의·위험 기준 도달 알림 (기본 켬)

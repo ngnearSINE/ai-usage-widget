@@ -64,7 +64,7 @@ const clock = (ms: number) => {
 const amountWord = (x: ViewContext) => x.showUsed ? '사용한 양' : '남은 양'
 const resetLine = (w: QuotaWindow) => w.resetMs === null ? '리셋 시각 정보 없음' : `리셋 ${fmtDuration(w.resetMs)} 뒤 · ${clock(w.resetMs)}`
 export function tipWindow(m: ServiceModel, w: QuotaWindow, x: ViewContext) {
-  return [`${w.label} ${amountWord(x)} ${shown(x, w)}% (막대)`, resetLine(w), noteOf(w).t, m.name].join('\n')
+  return [`${w.label} ${amountWord(x)} ${shown(x, w)}% (막대)`, resetLine(w), noteOf(w, x).t, m.name].join('\n')
 }
 export function tipPace(w: QuotaWindow, x: ViewContext) {
   if (w.expectedLeft === null) return ''
@@ -73,7 +73,7 @@ export function tipPace(w: QuotaWindow, x: ViewContext) {
     diff >= 0 ? `지금은 기준보다 ${diff}%p 여유 있게 쓰는 중` : `지금은 기준보다 ${-diff}%p 빨리 쓰는 중`].join('\n')
 }
 export function tipOther(w: QuotaWindow, x: ViewContext) {
-  return [`${w.label} ${amountWord(x)} ${shown(x, w)}% (색 눈금)`, resetLine(w), noteOf(w).t].join('\n')
+  return [`${w.label} ${amountWord(x)} ${shown(x, w)}% (색 눈금)`, resetLine(w), noteOf(w, x).t].join('\n')
 }
 const hhmm = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '' }
 function cardTip(u: AccountUsage, m: ServiceModel, x: ViewContext) {
@@ -104,17 +104,19 @@ function headline(m: ServiceModel, x: ViewContext) {
   const w = worstWindow(m)
   if (!w) return { t: '', hot: false }
   // 짧게: 언제 무엇이 일어나는지를 앞에
-  if (paceWarning(w)) return { t: `${fmtDuration(w.toEmptyMs)} 후 ${w.label} 한도 소진 예상`, hot: true }
+  // '예상 시간'을 끄면 속도로 짐작한 문구(소진 예상)는 빼고 남은 양만 말한다.
+  const pace = x.showPace
+  if (pace && paceWarning(w)) return { t: `${fmtDuration(w.toEmptyMs)} 후 ${w.label} 한도 소진 예상`, hot: true }
   if (w.left <= x.warn) return { t: `${w.label} 여유 ${w.left}%`, hot: true }
   const unused = unusedWeekly(m)
   if (unused) return { t: `${fmtDuration(unused.resetMs)} 후 주간 여유 ${unused.left}% 초기화`, hot: false }
-  if (w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 ${w.label} 한도 소진 예상`, hot: false }
+  if (pace && w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 ${w.label} 한도 소진 예상`, hot: false }
   return { t: windowsOf(m).length > 1 ? '두 한도 모두 여유' : '여유', hot: false }
 }
-function noteOf(w: QuotaWindow) {
+function noteOf(w: QuotaWindow, x: ViewContext) {
   if (w.used === 0) return { t: '아직 쓰지 않음', hot: false }
-  if (w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 소진(예상)`, hot: paceWarning(w) }
-  if (w.pace !== null && w.pace > 1.15) return { t: '시간보다 빠르게 쓰는 중', hot: false }
+  if (x.showPace && w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 소진(예상)`, hot: paceWarning(w) }
+  if (x.showPace && w.pace !== null && w.pace > 1.15) return { t: '시간보다 빠르게 쓰는 중', hot: false }
   return { t: w.elapsed === null ? '리셋 시각 정보 없음' : '여유', hot: false }
 }
 
@@ -145,12 +147,13 @@ function rich(m: ServiceModel, x: ViewContext, b: { w: number; h: number }) {
   const big = (size: number) => num(x, main, size)
   // 줄이 실제로 쓰는 폭: 큰 숫자가 왼쪽에 있는 넓은 카드는 오른쪽 절반쯤만 쓴다.
   const rowW = ['l', 'lw', 'ml'].includes(t) ? b.w * .55 : b.w
-  const resetText = (w: QuotaWindow) => w.resetMs === null ? '' : rowW >= 260 ? `리셋 ${fmtDuration(w.resetMs)} 뒤` : rowW >= 150 ? fmtDurationShort(w.resetMs) : ''
+  // '보여 줄 정보 → 리셋 시간'을 끄면 종합 카드에서도 리셋 문구를 뺀다
+  const resetText = (w: QuotaWindow) => w.resetMs === null || !x.showReset ? '' : rowW >= 260 ? `리셋 ${fmtDuration(w.resetMs)} 뒤` : rowW >= 150 ? fmtDurationShort(w.resetMs) : ''
   const row = (w: QuotaWindow, withNote: boolean) => {
-    const n = noteOf(w), wide = rowW >= 240
+    const n = noteOf(w, x), wide = rowW >= 240
     // 넓으면: 윗줄 = 이름·속도 칩·숫자, 막대 아래 줄 = 메모(왼쪽)·리셋까지 남은 시간과 시각(오른쪽)
-    if (wide && withNote) return `<div class="row"><div class="row-top wide"><span class="lbl">${esc(fullLabel(m, w))}</span>${paceChip(w)}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span></div>${bar(x, m, w)}<div class="row-sub"><span class="row-note ${n.hot ? 'hot' : ''}" data-tip="${n.t}">${n.t}</span>${w.resetMs === null ? '' : `<span class="cap row-reset">리셋 : ${fmtDurationShort(w.resetMs)} 뒤 · ${resetClock(w.resetMs)}</span>`}</div></div>`
-    return `<div class="row"><div class="row-top"><span class="lbl">${wide ? esc(fullLabel(m, w)) : esc(w.label)}</span>${wide ? paceChip(w) : ''}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span><span class="cap row-reset">${resetText(w)}</span></div>${bar(x, m, w)}${withNote ? `<div class="row-note ${n.hot ? 'hot' : ''}">${n.t}</div>` : ''}</div>`
+    if (wide && withNote) return `<div class="row"><div class="row-top wide"><span class="lbl">${esc(fullLabel(m, w))}</span>${x.showPace ? paceChip(w) : ''}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span></div>${bar(x, m, w)}<div class="row-sub"><span class="row-note ${n.hot ? 'hot' : ''}" data-tip="${n.t}">${n.t}</span>${w.resetMs === null || !x.showReset ? '' : `<span class="cap row-reset">리셋 : ${fmtDurationShort(w.resetMs)} 뒤 · ${resetClock(w.resetMs)}</span>`}</div></div>`
+    return `<div class="row"><div class="row-top"><span class="lbl">${wide ? esc(fullLabel(m, w)) : esc(w.label)}</span>${wide && x.showPace ? paceChip(w) : ''}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span><span class="cap row-reset">${resetText(w)}</span></div>${bar(x, m, w)}${withNote ? `<div class="row-note ${n.hot ? 'hot' : ''}">${n.t}</div>` : ''}</div>`
   }
   const inline = (w: QuotaWindow, reset: boolean) => `<div class="inline-row ${reset ? 'with-reset' : ''}"><span class="lbl">${w.label}</span>${bar(x, m, w)}<span class="row-val num" style="color:${valColor(x, w)}">${shown(x, w)}<span class="unit">%</span></span>${reset ? `<span class="cap">${w.resetMs === null ? '' : fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
   // 모델 전용 주간 한도(Fable 등)는 큰 카드에 줄을 더한다. 자리가 모자라면 덜 중요한 글부터 뺀다:
@@ -168,7 +171,7 @@ function rich(m: ServiceModel, x: ViewContext, b: { w: number; h: number }) {
   const rows = (p: { note: boolean; extra: QuotaWindow[] }) => [...ws, ...p.extra].map(w => row(w, p.note)).join('')
   const sum = (size: number, head: boolean, extra = '') => `<div class="rich-sum">${big(size)}<div class="lbl sub" ${extra}>${main.label} ${remainWord(x)}</div>${head && h.t ? `<div class="rich-head ${h.hot ? 'hot' : ''}">${esc(h.t)}</div>` : ''}</div>`
   const wrap = (cls: string, inner: string) => `<div style="--k:${k.toFixed(2)}" class="rich ${cls}">${inner}</div>`
-  if (t === 's') return wrap('t-s', `<div class="rows">${ws.map(w => inline(w, b.w >= 290)).join('')}</div>`)
+  if (t === 's') return wrap('t-s', `<div class="rows">${ws.map(w => inline(w, x.showReset && b.w >= 290)).join('')}</div>`)
   if (t === 'm') return wrap('t-m', `<div class="rows">${rows(plan(false, false))}</div>`)
   if (t === 'mw') return wrap('t-mw', `${sum(Math.max(30, Math.min(b.h * .5, 48)), false)}<div class="rows">${rows(plan(false, false))}</div>`)
   if (t === 'tall') {
@@ -290,7 +293,7 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
     // 아주 작으면 숫자 아래에 막대, 그만큼 높이가 없으면 막대 옆에 숫자.
     if (c.w < 110) return c.h >= 30 ? `<div class="c-under">${num(x, main, 14)}${bar1(x, m)}</div>` : `<div class="c-row nocap" style="flex:1;grid-template-columns:1fr auto">${bar1(x, m)}${num(x, main, 13)}</div>`
     // 두 줄 여부는 높이로만 정한다(폭으로 정하면 계정 표식이 붙은 카드만 한 줄이 되어 격자가 들쭉날쭉해진다).
-    const two = c.h >= 33, cap = c.w >= 120, reset = c.w >= 420
+    const two = c.h >= 33, cap = c.w >= 120, reset = x.showReset && c.w >= 420
     const r = (w: QuotaWindow, one = false) => `<div class="c-row ${cap ? '' : 'nocap'} ${reset ? 'reset' : ''}">${cap ? `<span class="cap">${c.w >= 260 ? w.label : w.short}</span>` : ''}${one ? bar1(x, m) : bar(x, m, w)}${smallVal(x, w)}${reset ? `<span class="cap">${fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
     return `<div class="c-rows">${two ? ws.map(w => r(w)).join('') : r(main, true)}</div>`
   },
@@ -317,7 +320,7 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
       return `<div class="c-vbars">${ws.map(lane).join('')}</div>`
     }
     if (c.w < 110) return c.h >= 30 ? `<div class="c-under">${num(x, main, 14)}${laneSVG(m, x, main, c.w, 8)}</div>` : `<div class="c-row nocap" style="flex:1;grid-template-columns:1fr auto">${laneSVG(m, x, main, Math.max(24, c.w - 40), Math.min(12, c.h - 6))}${num(x, main, 13)}</div>`
-    const two = c.h >= 33 && c.w >= 140, cap = c.w >= 140, reset = c.w >= 420, lh = two ? 10 : Math.max(6, Math.min(14, c.h - 10))
+    const two = c.h >= 33 && c.w >= 140, cap = c.w >= 140, reset = x.showReset && c.w >= 420, lh = two ? 10 : Math.max(6, Math.min(14, c.h - 10))
     const r = (w: QuotaWindow) => `<div class="c-row ${cap ? '' : 'nocap'} ${reset ? 'reset' : ''}">${cap ? `<span class="cap">${w.short}</span>` : ''}${laneSVG(m, x, w, 40, lh)}${smallVal(x, w)}${reset ? `<span class="cap">${fmtDurationShort(w.resetMs)}</span>` : ''}</div>`
     return `<div class="c-rows">${(two ? ws : [main]).map(r).join('')}</div>`
   },
@@ -337,12 +340,12 @@ const COMPACT: Record<DesignId, (m: ServiceModel, x: ViewContext, c: C, v: boole
   },
   rich(m, x, c, v) {
     const { main } = pickWindow(m, x.source(m.id)), w = worstWindow(m)
-    const status = w.runsOut ? { t: `${w.short} ${fmtDurationShort(w.toEmptyMs)} 뒤 소진`, hot: paceWarning(w) || w.left <= x.warn } : w.left <= x.warn ? { t: `${w.label} ${w.left}% 남음`, hot: true } : { t: windowsOf(m).length > 1 ? '두 한도 여유' : '여유', hot: false }
+    const status = x.showPace && w.runsOut ? { t: `${w.short} ${fmtDurationShort(w.toEmptyMs)} 뒤 소진`, hot: paceWarning(w) || w.left <= x.warn } : w.left <= x.warn ? { t: `${w.label} ${w.left}% 남음`, hot: true } : { t: windowsOf(m).length > 1 ? '두 한도 여유' : '여유', hot: false }
     if (v) return `<div class="c-num">${num(x, main, Math.max(22, Math.min(c.w * .4, c.h * .3, 44)))}<span class="cap" style="margin-top:4px">${main.label}</span></div>${c.h >= 110 ? `<span class="c-status ${status.hot ? 'hot' : ''}" style="white-space:normal;text-align:center">${status.t}</span>` : ''}`
     const size = Math.max(20, Math.min(c.h * .66, 38))
     // 종합의 정체성은 '큰 숫자 + 상태'. 넓으면 두 한도 막대를 덧붙인다.
     if (c.w >= 330 && c.h >= 34) {
-      const r = (ww: QuotaWindow) => `<div class="c-row ${c.w >= 460 ? 'reset' : ''}"><span class="cap">${ww.short}</span>${bar(x, m, ww)}${smallVal(x, ww)}${c.w >= 460 ? `<span class="cap">${fmtDurationShort(ww.resetMs)}</span>` : ''}</div>`
+      const r = (ww: QuotaWindow) => `<div class="c-row ${x.showReset && c.w >= 460 ? 'reset' : ''}"><span class="cap">${ww.short}</span>${bar(x, m, ww)}${smallVal(x, ww)}${x.showReset && c.w >= 460 ? `<span class="cap">${fmtDurationShort(ww.resetMs)}</span>` : ''}</div>`
       return `<div class="c-num">${c.h >= 46 ? `<span class="cap">${main.label}</span>` : ''}${num(x, main, size)}</div><span class="c-sep"></span><div class="c-rows">${windowsOf(m).map(r).join('')}</div>`
     }
     // 좁으면: 높이가 되면 숫자 아래 상태 문장, 아주 작으면 숫자 옆에 두 한도를 가는 막대로(숫자 디자인과 구분).
@@ -378,7 +381,7 @@ function offlineCard(u: AccountUsage, x: ViewContext, box: { w: number; h: numbe
 }
 
 function compactCard(u: AccountUsage, m: ServiceModel, design: DesignId, x: ViewContext, box: { w: number; h: number }, style: string) {
-  const sev = severity(m, x.warn, x.crit)
+  const sev = severity(m, x.warn, x.crit, x.showPace)
   // 높이는 넉넉한데 폭이 좁은 작은 카드: 위에 로고와 숫자, 아래에 그림을 카드 폭 전체로(길이가 정체성인 디자인).
   if (['bars', 'timeline', 'battery'].includes(design) && box.h >= 70 && box.w >= 140 && box.w < 220 && box.h <= box.w * 1.25) {
     const { main, other } = pickWindow(m, x.source(m.id)), W = box.w - 24
@@ -402,12 +405,12 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const m = serviceModel(u)
   // 경고 배경: 남은 양에 따라 노랑→빨강으로 은은하게(카드 테두리는 칠하지 않는다)
   if (x.heatOn && m.available) {
-    const heat = heatOf(lowestLeft(m), x.warn, x.crit, windowsOf(m).some(paceWarning))
+    const heat = heatOf(lowestLeft(m), x.warn, x.crit, x.showPace && windowsOf(m).some(paceWarning))
     if (heat > 0) style = `--heat:${heat.toFixed(3)};${style}`
   }
   if (!m.available || !windowsOf(m).length) return offlineCard(u, x, box, style)
   if (formOf(design, box.w, box.h) === 'compact') return compactCard(u, m, design, x, box, style)
-  const sev = severity(m, x.warn, x.crit), lo = Math.min(...windowsOf(m).map(w => w.left))
+  const sev = severity(m, x.warn, x.crit, x.showPace), lo = Math.min(...windowsOf(m).map(w => w.left))
   const { bw, bh } = cardBody(box.w, box.h), narrow = box.w < 210
   const flag = !sev ? '' : `<span class="flag" data-tip="${lo <= x.warn ? `가장 빠듯한 한도의 여유가 ${lo}%예요` : '이 속도면 리셋 전에 소진될 수 있어요'}"><i></i>${narrow ? (lo <= x.warn ? lo + '%' : '!') : lo <= x.warn ? `여유 ${lo}%` : '속도 주의'}</span>`
   const tier = design === 'rich' ? richTier(bw, bh) : ''

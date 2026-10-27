@@ -22,7 +22,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
   const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
   const x = viewContext(state.config, state.history)
   const width = Math.max(240, (container.clientWidth || 380) - 22)
-  const warnN = list.filter(u => severity(serviceModel(u), x.warn, x.crit)).length
+  const warnN = list.filter(u => severity(serviceModel(u), x.warn, x.crit, x.per ? x.per(u.id).showPace : x.showPace)).length
   const updated = state.lastRefreshedAt ? new Date(state.lastRefreshedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''
   const loading = state.isRefreshing || state.usages.some(u => u.status === 'loading')
   // 집중 모드면 카드 하나가 팝업 높이를 다 쓴다(제목줄은 자동 숨김이라 그 자리까지).
