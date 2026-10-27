@@ -60,6 +60,21 @@ function setFocus(id: string | null) {
   focusId = next
   broadcastState()
   if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds()
+  else if (!next) growToFitCards()
+}
+
+/** 집중 모드를 풀었을 때 창이 카드 n장의 최소 높이보다 낮으면 그 높이까지 늘린다(왼쪽 위는 그대로, 화면 안으로). */
+function growToFitCards() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  const st = getAppState(), cards = Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length)
+  const gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6)), b = widgetWindow.getBounds()
+  const minH = minWindowHeight(b.width, cards, gap)
+  if (b.height >= minH) return
+  const area = screen.getDisplayMatching(b).workArea
+  const next = fitWindow({ ...b, height: Math.min(minH, area.height) }, area)
+  widgetWindow.setBounds(next)
+  accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: next })
+  rememberLayout()
 }
 let history: UsageHistory | null = null
 let shortcutErrors: string[] = []
