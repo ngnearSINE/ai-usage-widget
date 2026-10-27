@@ -108,7 +108,7 @@ npm run release         # 배포본 만들기(아래 참고)
 
 ### 새 버전 배포 (`npm run publish`)
 
-1. `master`에 변경을 커밋한 뒤 `npm run publish`를 실행합니다. 버전 마지막 자리를 1 올려 커밋하고 `v1.2.3` 태그를 붙여 올립니다.
+1. `main`에 변경을 커밋한 뒤 `npm run publish`를 실행합니다. 버전 마지막 자리를 1 올려 커밋하고 `v1.2.3` 태그를 붙여 올립니다.
 2. 태그가 올라가면 GitHub Actions(`.github/workflows/release.yml`)가 Windows에서 빌드·테스트하고, 설치 파일·zip·업데이트 정보(`latest.yml`)를 [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases)에 올립니다. PC를 켜 둘 필요가 없습니다.
 3. 설치해 쓰는 앱은 6시간마다(시작 30초 뒤 한 번) 새 버전을 확인합니다.
 
