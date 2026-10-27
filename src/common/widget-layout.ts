@@ -54,6 +54,15 @@ export function moveAccountBefore(accounts: AccountConfig[], id: string, beforeI
   return next
 }
 
+/**
+ * 카드에 보여 줄 값: 이번에 받은 값이 있으면 그것, 아직 조회 전이면 기억해 둔 마지막 값을 '확인 중'으로,
+ * 둘 다 없으면 처음 상태. 한 번이라도 값을 받은 계정은 everConnected(끊겨도 숨기지 않음).
+ */
+export function displayUsage(current: AccountUsage | undefined, last: AccountUsage | undefined, initial: AccountUsage): AccountUsage {
+  const usage = current || (last ? { ...last, status: 'stale' as const, pending: true } : initial)
+  return last ? { ...usage, everConnected: true } : usage
+}
+
 export function retainedUsage(current: AccountUsage, previous?: AccountUsage): AccountUsage {
   if ((current.status === 'error' || current.status === 'unauthenticated') && previous && ['ready', 'stale'].includes(previous.status)) {
     return { ...previous, status: 'stale', errorMessage: current.errorMessage }

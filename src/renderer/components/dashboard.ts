@@ -6,7 +6,7 @@ import { displayOf } from '../../common/display-options.js'
 import { visibleUsages } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
-import { renderCard, viewContext, isOutOfDate } from './usage-views.js'
+import { renderCard, viewContext, isOutOfDate, PENDING_TIP } from './usage-views.js'
 import { updateMarkup } from '../dom-update.js'
 
 const paths: Record<string, string> = {
@@ -103,7 +103,7 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   }).join('')}</div></div>`
 }
 export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {
-  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText(isOutOfDate(u) ? `${u.name}\n${staleTip(u, Date.now(), u.status === 'stale')}` : u.name)}">${isOutOfDate(u) ? '<span class="stale-mark dock" aria-hidden="true">!</span>' : ''}${miniSummary(u, config)}</div>`
+  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText(u.pending ? `${u.name}\n${PENDING_TIP}` : isOutOfDate(u) ? `${u.name}\n${staleTip(u, Date.now(), u.status === 'stale')}` : u.name)}">${u.pending ? '<span class="stale-mark dock pending" aria-hidden="true"><i></i><i></i><i></i></span>' : isOutOfDate(u) ? '<span class="stale-mark dock" aria-hidden="true">!</span>' : ''}${miniSummary(u, config)}</div>`
 }
 
 /** 트레이·다른 창에서 '디자인 설정'을 열 때. 설정은 별도 설정 창에서 한다. */

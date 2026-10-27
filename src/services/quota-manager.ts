@@ -8,7 +8,7 @@ import { ClaudeOrgs, cliTokenExpired } from './claude-orgs.js'
 import { refreshCliTokenIfExpired } from './claude-cli-refresh.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
-import { retainedUsage } from '../common/widget-layout.js'
+import { displayUsage, retainedUsage } from '../common/widget-layout.js'
 
 export class QuotaManager {
   private usages: Map<string, AccountUsage> = new Map()
@@ -18,6 +18,8 @@ export class QuotaManager {
   private timer: NodeJS.Timeout | null = null
   private isRefreshing: boolean = false
   private onStateChangeListeners: Array<(usages: AccountUsage[]) => void> = []
+  // 서비스 하나를 받을 때마다 부르는 가벼운 알림(화면만 바로 갱신). 기록·알림은 전체 조회가 끝난 뒤 한 번.
+  private onProgressListeners: Array<() => void> = []
 
   constructor(private accountStore: AccountStore, private readonly lastGoodFile?: string) {
     if (!lastGoodFile) return
@@ -46,6 +48,14 @@ export class QuotaManager {
     this.onStateChangeListeners.push(listener)
   }
 
+  public addProgressListener(listener: () => void) {
+    this.onProgressListeners.push(listener)
+  }
+
+  private progress() {
+    for (const listener of this.onProgressListeners) { try { listener() } catch (err) { console.error('[QuotaManager] Progress listener error', err) } }
+  }
+
   private notify() {
     const list = this.getUsages()
     for (const listener of this.onStateChangeListeners) {
@@ -62,9 +72,8 @@ export class QuotaManager {
     const result: AccountUsage[] = []
 
     for (const acc of accounts) {
-      // 아직 조회 전이면 기억해 둔 마지막 값부터 보여 준다(켜자마자 카드가 비거나 숨지 않게).
-      const usage = this.usages.get(acc.id) || this.lastGood.get(acc.id) || this.createInitialUsage(acc)
-      result.push(this.lastGood.has(acc.id) ? { ...usage, everConnected: true } : usage)
+      // 아직 조회 전이면 기억해 둔 마지막 값부터 '확인 중'으로 보여 준다(켜자마자 카드가 비거나 숨지 않게).
+      result.push(displayUsage(this.usages.get(acc.id), this.lastGood.get(acc.id), this.createInitialUsage(acc)))
     }
     return result
   }
@@ -188,13 +197,16 @@ export class QuotaManager {
             }
 
             usage = retainedUsage(usage, this.lastGood.get(acc.id))
+            if (usage.pending) usage = { ...usage, pending: false }
             if (usage.status === 'ready' || usage.status === 'stale') this.lastGood.set(acc.id, usage)
             this.usages.set(acc.id, usage)
+            this.progress() // 받는 대로 바로 보여 준다
           } catch (err) {
             console.error(`[QuotaManager] Error fetching usage for ${acc.name}:`, err)
             const fallback = retainedUsage({ ...(this.usages.get(acc.id) || this.createInitialUsage(acc)),
               status: 'error', errorMessage: err instanceof Error ? err.message : String(err) }, this.lastGood.get(acc.id))
-            this.usages.set(acc.id, fallback)
+            this.usages.set(acc.id, { ...fallback, pending: false })
+            this.progress()
           }
         })
       )

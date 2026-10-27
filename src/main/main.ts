@@ -1681,6 +1681,7 @@ app.whenReady().then(() => {
     widgetWindow.show()
     void updateWidgetBounds()
   })
+  quotaManager.addProgressListener(() => broadcastState())
   quotaManager.addListener((usages) => {
     broadcastState()
     void pushUsage(usages, accountStore.getConfig())

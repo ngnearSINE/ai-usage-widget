@@ -79,7 +79,7 @@ export function tipOther(w: QuotaWindow, x: ViewContext) {
 const hhmm = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '' }
 function cardTip(u: AccountUsage, m: ServiceModel, x: ViewContext) {
   const h = headline(m, x)
-  return esc([...(u.status === 'stale' ? [staleTip(u), ''] : []), u.name, u.tier || '', ...[...windowsOf(m), ...m.scoped].map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
+  return esc([...(u.pending ? [PENDING_TIP, ''] : u.status === 'stale' ? [staleTip(u), ''] : []), u.name, u.tier || '', ...[...windowsOf(m), ...m.scoped].map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
     h.t, `${u.status === 'stale' ? '마지막으로 받은 시각' : '확인'} ${hhmm(u.updatedAt)}`].filter((v, i, a) => v !== '' || (i > 0 && a[i - 1] !== '')).join('\n'))
 }
 
@@ -368,8 +368,11 @@ export function accountTag(name: string) {
 }
 /** 새 값을 받지 못하는 중인 카드: 마지막 값을 보여 주는 중이거나, 연결됐던 계정이 지금 끊겼다. */
 export const isOutOfDate = (u: AccountUsage) => u.status === 'stale' || (!!u.everConnected && (u.status === 'error' || u.status === 'unauthenticated'))
-const staleMark = (u: AccountUsage) => isOutOfDate(u)
-  ? `<span class="stale-mark" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}" aria-label="새 값을 받지 못하는 중">!</span>` : ''
+/** 앱을 막 켜서 마지막 값을 먼저 보여 주며 새 값을 확인하는 중일 때의 안내. */
+export const PENDING_TIP = '새 값을 확인하는 중이에요.\n먼저 마지막으로 받은 값을 보여 드리고, 새 값이 오는 대로 바꿔요.'
+const staleMark = (u: AccountUsage) => u.pending
+  ? `<span class="stale-mark pending" data-tip="${esc(PENDING_TIP)}" aria-label="확인 중"><i></i><i></i><i></i></span>`
+  : isOutOfDate(u) ? `<span class="stale-mark" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}" aria-label="새 값을 받지 못하는 중">!</span>` : ''
 const logo = (u: AccountUsage, x: ViewContext, tagged = true) => {
   const tag = tagged ? accountTag(u.name) : ''
   return `<span class="logo ${tag ? 'tagged' : ''}">${renderAiIcon(u.provider, u.name, x.iconStyle, 18)}${tag ? `<i class="logo-tag">${esc(tag)}</i>` : ''}${staleMark(u)}</span>`
@@ -429,6 +432,6 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
   return `<div ${cardAttrs(u, sev, '', style)} data-tip="${cardTip(u, m, x)}">
-    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && !isOutOfDate(u) && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${isOutOfDate(u) && box.w >= 240 ? `<span class="stale-chip" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}">갱신 안 됨</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && !isOutOfDate(u) && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${u.pending && box.w >= 240 ? `<span class="stale-chip pending" data-tip="${esc(PENDING_TIP)}">확인 중</span>` : isOutOfDate(u) && box.w >= 240 ? `<span class="stale-chip" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}">갱신 안 됨</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

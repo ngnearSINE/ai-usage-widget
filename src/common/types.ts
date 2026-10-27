@@ -21,6 +21,7 @@ export interface ModelQuotaDetail {
 
 export interface AccountUsage {
   everConnected?: boolean // 한 번이라도 값을 받은 적 있는 계정(연결이 끊겨도 숨기지 않음)
+  pending?: boolean // 앱을 막 켜서 마지막 값을 먼저 보여 주며 새 값을 확인하는 중
   id: string
   name: string
   provider: ProviderType
