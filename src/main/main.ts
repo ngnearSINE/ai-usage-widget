@@ -20,7 +20,7 @@ import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.j
 import { Updater } from './updater.js'
 import { setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
 import { findApp, findCli, openApp, openCli, warmLaunchers } from './service-launch.js'
-import { previewUsages } from '../common/preview-data.js'
+import { previewSpread, previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
 import { UsageHistory } from './history-store.js'
@@ -136,7 +136,7 @@ let guideKnown: boolean | undefined
 
 function getAppState(): AppState {
   const accounts = accountStore.getAccounts()
-  const raw = isPreview ? previewUsages().filter(u => accounts.some(a => a.id === u.id && a.enabled)) : quotaManager.getUsages()
+  const raw = isPreview ? previewUsages(Date.now(), previewSpread()).filter(u => accounts.some(a => a.id === u.id && a.enabled)) : quotaManager.getUsages()
   // 모델 전용 한도(Fable 등)를 숨긴 계정은 그 값을 빼고, 설정 화면이 스위치를 보이도록 이름만 남긴다.
   const usages = raw.map(u => {
     const acc = accounts.find(a => a.id === u.id), bar = ownColor(acc?.barColor)
@@ -369,6 +369,30 @@ function applyZoom() {
   const set = (w: { isDestroyed(): boolean; webContents: Electron.WebContents } | null | undefined, f: number) => { if (w && !w.isDestroyed() && Math.abs(w.webContents.getZoomFactor() - f) > .001) w.webContents.setZoomFactor(f) }
   set(widgetWindow, docked ? 1 : z); set(popupWindow, z); set(settingsWindow, z); set(aboutWindow, z)
 }
+/** 스케일이 바뀐 비율만큼 창 크기를 바꾼다(왼쪽 위는 그대로, 화면 안으로). 작업 표시줄에 붙은 위젯은 빼고. */
+function rescaleWindows(ratio: number) {
+  const docked = accountStore.getConfig().placementMode === 'docked'
+  const resize = (w: SurfaceWindow | null, save?: (b: Electron.Rectangle) => void) => {
+    if (!w || w.isDestroyed()) return
+    const b = w.getBounds(), area = screen.getDisplayMatching(b).workArea
+    const next = fitWindow({ x: b.x, y: b.y, width: Math.min(area.width, Math.round(b.width * ratio)), height: Math.min(area.height, Math.round(b.height * ratio)) }, area)
+    w.setBounds(next)
+    save?.(next)
+  }
+  if (!docked) resize(widgetWindow, b => { accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: b }); rememberLayout() })
+  else { const wb = accountStore.getConfig().windowBounds; if (wb) accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: { ...wb, width: Math.round(wb.width * ratio), height: Math.round(wb.height * ratio) } }) }
+  const pb = accountStore.getConfig().popupBounds
+  if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) resize(popupWindow, b => savePopupBounds(b))
+  else if (pb) accountStore.saveConfig({ ...accountStore.getConfig(), popupBounds: { ...pb, width: Math.round(pb.width * ratio), height: Math.round(pb.height * ratio) } })
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    // 최소 크기도 스케일을 따라야 줄였을 때 배치가 깨지지 않는다
+    const area = screen.getDisplayMatching(settingsWindow.getBounds()).workArea
+    settingsWindow.setMinimumSize(Math.min(area.width - 40, Math.round(760 * uiZoom())), Math.min(area.height - 40, Math.round(520 * uiZoom())))
+  }
+  resize(settingsWindow); resize(aboutWindow)
+  broadcastState() // 설정 미리보기가 바뀐 위젯 크기를 따라가게
+}
+
 /** 창이 페이지를 다시 읽으면 확대 비율이 처음으로 돌아가므로 그때마다 다시 맞춘다. */
 function keepZoom(w: { webContents: Electron.WebContents }) { w.webContents.on('did-finish-load', () => applyZoom()) }
 
@@ -389,7 +413,7 @@ function openAboutWindow() {
   if (aboutWindow && !aboutWindow.isDestroyed()) { if (aboutWindow.isMinimized()) aboutWindow.restore(); aboutWindow.show(); aboutWindow.focus(); return }
   hidePopup(true)
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
-  const area = screen.getDisplayMatching(anchor).workArea, width = 460, height = Math.min(680, area.height - 40)
+  const area = screen.getDisplayMatching(anchor).workArea, width = Math.min(area.width - 40, Math.round(460 * uiZoom())), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = aboutWindow = new SurfaceWindow({
     x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
     show: false, title: 'AI 사용량 정보', resizable: false, maximizable: false, minimizable: false, autoHideMenuBar: true,
@@ -415,10 +439,10 @@ function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Recta
   hidePopup(true)
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
   const area = screen.getDisplayMatching(anchor).workArea
-  const width = Math.min(1000, area.width - 40), height = Math.min(680, area.height - 40)
+  const width = Math.min(Math.round(1000 * uiZoom()), area.width - 40), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = settingsWindow = new SurfaceWindow({
     ...(bounds || { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height }),
-    minWidth: 760, minHeight: 520, show: false, title: 'AI 사용량 설정', resizable: true, maximizable: true, autoHideMenuBar: true,
+    minWidth: Math.min(area.width - 40, Math.round(760 * uiZoom())), minHeight: Math.min(area.height - 40, Math.round(520 * uiZoom())), show: false, title: 'AI 사용량 설정', resizable: true, maximizable: true, autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
   }, currentSurfaceKind())
   keepZoom(win)
@@ -1019,14 +1043,14 @@ async function positionPopupWindow() {
     popupPlacing = false
     return
   }
-  const popupPos = calculatePopupPosition(widgetX, widgetW, POPUP_WIDTH, POPUP_HEIGHT, widgetY)
+  const popupPos = calculatePopupPosition(widgetX, widgetW, Math.round(POPUP_WIDTH * uiZoom()), Math.round(POPUP_HEIGHT * uiZoom()), widgetY)
 
   popupPlacing = true
   popupWindow.setBounds({
     x: popupPos.x,
     y: popupPos.y,
-    width: POPUP_WIDTH,
-    height: POPUP_HEIGHT
+    width: Math.round(POPUP_WIDTH * uiZoom()),
+    height: Math.round(POPUP_HEIGHT * uiZoom())
   })
   popupPlacing = false
 }
@@ -1355,8 +1379,12 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.UPDATE_CONFIG, async (_event, rawPatch: unknown) => {
     const patch = sanitizeConfigPatch(rawPatch)
-    if (patch.fontScale !== undefined) setTimeout(applyZoom, 0)
     const prevConfig = accountStore.getConfig()
+    // 스케일을 바꾸면 창 크기도 같은 비율로 바꿔 창 안의 배치가 그대로인 채 균일하게 커지고 작아지게 한다.
+    if (patch.fontScale !== undefined) {
+      const ratio = patch.fontScale / (prevConfig.fontScale || 100)
+      setTimeout(() => { if (Math.abs(ratio - 1) > .001) rescaleWindows(ratio); applyZoom() }, 0)
+    }
     // 배치 전환은 네이티브 부모 창 변경과 함께 수행한다. 일반 디자인 변경은 창 위치를 건드리지 않는다.
     const requestedMode = patch.placementMode
     const nextConfig: WidgetConfig = { ...prevConfig, ...patch, placementMode: prevConfig.placementMode }
@@ -1730,7 +1758,7 @@ app.whenReady().then(() => {
   quotaManager = new QuotaManager(accountStore, isPreview ? undefined : path.join(app.getPath('userData'), 'last-usage.json'))
 
   // 미리보기는 합성 기록으로 그래프를 보여 주고 파일에 쓰지 않는다.
-  history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages()) : undefined)
+  history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages(Date.now(), previewSpread())) : undefined)
   const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   const appIcon = [path.join(__dirname, '../public', iconFile), path.join(app.getAppPath(), 'public', iconFile), path.join(process.resourcesPath, 'public', iconFile)].find(p => fs.existsSync(p))
   // 알림을 누르면 위젯을 다시 보여 준다(숨겨 둔 경우 포함).

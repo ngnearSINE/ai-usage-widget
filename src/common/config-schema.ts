@@ -28,6 +28,8 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   notifyPace: bool, notifyReset: bool, notifyUnused: bool, trayShowNumber: bool, clickThrough: bool, rememberPerMonitor: bool,
   placementMode: oneOf('docked', 'floating'),
   colorMode: oneOf('step', 'smooth'),
+  barStops: v => Array.isArray(v) && v.length >= 2 && v.length <= 8 && v.every(x => x && typeof x.at === 'number' && Number.isFinite(x.at) && typeof x.color === 'string' && /^(brand|warn|danger|#[0-9a-f]{6})$/i.test(x.color))
+    ? v.map(x => ({ at: Math.max(0, Math.min(100, Math.round(x.at))), color: String(x.color) })) : v === null ? undefined : SKIP,
   autoUpdate: bool,
   updateHour: num(0, 23),
   warnTint: bool,

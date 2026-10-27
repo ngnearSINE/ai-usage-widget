@@ -704,7 +704,7 @@ body.is-popup-view #app { height:100vh; }
 :root[data-appearance="light"] { --heat-light:.85; }
 .ucard[style*="--heat:"]::before {
   content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
-  --heat-c:color-mix(in oklab, var(--danger) calc(var(--heat) * 100%), var(--warn));
+  --heat-c:var(--heat-color, color-mix(in oklab, var(--danger) calc(var(--heat) * 100%), var(--warn)));
   --heat-k:color-mix(in srgb, var(--heat-c) min(100%, calc((.3 + var(--heat) * .7) * var(--heat-max) * var(--heat-light) * 100%)), transparent);
   /* 퍼짐: 기본 30이면 예전처럼 진한 곳에 모이고, 올릴수록 진한 곳이 넓어지며 카드 전체에 옅은 바탕(--heat-soft)이 깔린다.
      --heat-reach·--heat-inner·--heat-soft-pct는 applyAppearance가 정한다. */
@@ -904,3 +904,26 @@ body.is-popup-view #app { height:100vh; }
 .dashboard .text-btn { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted); padding:5px 8px; border-radius:6px; }
 .dashboard .text-btn svg { width:13px; height:13px; }
 .dashboard .text-btn.danger:hover { color:var(--danger); background:color-mix(in srgb,var(--danger) 10%,transparent); }
+
+/* 사용량에 따른 막대 색: 색 점 편집기(PPT 그라데이션처럼) */
+.g-editor { margin-top:12px; }
+.g-track { position:relative; height:26px; margin:0 8px; cursor:copy; touch-action:none; }
+.g-bar { position:absolute; left:0; right:0; top:8px; height:10px; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.12); }
+.g-track .g-stop { position:absolute; top:3px; width:14px; height:20px; margin-left:-7px; padding:0; border-radius:4px; border:2px solid var(--panel, #222); background:var(--c); box-shadow:0 0 0 1px rgba(255,255,255,.45), 0 1px 4px rgba(0,0,0,.35); cursor:ew-resize; touch-action:none; }
+.g-track .g-stop[aria-pressed="true"] { box-shadow:0 0 0 2px var(--ink, #fff), 0 1px 6px rgba(0,0,0,.4); z-index:1; }
+.g-scale { display:flex; justify-content:space-between; margin:4px 2px 0; font-size:10px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.g-sel { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-top:10px; }
+.g-at { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+.g-at input { width:52px; padding:4px 6px; border-radius:6px; border:1px solid var(--line, rgba(255,255,255,.14)); background:transparent; color:var(--ink); font:inherit; font-variant-numeric:tabular-nums; }
+.g-at b { font-weight:500; }
+.g-colors { display:flex; flex-wrap:wrap; gap:6px; order:3; flex-basis:100%; }
+.g-sel [data-gs-del] { margin-left:auto; }
+.g-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:999px; border:1px solid var(--line, rgba(255,255,255,.14)); background:transparent; color:var(--muted); font-size:11.5px; cursor:pointer; }
+.g-chip i { width:10px; height:10px; border-radius:50%; background:var(--c); flex:none; }
+.g-chip[aria-pressed="true"], .g-chip.on { color:var(--ink); border-color:var(--accent); background:color-mix(in oklab, var(--accent) 14%, transparent); }
+.g-custom { position:relative; }
+.g-custom input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+
+/* 구역 제목 오른쪽에 바로 붙은 켜기·끄기 */
+.section-switch { position:relative; cursor:pointer; }
+.section-switch .switch { top:50%; transform:translateY(-50%); }

@@ -1,14 +1,14 @@
 import type { AccountConfig, AppState, WidgetConfig, HeatSide } from '../../common/types.js'
 import { visibleUsages, DEFAULT_WINDOW_SIZE } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
-import { previewUsages } from '../../common/preview-data.js'
+import { previewSpread, previewUsages } from '../../common/preview-data.js'
 import { downsample, previewHistory } from '../../common/history.js'
 import type { HistoryPoint } from '../../common/types.js'
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext } from './usage-views.js'
 import { applyAppearance, escapeText, icon, updateHourSelect, heatPlacement } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
-import { SMOOTH_START } from '../../common/bar-color.js'
+import { DEFAULT_BAR_STOPS, normalizeStops, stopColor, type BarStop } from '../../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, displaySummary, setDisplay, setDisplayAll, type DisplayKey } from '../../common/display-options.js'
 
 /**
@@ -37,6 +37,7 @@ let previewFrame = 0
 let toastTimer: ReturnType<typeof setTimeout>
 let pendingState: AppState | null = null // 입력 중에 온 상태(입력을 마치면 그린다)
 let expanded = '' // 서비스 탭에서 펼친 계정
+let gsel = 1 // 막대 색 그라데이션에서 고른 색 점(위치 순 번호)
 const openAdvanced = new Set<string>() // 펼쳐 둔 '고급' 접기
 let detected: DetectedApp[] | null = null
 let detecting = false
@@ -114,7 +115,7 @@ export function renderSettings(next: AppState, force = false) {
 
 /* ---------- 미리보기 ---------- */
 let sampleHist: ReturnType<typeof previewHistory> | null = null
-const sampleHistory = () => (sampleHist ||= previewHistory(previewUsages()))
+const sampleHistory = () => (sampleHist ||= previewHistory(previewUsages(Date.now(), previewSpread())))
 function usePreviewSample() {
   if (sample !== 'auto') return sample === 'sample'
   return state.preview || !visibleUsages(state.usages, state.accounts, state.config).length
@@ -130,7 +131,7 @@ function renderPreview() {
   const cfg = config(), [W0, H0] = previewSize()
   // 스케일: 위젯은 창 크기(W0×H0) 안에 1/스케일만큼의 CSS 픽셀로 그려진다. 설정 창도 같은 스케일이라 그대로 맞추면 실제 모습과 같다.
   const zoom = number(cfg.fontScale, 80, 150, 100) / 100, W = Math.round(W0 / zoom), H = Math.round(H0 / zoom)
-  const usages = usePreviewSample() ? previewUsages() : state.usages
+  const usages = usePreviewSample() ? previewUsages(Date.now(), previewSpread()) : state.usages
   const accounts = usePreviewSample() ? usages.map(u => ({ id: u.id, name: u.name, provider: u.provider, enabled: true })) : state.accounts
   let list = visibleUsages(usages, accounts, cfg)
   if (cfg.sortLowFirst) list = [...list].sort((a, b) => lowestLeft(serviceModel(a)) - lowestLeft(serviceModel(b)))
@@ -191,13 +192,29 @@ function previewClock() {
   return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-/** 연속 변화 미리보기 띠: 남은 양 100%(왼쪽) → 0%(오른쪽). */
-function colorScale(c: WidgetConfig, warn: number) {
-  if (c.colorMode === 'step' || c.colorByUsage === false) return hint(`남은 양이 주의 ${warn}%·위험 ${Math.min(warn, c.critPercent ?? 10)}% 아래로 내려가는 순간 색이 바뀌어요.`)
-  const crit = Math.min(warn, c.critPercent ?? 10), top = Math.max(SMOOTH_START, warn + 1)
-  const stop = (left: number) => 100 - left
-  return `<div class="color-scale" aria-hidden="true" style="background:linear-gradient(90deg,var(--accent) 0%,var(--accent) ${stop(top)}%,var(--warn) ${stop(warn)}%,var(--danger) ${stop(crit)}%,var(--danger) 100%)"></div><div class="color-scale-labels">${[100, top, warn, crit, 0].filter((v, i, a) => a.indexOf(v) === i).filter((v, i, a) => i === 0 || v === 0 || a[i - 1] - v >= 8).map(v => `<span style="left:${stop(v)}%">${v}%</span>`).join('')}</div>`
-    + hint(`남은 양 ${top}%까지는 평소 색, 그 아래로 주의 ${warn}%까지 주황으로, 위험 ${crit}%까지 빨강으로 서서히 바뀌어요. 큰 숫자는 주의 기준 아래에서만 색이 바뀌어요.`)
+/* ---------- 사용량에 따른 막대 색: PPT 그라데이션처럼 색 점(위치·색)을 고른다 ---------- */
+const STOP_NAMES: Record<string, string> = { brand: '서비스 색', warn: '주황', danger: '빨강' }
+const sameStops = (a: BarStop[], b: BarStop[]) => a.length === b.length && a.every((s, i) => s.at === b[i].at && s.color === b[i].color)
+/** 편집기 띠의 배경: 왼쪽 = 남은 양 100%, 오른쪽 = 0%. 서비스 색은 강조색으로 대신 보여 준다. */
+const stopsGradient = (stops: BarStop[], step = false) => `linear-gradient(90deg,${stops.map((s, i) => {
+  const c = stopColor(s.color, 'var(--accent)'), p = 100 - s.at
+  // 한 번에: 색 점 위치에서 앞 색이 끝나고 이 색이 시작된다(경계가 딱 끊김).
+  return step && i > 0 ? `${stopColor(stops[i - 1].color, 'var(--accent)')} ${p}%,${c} ${p}%` : `${c} ${p}%`
+}).join(',')})`
+const isStep = (c: WidgetConfig) => c.colorMode === 'step'
+function gradientEditor(c: WidgetConfig) {
+  const stops = normalizeStops(c.barStops), sel = Math.min(gsel, stops.length - 1), cur = stops[sel]
+  const custom = /^#[\da-f]{6}$/i.test(cur.color) ? cur.color : ''
+  const handles = stops.map((s, i) => `<button class="g-stop" data-gs="${i}" aria-pressed="${i === sel}" style="left:${100 - s.at}%;--c:${stopColor(s.color, 'var(--accent)')}" title="남은 ${s.at}% · ${STOP_NAMES[s.color] || s.color}" aria-label="색 점 ${i + 1}: 남은 ${s.at}%, ${STOP_NAMES[s.color] || s.color}"></button>`).join('')
+  const chips = (['brand', 'warn', 'danger'] as const).map(k => `<button class="g-chip" data-gs-color="${k}" aria-pressed="${cur.color === k}" style="--c:${stopColor(k, 'var(--accent)')}"><i></i>${STOP_NAMES[k]}</button>`).join('')
+  return `<div class="g-editor" data-gedit>
+    <div class="g-track" data-gtrack title="띠를 누르면 그 자리에 색 점을 더해요"><div class="g-bar" style="background:${stopsGradient(stops, isStep(c))}"></div>${handles}</div>
+    <div class="g-scale"><span>남은 100%</span><span>50%</span><span>0%</span></div>
+    <div class="g-sel"><label class="g-at"><span>위치(남은 양)</span><input type="number" min="0" max="100" step="1" value="${cur.at}" data-gs-at aria-label="고른 색 점의 위치(남은 양 %)"><b>%</b></label>
+      <div class="g-colors" role="group" aria-label="고른 색 점의 색">${chips}<label class="g-chip g-custom ${custom ? 'on' : ''}" title="직접 고르기"><input type="color" value="${custom || '#8cbbff'}" data-gs-custom aria-label="색 직접 고르기"><i style="--c:${custom || 'conic-gradient(#f66,#fd6,#6d8,#6af,#c7f,#f66)'}"></i>직접</label></div>
+      <button class="icon-btn" data-gs-del ${stops.length <= 2 ? 'disabled' : ''} title="이 색 점 지우기" aria-label="이 색 점 지우기">${icon('trash')}</button></div>
+    <div class="heat-reset-row"><button class="ghost-button" data-gs-reset ${sameStops(stops, DEFAULT_BAR_STOPS) ? 'disabled' : ''} title="50%까지 서비스 색 · 20% 주황 · 10% 아래 빨강">${icon('refresh')}기본값으로</button></div>
+  </div>${hint('점을 끌어 옮기고, 빈 곳을 누르면 점이 늘어요(최대 8개). 막대와 % 숫자에 함께 쓰여요. 숫자의 서비스 색은 평소 글씨색이에요.')}`
 }
 const advanced = (id: string, inner: string, label = '고급') => `<details class="s-advanced" data-adv="${id}" ${openAdvanced.has(id) ? 'open' : ''}><summary>${icon('chev')}${label}</summary><div class="s-advanced-body">${inner}</div></details>`
 
@@ -220,16 +237,16 @@ function displayTab(c: WidgetConfig) {
   const src = new Set(Object.values(c.valueSource || {}))
   const common: ValueSource | '' = src.size === 1 ? [...src][0] as ValueSource : src.size === 0 ? 'weekly' : ''
   return section('큰 숫자', `<div class="segmented" role="group" aria-label="큰 숫자 기준">${(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => `<button data-source-all="${k}" aria-pressed="${common === k}">${SOURCE_LABEL[k]}</button>`).join('')}</div>${hint(`카드에 크게 보일 한도예요. 카드마다 다르게 하려면 카드의 기준 버튼(주간 ▾)을 누르세요.${common ? '' : ' 지금은 카드마다 다르게 설정되어 있어요.'}`)}`)
-    + section('여유가 적을 때', slider('warnPercent', '주의(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
-      + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
-      + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'step' ? 'step' : 'smooth', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
-      + toggle('warnTint', '경고 배경 색', '남은 양이 줄수록 카드 배경이 노랑에서 빨강으로 은은하게 바뀌어요. 테두리는 칠하지 않아요.', c.warnTint !== false)
+    + section('주의·위험 기준', slider('warnPercent', '주의(남은 양)', 5, 50, warn, '%') + slider('critPercent', '위험(남은 양)', 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
+      + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
+      + hint('큰 숫자 색·알림·속도 주의가 이 기준을 써요. 남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
+    + `<section class="editor-section"><label class="section-label section-switch">사용량에 따른 막대 색상 변경<input class="switch" type="checkbox" data-toggle="colorByUsage" ${c.colorByUsage !== false ? 'checked' : ''} aria-label="사용량에 따른 막대 색상 변경"><span class="switch-track" aria-hidden="true"></span></label>`
+      + `<div class="${c.colorByUsage === false ? 'is-disabled' : ''}"><div class="field"><span>바뀌는 방식</span>${segment('colorMode', isStep(c) ? 'step' : 'smooth', [['step', '한 번에 바뀌기'], ['smooth', '부드럽게 바뀌기']], '막대 색이 바뀌는 방식')}</div>${gradientEditor(c)}</div>`
+      + toggle('warnTint', '배경 칠하기', '같은 색 점으로 카드 배경도 은은하게 칠해요. 서비스 색 자리는 칠하지 않아요(투명).', c.warnTint !== false)
       + `<div class="${c.warnTint === false ? 'is-disabled' : ''}">${slider('warnTintStrength', '세기', 0, 100, c.warnTintStrength ?? 30, '%')}${slider('warnTintSpread', '퍼짐', 0, 100, c.warnTintSpread ?? 30, '%')}
         <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', heatPlacement(c).origin, [['edge', '테두리'], ['center', '가운데'], ['side', '한쪽']], '경고 배경이 진한 곳')}
         ${heatPlacement(c).origin === 'side' ? heatSidePicker(heatPlacement(c).side) : ''}</div>
-        <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div>`
-      + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
-      + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
+        <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div></section>`
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
       + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
@@ -342,7 +359,7 @@ function alertsTab(s: AppState) {
   return section('Windows 알림', toggle('notifyEnabled', '알림 받기', '아래 상황이 되면 Windows 알림으로 알려 줘요.', on)
       + `<button class="secondary-button" data-test-notify>${icon('bell')}테스트 알림 보내기</button>${hint('알림이 안 보이면 Windows 설정의 알림이나 방해 금지 모드를 확인하세요. 알림을 누르면 위젯이 나타나요.')}`)
     + `<div class="${on ? '' : 'is-disabled'}">`
-    + section('알릴 때', toggle('notifyLow', '여유가 적을 때', `남은 양이 주의 ${warn}%·위험 ${crit}%에 처음 닿을 때 한 번씩 (기준은 표시 탭에서 바꿔요)`, c.notifyLow !== false)
+    + section('알릴 때', toggle('notifyLow', '남은 양이 적을 때', `남은 양이 주의 ${warn}%·위험 ${crit}%에 처음 닿을 때 한 번씩 (기준은 표시 탭에서 바꿔요)`, c.notifyLow !== false)
       + toggle('notifyPace', '리셋 전에 바닥날 것 같을 때', '지금 속도가 이어지면 리셋보다 한참 먼저 소진될 때', c.notifyPace !== false)
       + toggle('notifyReset', '한도가 다시 채워졌을 때', '빠듯했던 한도가 리셋됐을 때', c.notifyReset === true)
       + toggle('notifyUnused', '주간 여유가 많이 남았을 때', '주간 리셋이 24시간 안인데 40% 넘게 남았을 때', c.notifyUnused !== false)
@@ -357,7 +374,7 @@ function alertsTab(s: AppState) {
 let histId = ''
 let histRange: 'day' | 'week' = 'day'
 function historyServices() {
-  const usages = usePreviewSample() ? previewUsages() : state.usages
+  const usages = usePreviewSample() ? previewUsages(Date.now(), previewSpread()) : state.usages
   return usages.filter(u => ['ready', 'stale'].includes(u.status))
 }
 function historyTab() {
@@ -456,6 +473,83 @@ async function update(patch: Partial<WidgetConfig>) {
   try { draft = null; const next = await window.api.updateConfig(patch); renderSettings(next, true) }
   catch { notify('설정을 저장하지 못했어요. 다시 시도해 주세요.') }
 }
+/** 색 점 편집기: 점 끌기·띠 누르기(추가)·위치·색·지우기·기본값. 끄는 동안은 미리보기만, 놓으면 저장. */
+function bindGradient(body: HTMLElement) {
+  const ed = body.querySelector<HTMLElement>('[data-gedit]'); if (!ed) return
+  const track = ed.querySelector<HTMLElement>('[data-gtrack]')!
+  const stops = () => normalizeStops(config().barStops)
+  const save = (list: BarStop[], keep?: BarStop) => {
+    const sorted = normalizeStops(list); if (keep) gsel = Math.max(0, sorted.findIndex(s => s.at === keep.at && s.color === keep.color))
+    void update({ barStops: sorted })
+  }
+  const edit = (fn: (s: BarStop) => void) => { const list = stops().map(s => ({ ...s })), s = list[Math.min(gsel, list.length - 1)]; fn(s); save(list, s) }
+  ed.querySelectorAll<HTMLElement>('[data-gs]').forEach(h => h.onpointerdown = e => {
+    e.preventDefault(); e.stopPropagation()
+    gsel = Number(h.dataset.gs)
+    const list = stops().map(s => ({ ...s })), s = list[gsel], at0 = s.at
+    // 처음 누른 곳 기준으로 화면 좌표 차이만 본다(창 크기·확대가 바뀌어도 튀지 않게).
+    const x0 = e.screenX, w = track.getBoundingClientRect().width * (number(config().fontScale, 80, 150, 100) / 100)
+    ed.querySelectorAll('[data-gs]').forEach(o => o.setAttribute('aria-pressed', String(o === h)))
+    h.setPointerCapture(e.pointerId)
+    let moved = false
+    h.onpointermove = m => {
+      const at = Math.max(0, Math.min(100, Math.round(at0 - (m.screenX - x0) / w * 100)))
+      if (at === s.at) return
+      moved = true; s.at = at
+      h.style.left = `${100 - at}%`
+      track.querySelector<HTMLElement>('.g-bar')!.style.background = stopsGradient(normalizeStops(list), isStep(config()))
+      const inp = ed.querySelector<HTMLInputElement>('[data-gs-at]'); if (inp) inp.value = String(at)
+      draft = { ...config(), barStops: list.map(x => ({ ...x })) }; renderPreview()
+    }
+    h.onpointerup = h.onpointercancel = () => { h.onpointermove = h.onpointerup = h.onpointercancel = null; if (moved) save(list, s); else renderSettings(state, true) }
+  })
+  track.onpointerdown = e => {
+    if ((e.target as HTMLElement).closest('[data-gs]')) return
+    const list = stops(); if (list.length >= 8) { notify('색 점은 8개까지예요.'); return }
+    const r = track.getBoundingClientRect(), at = Math.max(0, Math.min(100, Math.round(100 - (e.clientX - r.left) / r.width * 100)))
+    const near = list.reduce((a, b) => Math.abs(b.at - at) < Math.abs(a.at - at) ? b : a)
+    const s = { at, color: near.color }
+    save([...list, s], s)
+  }
+  const at = ed.querySelector<HTMLInputElement>('[data-gs-at]')
+  if (at) at.onchange = () => { const v = Number(at.value); if (Number.isFinite(v)) edit(s => { s.at = Math.max(0, Math.min(100, Math.round(v))) }) }
+  ed.querySelectorAll<HTMLElement>('[data-gs-color]').forEach(b => b.onclick = () => edit(s => { s.color = b.dataset.gsColor! }))
+  const custom = ed.querySelector<HTMLInputElement>('[data-gs-custom]')
+  if (custom) custom.onchange = () => edit(s => { s.color = custom.value.toLowerCase() })
+  const del = ed.querySelector<HTMLElement>('[data-gs-del]')
+  if (del) del.onclick = () => { const list = stops(); if (list.length <= 2) return; list.splice(Math.min(gsel, list.length - 1), 1); gsel = Math.max(0, gsel - 1); void update({ barStops: list }) }
+  const reset = ed.querySelector<HTMLElement>('[data-gs-reset]')
+  if (reset) reset.onclick = () => { gsel = 1; void update({ barStops: DEFAULT_BAR_STOPS.map(s => ({ ...s })) }); notify('막대 색을 기본값으로 되돌렸어요.') }
+}
+
+/**
+ * 스케일 슬라이더: 놓으면 설정 창도 함께 커지거나 작아지므로, 끄는 동안 값은 처음 누른 마우스 위치에서
+ * 움직인 화면 거리로만 정한다(창이 바뀌어 막대 위치가 달라져도 값이 튀지 않게).
+ */
+function bindScaleSlider(body: HTMLElement) {
+  const el = body.querySelector<HTMLInputElement>('[data-range="fontScale"]'); if (!el) return
+  el.onpointerdown = e => {
+    if (e.button !== 0) return
+    e.preventDefault(); el.focus()
+    const min = Number(el.min), max = Number(el.max), r = el.getBoundingClientRect(), zoom = number(config().fontScale, 80, 150, 100) / 100
+    const thumb = 16, span = Math.max(1, r.width - thumb)
+    // 누른 곳의 값에서 시작(막대를 누르면 그 자리로), 그 뒤로는 처음 누른 화면 위치와의 차이만 본다.
+    const v0 = min + Math.max(0, Math.min(1, (e.clientX - r.left - thumb / 2) / span)) * (max - min), x0 = e.screenX
+    const show = (v: number) => {
+      el.value = String(v); el.closest('label')!.querySelector('output')!.textContent = `${v}%`
+      draft = { ...config(), fontScale: v }; renderPreview()
+    }
+    show(Math.round(v0))
+    el.setPointerCapture(e.pointerId)
+    el.onpointermove = m => show(Math.round(Math.max(min, Math.min(max, v0 + (m.screenX - x0) / (span * zoom) * (max - min)))))
+    el.onpointerup = el.onpointercancel = () => {
+      el.onpointermove = el.onpointerup = el.onpointercancel = null
+      const v = Number(el.value)
+      if (v !== (state.config.fontScale || 100)) void update({ fontScale: v }); else { draft = null; renderSettings(state, true) }
+    }
+  }
+}
+
 async function detectApps() {
   detecting = true
   if (tab === 'services') renderSettings(state, true)
@@ -499,8 +593,11 @@ function bindEvents() {
     }
     el.onchange = () => { void update({ [el.dataset.range!]: Number(el.value) }) }
     // 같은 값에서 놓으면 change가 오지 않는다. 임시 값이 남으면 창이 새 상태를 따라가지 못하므로 정리한다.
+    if (el.dataset.range === 'fontScale') { el.onblur = null; return } // 스케일은 bindScaleSlider가 맡는다
     el.onpointerup = el.onblur = () => setTimeout(() => { if (draft && draft[el.dataset.range as keyof WidgetConfig] === state.config[el.dataset.range as keyof WidgetConfig]) { draft = null; renderSettings(state, true) } }, 0)
   })
+  bindGradient(body)
+  bindScaleSlider(body)
   const colorInput = body.querySelector<HTMLInputElement>('[data-color]')
   if (colorInput) colorInput.onchange = () => { void update({ accentColor: colorInput.value }) }
   body.querySelectorAll<HTMLElement>('[data-action="dock"]').forEach(el => el.onclick = () => { void update({ placementMode: 'docked' }) })

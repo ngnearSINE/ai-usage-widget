@@ -1,6 +1,6 @@
 import { staleTip } from '../../common/stale-notice.js'
 import type { AccountUsage, AppState, QuotaInfo, WidgetConfig, HeatSide } from '../../common/types.js'
-import { barColor } from '../../common/bar-color.js'
+import { barColor, gradientColor, normalizeStops } from '../../common/bar-color.js'
 import { initCardGlow } from './card-glow.js'
 import { displayOf } from '../../common/display-options.js'
 import { visibleUsages } from '../../common/widget-layout.js'
@@ -97,14 +97,16 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   const scoped = u.scopedQuotas || []
   const rows = [...quotas, ...scoped.map(s => s.quota)]
   const warn = Math.max(1, Math.min(60, config.warnPercent ?? 20)), showUsed = displayOf(config, u.id).showUsed
-  const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
+  const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, stops: normalizeStops(config.barStops), warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
     const value = available && q ? clamp(showUsed ? q.percentUsed : q.percentLeft) : null
     const name = i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
     const label = `${name} ${showUsed ? '사용한 양' : '남은 양'}`
     // 줄마다 기본 색(--row-base: 서비스 평소 색과 그 흐린 색)에서 경고색으로 바뀐다(CSS에서 줄별로 정함).
     const fill = available && q ? barColor(clamp(q.percentLeft), 'var(--row-base)', colorOpts) : 'var(--row-base)'
-    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%;--fill:${fill}"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
+    // 숫자도 막대와 같은 색 점을 따른다('서비스 색' 자리는 평소 글씨색)
+    const ink = available && q && colorOpts.on ? ` style="color:${gradientColor(clamp(q.percentLeft), i === 0 ? 'var(--ink)' : 'var(--muted)', colorOpts.stops, colorOpts.mode)}"` : ''
+    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%;--fill:${fill}"></div></div><span class="mini-value"${ink} aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
   }).join('')}</div></div>`
 }
 export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {

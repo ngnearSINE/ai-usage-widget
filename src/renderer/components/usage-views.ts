@@ -3,7 +3,7 @@ import {
   cardBody, fitDesign, lowestLeft, fmtDuration, fmtDurationShort, formOf, paceWarning, pickWindow, richScale, richTier, serviceModel, severity, unusedWeekly, windowsOf, worstWindow,
   type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
-import { barColor, heatOf, type ColorMode } from '../../common/bar-color.js'
+import { barColor, type ColorMode, normalizeStops, gradientColor, type BarStop } from '../../common/bar-color.js'
 import { displayOf } from '../../common/display-options.js'
 import { staleTip } from '../../common/stale-notice.js'
 
@@ -16,6 +16,7 @@ export interface ViewContext {
   showUsed: boolean
   colorByUsage: boolean
   colorMode: ColorMode
+  stops: BarStop[] // 사용량에 따른 막대 색 그라데이션
   heatOn: boolean
   iconStyle: WidgetConfig['iconStyle']
   source: (id: string) => ValueSource
@@ -29,7 +30,7 @@ export function viewContext(config: WidgetConfig, history?: Record<string, Histo
     warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)), showPace: config.showPace !== false,
     showReset: config.showResetTime !== false, showUsed: !!config.showUsedPercent, colorByUsage: config.colorByUsage !== false,
     // 막대 색 기본은 '부드럽게': 카드 배경 경고색과 같은 시점(여유 50%)부터 막대도 바뀐다
-    colorMode: config.colorMode === 'step' ? 'step' : 'smooth', heatOn: config.warnTint !== false, iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
+    colorMode: config.colorMode === 'step' ? 'step' : 'smooth', stops: normalizeStops(config.barStops), heatOn: config.warnTint !== false, iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
     per: id => displayOf(config, id),
   }
 }
@@ -54,8 +55,9 @@ const chev = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const shown = (x: ViewContext, w: QuotaWindow) => x.showUsed ? w.used : w.left
 const expected = (x: ViewContext, w: QuotaWindow) => w.expectedLeft === null ? null : x.showUsed ? 100 - w.expectedLeft : w.expectedLeft
 const base = (m: ServiceModel) => m.bar || hex(m.brand)
-const color = (x: ViewContext, m: ServiceModel, w: QuotaWindow) => barColor(w.left, base(m), { on: x.colorByUsage, mode: x.colorMode, warn: x.warn, crit: x.crit })
-const valColor = (x: ViewContext, w: QuotaWindow) => x.colorByUsage && w.left <= x.warn ? (w.left <= x.crit ? 'var(--danger)' : 'var(--warn)') : 'var(--ink)'
+const color = (x: ViewContext, m: ServiceModel, w: QuotaWindow) => barColor(w.left, base(m), { on: x.colorByUsage, mode: x.colorMode, warn: x.warn, crit: x.crit, stops: x.stops })
+// 숫자 글씨도 막대와 같은 색 점을 따른다. '서비스 색' 자리는 테마(다크·라이트)의 기본 글씨색.
+const valColor = (x: ViewContext, w: QuotaWindow) => x.colorByUsage ? gradientColor(w.left, 'var(--ink)', x.stops, x.colorMode) : 'var(--ink)'
 const remainWord = (x: ViewContext) => x.showUsed ? '사용' : '남음'
 
 /* ---------- 마우스 설명: 요소마다 무엇인지와 값, 카드에는 작아서 생략된 정보 ---------- */
@@ -237,7 +239,7 @@ function timeline(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o:
     // 시간축(지난 시간 음영 + 지금 표시)과 남은 양 막대를 같은 길이로 나란히 둬서 '시간 vs 남은 양'을 비교한다.
     const t: string[] = []
     for (let i = 1; i < ticks; i++) { const k = len * i / ticks; t.push(vert ? `<line x1="${px}" x2="${px + 10}" y1="${py + len - k}" y2="${py + len - k}" stroke="var(--svg-track2)"/>` : `<line x1="${px + k}" x2="${px + k}" y1="${py}" y2="${py + 10}" stroke="var(--svg-track2)"/>`) }
-    const el = len * (w.elapsed ?? 0), fuel = len * shown(x, w) / 100, c = color(x, m, w), vc = x.colorByUsage && w.left <= x.warn ? c : 'var(--ink)'
+    const el = len * (w.elapsed ?? 0), fuel = len * shown(x, w) / 100, c = color(x, m, w), vc = valColor(x, w)
     const now = w.elapsed === null ? '' : vert ? `<line x1="${px - 3}" x2="${px + 25}" y1="${py + len - el}" y2="${py + len - el}" stroke="var(--svg-tick)" stroke-width="1.1" opacity=".75"/>` : `<line x1="${px + el}" x2="${px + el}" y1="${py - 2}" y2="${py + 21}" stroke="var(--svg-tick)" stroke-width="1.1" opacity=".75"/>`
     if (vert) return `<text x="${px + 11}" y="${py - 6}" text-anchor="middle" fill="var(--muted)" font-size="9">${name}</text><rect x="${px}" y="${py}" width="10" height="${len}" rx="1" fill="var(--svg-track)"/><rect x="${px}" y="${py + len - el}" width="10" height="${el}" rx="1" fill="var(--svg-elapsed)"/>${t.join('')}<rect x="${px + 13}" y="${py}" width="9" height="${len}" rx="1" fill="var(--svg-track)"/><rect x="${px + 13}" y="${py + len - fuel}" width="9" height="${fuel}" rx="1" fill="${c}"/>${now}<text x="${px + 11}" y="${py + len + 15}" text-anchor="middle" fill="${vc}" font-size="12" font-weight="650">${shown(x, w)}%</text>`
     return `<text x="${px}" y="${py - 6}" fill="var(--muted)" font-size="10">${name}</text><text x="${px + len}" y="${py - 6}" text-anchor="end" fill="var(--dim)" font-size="9.5">${w.resetMs === null ? '' : `리셋 ${fmtDuration(w.resetMs)} 뒤`}</text><rect x="${px}" y="${py}" width="${len}" height="10" rx="1" fill="var(--svg-track)"/><rect x="${px}" y="${py}" width="${el}" height="10" rx="1" fill="var(--svg-elapsed)"/>${t.join('')}<rect x="${px}" y="${py + 13}" width="${len}" height="6" rx="1" fill="var(--svg-track)"/><rect x="${px}" y="${py + 13}" width="${fuel}" height="6" rx="1" fill="${c}"/>${now}<text x="${px + len + 8}" y="${py + 18}" fill="${vc}" font-size="13" font-weight="650">${shown(x, w)}%</text>`
@@ -413,10 +415,12 @@ function compactCard(u: AccountUsage, m: ServiceModel, design: DesignId, x: View
 export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, box: { w: number; h: number }, style = '') {
   if (x.per) x = { ...x, ...x.per(u.id), per: undefined }
   const m = serviceModel(u)
-  // 경고 배경: 남은 양에 따라 노랑→빨강으로 은은하게(카드 테두리는 칠하지 않는다)
+  // 경고 배경: 막대와 같은 색 점으로 은은하게. '서비스 색' 자리는 투명(칠하지 않음). 카드 테두리는 칠하지 않는다.
   if (x.heatOn && m.available) {
-    const heat = heatOf(lowestLeft(m), x.warn, x.crit, x.showPace && windowsOf(m).some(paceWarning))
-    if (heat > 0) style = `--heat:${heat.toFixed(3)};${style}`
+    let c = gradientColor(lowestLeft(m), 'transparent', x.stops, x.colorMode)
+    // 남은 양은 넉넉해도 속도가 빠르면 옅은 주황으로
+    if (c === 'transparent' && x.showPace && windowsOf(m).some(paceWarning)) c = 'color-mix(in oklab, var(--warn) 35%, transparent)'
+    if (c !== 'transparent') style = `--heat:1;--heat-color:${c};${style}`
   }
   if (!m.available || !windowsOf(m).length) return offlineCard(u, x, box, style)
   if (formOf(design, box.w, box.h) === 'compact') return compactCard(u, m, design, x, box, style)
