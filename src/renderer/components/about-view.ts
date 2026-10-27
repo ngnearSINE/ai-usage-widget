@@ -31,10 +31,10 @@ export function renderAbout(container: HTMLElement, s: AppState) {
   const statusText = !u || u.status === 'unsupported' ? '자동 업데이트는 설치판에서만 돼요. 휴대용(zip)은 새 버전을 직접 내려받아 주세요.'
     : u.status === 'checking' ? '새 버전을 확인하고 있어요…'
     : u.status === 'downloading' ? `새 버전 ${escapeText(u.version || '')}을 받고 있어요`
-    : u.status === 'ready' ? `새 버전 ${escapeText(u.version || '')}이 준비됐어요. 다시 시작하면 설치돼요.`
+    : u.status === 'ready' ? `새 버전 ${escapeText(u.version || '')}이 준비됐어요. ${s.config.autoUpdate === false ? '아래 단추나 위젯 제목줄의 ‘업데이트’를 누르면 설치돼요.' : '새벽 3시나 앱을 끌 때 설치돼요. 지금 바로 설치할 수도 있어요.'}`
     : u.status === 'latest' ? '최신 버전을 쓰고 있어요.'
     : u.status === 'error' ? escapeText(u.message || '업데이트를 확인하지 못했어요.')
-    : s.config.autoUpdate === false ? '자동 업데이트가 꺼져 있어요.' : '시작하고 잠시 뒤, 그리고 6시간마다 새 버전을 확인해요.'
+    : s.config.autoUpdate === false ? '자동 업데이트가 꺼져 있어요. ‘업데이트 확인’으로 직접 받을 수 있어요.' : '6시간마다 새 버전을 확인해 받아 두고, 새벽 3시에 설치해요.'
   const tone = u?.status === 'ready' ? 'good' : u?.status === 'error' ? 'bad' : ''
   const supported = u && u.status !== 'unsupported'
   const list = showAll ? all : mine ? [mine] : []

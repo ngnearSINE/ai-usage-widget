@@ -1616,7 +1616,7 @@ app.whenReady().then(() => {
   updater = new Updater({
     preview: isPreview,
     onChange: () => { broadcastState(); updateTrayMenu() },
-    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, '앱을 다시 시작하면 설치돼요. 눌러서 바뀐 점을 보고 바로 설치할 수 있어요.', () => openAboutWindow()),
+    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : '새벽 3시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.', () => openAboutWindow()),
   })
   updater.schedule(accountStore.getConfig().autoUpdate !== false)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {

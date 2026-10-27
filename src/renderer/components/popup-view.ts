@@ -2,7 +2,7 @@ import type { AppState } from '../../common/types.js'
 import { visibleUsages } from '../../common/widget-layout.js'
 import { lowestLeft, serviceModel, severity } from '../../common/usage-model.js'
 import { renderCard, viewContext } from './usage-views.js'
-import { applyAppearance, escapeText, icon } from './dashboard.js'
+import { applyAppearance, escapeText, icon, updatePill } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
 import { initCardGlow } from './card-glow.js'
 
@@ -33,6 +33,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
   updateMarkup(container, `<div class="dashboard popup-v2 ${animate ? 'popup-enter' : ''} ${focusName ? 'focus-mode' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
     <header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status">${focusName ? `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>` : ''}<b>${loading ? '확인 중' : `${list.length}개`}</b>${updated && !state.preview ? ` · ${escapeText(updated)}` : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>
+      ${updatePill(state)}
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-pop="refresh" title="새로고침" aria-label="사용량 새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-pop="float" title="창으로 펼치기" aria-label="작업 표시줄에서 떼어 창으로 펼치기">${icon('expand')}</button>
       <button class="tool" data-open-settings="design" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
@@ -50,6 +51,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
   // 이벤트는 한 번만 위임으로 건다(다시 그릴 때마다 쌓이지 않게).
   container.addEventListener('click', e => {
     if ((e.target as HTMLElement).closest('[data-focus-off]')) { void window.api.setFocus(null); return }
+    if ((e.target as HTMLElement).closest('[data-update-install]')) { void window.api.installUpdate(); return }
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pop],[data-open-settings]')
     if (!el) return
     if (el.dataset.openSettings) { void window.api.openSettings(el.dataset.openSettings as 'design'); void window.api.hidePopup(); return }

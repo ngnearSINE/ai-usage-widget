@@ -202,6 +202,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
   updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
     <header class="dashboard-header"><div class="window-handle" data-window-drag title="끌어서 창 이동 · 아래로 끌면 도킹"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+      ${updatePill(state)}
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool" data-view-menu aria-haspopup="menu" title="메뉴 · 지금 디자인: ${DESIGNS.find(d => d[0] === design)![1]}" aria-label="메뉴">${icon('menu')}</button>
@@ -264,6 +265,13 @@ function layoutCards() {
 }
 
 /* ---------- 메뉴 ---------- */
+/** 새 버전을 받아 두었으면 제목줄에 짧은 '업데이트' 단추(마우스를 올리면 전체 안내). */
+export function updatePill(state: AppState) {
+  const u = state.update
+  if (u?.status !== 'ready') return ''
+  return `<button class="update-pill" data-update-install data-tip="새 버전 ${escapeText(u.version || '')} 설치하고 다시 시작" aria-label="새 버전 ${escapeText(u.version || '')} 설치하고 다시 시작">업데이트</button>`
+}
+
 let menuEl: HTMLElement | null = null
 function closeMenu() { menuEl?.remove(); menuEl = null }
 function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string; hint?: string; on?: boolean; run: () => void } | '-'>) {
@@ -325,6 +333,7 @@ function bindDelegated(container: HTMLElement) {
       return
     }
     if (t.closest('[data-focus-off]')) { void window.api.setFocus(null); return }
+    if (t.closest('[data-update-install]')) { void window.api.installUpdate(); return }
     const pg = t.closest<HTMLElement>('[data-page]')
     if (pg) { pageIndex = (pageIndex + Number(pg.dataset.page) + pageCount) % pageCount; layoutCards(); return }
     if (menuEl && !t.closest('.menu')) closeMenu()
