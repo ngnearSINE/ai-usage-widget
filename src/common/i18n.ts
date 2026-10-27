@@ -110,7 +110,7 @@ const dict = {
   widgetTooltipNoWeekly: { ko: '{name} | {p}% {unit} ({pr})', en: '{name} | {p}% {unit} ({pr})' },
   widgetTooltipWeeklyOnly: { ko: '{name} | 주간: {w}% {unit} ({wr})', en: '{name} | Weekly: {w}% {unit} ({wr})' },
   noAccountTitle: { ko: '연결된 AI 계정 없음 (클릭하여 계정 추가 또는 로컬 앱 감지)', en: 'No AI account connected (click to add or auto-detect)' },
-  widgetClickTitle: { ko: '클릭하여 상세 정보 및 설정 열기', en: 'Click for details and settings' },
+  widgetClickTitle: { ko: '한 번 누르면 상세 보기 · 두 번 누르면 그 카드만 보기(집중 모드)', en: 'Click for details · double-click to focus on one card' },
   widgetDoubleClickTitle: { ko: '더블 클릭하여 상세 정보 및 설정 열기', en: 'Double-click for details and settings' }
 } satisfies Record<string, Record<Lang, string>>
 

@@ -374,7 +374,7 @@ function generalTab(s: AppState) {
       ${errors.length ? hint(`등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.`, 'warn-text') : ''}`)
     + advanced('general', section('모니터 구성별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
         + `${hint(`저장된 구성 ${saved}개`)}${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
-      + (s.dockSupported === false ? '' : section('작업 표시줄에 붙였을 때', toggle('doubleClickToOpenPopup', '두 번 눌러야 상세 보기 열기', '끄면 한 번만 눌러도 열려요.', !!c.doubleClickToOpenPopup)
+      + (s.dockSupported === false ? '' : section('작업 표시줄에 붙였을 때', hint('한 번 누르면 상세 보기, 두 번 누르면 그 카드만 보는 집중 모드가 켜지고 꺼져요.')
         + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
         + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
         + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.')))

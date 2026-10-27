@@ -137,7 +137,7 @@ function renderWidget(state: AppState) {
 
   const showCard = state.config.showCardBackground ?? false
   const newHtml = `
-    <div class="widget-root ${isEmpty ? 'is-empty' : ''} ${showCard ? 'has-card-bg' : 'no-card-bg'}" id="widget-container" title="${t(state.config.doubleClickToOpenPopup ? 'widgetDoubleClickTitle' : 'widgetClickTitle')}">
+    <div class="widget-root ${isEmpty ? 'is-empty' : ''} ${showCard ? 'has-card-bg' : 'no-card-bg'}" id="widget-container" title="${t('widgetClickTitle')}">
       <span class="dock-grip" title="끌어내면 자유 창으로 전환됩니다">⠿</span>
       ${accountsHtml}
     </div>

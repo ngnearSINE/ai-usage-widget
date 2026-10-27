@@ -401,6 +401,8 @@ function bindDelegated(container: HTMLElement) {
   container.addEventListener('pointerdown', e => {
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
     if (!card || e.button !== 0 || (e.target as HTMLElement).closest('button') || card.closest('.pv-win')) return
+    // 보이는 카드가 한 장이면(집중 모드 포함) 바꿀 순서가 없으니 제목줄처럼 창 전체를 옮긴다.
+    if (lastState?.focus || container.querySelectorAll('.service-grid [data-card]').length <= 1) { startWindowGesture(card, e, 'move'); return }
     startCardReorder(card, e)
   })
   // 카드 우클릭: 그 서비스의 메뉴(메인 프로세스의 기본 메뉴라 작은 위젯에서도 잘리지 않는다)
@@ -435,22 +437,27 @@ function bindEvents(container: HTMLElement, state: AppState) {
   })
   container.querySelectorAll<HTMLElement>('[data-window-drag],[data-resize]').forEach(el => el.onpointerdown = e => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return
-    e.preventDefault()
-    el.setPointerCapture(e.pointerId)
-    // 입력 주기(최대 1000Hz)마다 창을 옮기면 메인 프로세스에 작업이 밀리므로 화면 프레임마다 최신 좌표 하나만 보낸다.
-    let pending: { x: number; y: number } | null = null, frame = 0
-    const flush = () => { frame = 0; if (pending) window.api.moveInteraction?.(pending); pending = null }
-    const onMove = (move: PointerEvent) => {
-      if (!el.hasPointerCapture(move.pointerId)) return
-      pending = { x: move.screenX, y: move.screenY }
-      frame ||= requestAnimationFrame(flush)
-    }
-    el.onpointermove = onMove
-    const stop = () => { cancelAnimationFrame(frame); el.onpointermove = null; el.onpointerup = null; el.onpointercancel = null }
-    el.onpointerup = up => { void window.api.endInteraction?.({ x: up.screenX, y: up.screenY }); stop() }
-    el.onpointercancel = () => { void window.api.endInteraction?.(); stop() }
-    void window.api.beginInteraction(el.dataset.resize ? `resize-${el.dataset.resize}` : 'move', { x: e.screenX, y: e.screenY }).catch(() => notify('창 조작을 시작하지 못했어요.'))
+    startWindowGesture(el, e, el.dataset.resize ? `resize-${el.dataset.resize}` : 'move')
   })
   container.onkeydown = null
+}
+
+/** 창 옮기기·크기 바꾸기 제스처(제목줄·가장자리, 카드가 한 장일 때는 카드). */
+function startWindowGesture(el: HTMLElement, e: PointerEvent, kind: string) {
+  e.preventDefault()
+  el.setPointerCapture(e.pointerId)
+  // 입력 주기(최대 1000Hz)마다 창을 옮기면 메인 프로세스에 작업이 밀리므로 화면 프레임마다 최신 좌표 하나만 보낸다.
+  let pending: { x: number; y: number } | null = null, frame = 0
+  const flush = () => { frame = 0; if (pending) window.api.moveInteraction?.(pending); pending = null }
+  const onMove = (move: PointerEvent) => {
+    if (!el.hasPointerCapture(move.pointerId)) return
+    pending = { x: move.screenX, y: move.screenY }
+    frame ||= requestAnimationFrame(flush)
+  }
+  el.onpointermove = onMove
+  const stop = () => { cancelAnimationFrame(frame); el.onpointermove = null; el.onpointerup = null; el.onpointercancel = null }
+  el.onpointerup = up => { void window.api.endInteraction?.({ x: up.screenX, y: up.screenY }); stop() }
+  el.onpointercancel = () => { void window.api.endInteraction?.(); stop() }
+  void window.api.beginInteraction(kind, { x: e.screenX, y: e.screenY }).catch(() => notify('창 조작을 시작하지 못했어요.'))
 }
 

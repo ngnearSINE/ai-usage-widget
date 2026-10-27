@@ -108,7 +108,8 @@ let widgetHiddenForFullscreen = false
 let popupHideTimer: NodeJS.Timeout | null = null
 let popupRevealTimer: NodeJS.Timeout | null = null
 let lastDockedWidgetClickAt = 0
-const DOUBLE_CLICK_WINDOW_MS = 500
+const DOUBLE_CLICK_WINDOW_MS = 400
+let dockClickTimer: ReturnType<typeof setTimeout> | undefined
 
 function guidePath(): string | null {
   return [path.join(path.dirname(app.getPath('exe')), '사용 설명서.pdf'), path.join(app.getAppPath(), 'docs/user-guide.pdf')].find(p => fs.existsSync(p)) || null
@@ -777,7 +778,8 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
     ? { x: Math.round(pointerOrigin.x), y: Math.round(pointerOrigin.y) } : screen.getCursorScreenPoint()
   try {
     const ghostWidth = dockWidth()
-    const shown = getAppState(), cardCount = Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
+    // 집중 모드는 늘 카드 한 장으로 본다(창을 한 장 크기까지 줄일 수 있게).
+    const shown = getAppState(), cardCount = shown.focus ? 1 : Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
     let start = win.getBounds()
     let last = origin
     let moved = false
@@ -1054,12 +1056,14 @@ async function showPopup(focus = false, lock = false) {
 
     if (focus) {
       popupWindow.show()
+      popupWindow.moveTop() // 다른 '항상 위' 창보다도 앞으로
       popupWindow.focus()
     } else {
       popupWindow.showInactive()
     }
     popupWindow.webContents.send(IPC_CHANNELS.POPUP_OPENED, getAppState())
   } else if (focus) {
+    popupWindow.moveTop()
     popupWindow.focus()
   }
 }
@@ -1106,22 +1110,32 @@ function hidePopup(force = false) {
   }
 }
 
-// 도킹 모드 위젯 클릭: 네이티브 워처가 물리 클릭마다 CLICK 한 줄을 보내므로,
-// 더블클릭 설정이 켜져 있으면 여기서 500ms 창으로 두 번째 클릭을 기다렸다가 연다.
+// 도킹 모드 위젯 클릭: 네이티브 워처가 물리 클릭마다 CLICK 한 줄을 보낸다.
+// 한 번 누르면 상세 팝업, 두 번 누르면 도킹을 유지한 채 그 카드의 집중 모드를 켜고 끈다.
+// 두 번째 클릭을 기다리는 동안(400ms) 팝업을 미룬다.
 function handleDockedWidgetClick() {
-  if (!accountStore.getConfig().doubleClickToOpenPopup) {
-    lastDockedWidgetClickAt = 0
-    void togglePopup()
-    return
-  }
-
-  const now = Date.now()
+  const now = Date.now(), point = screen.getCursorScreenPoint()
   if (lastDockedWidgetClickAt > 0 && now - lastDockedWidgetClickAt <= DOUBLE_CLICK_WINDOW_MS) {
     lastDockedWidgetClickAt = 0
-    void togglePopup()
-  } else {
-    lastDockedWidgetClickAt = now
+    clearTimeout(dockClickTimer)
+    void toggleDockedFocus(point)
+    return
   }
+  lastDockedWidgetClickAt = now
+  clearTimeout(dockClickTimer)
+  dockClickTimer = setTimeout(() => { lastDockedWidgetClickAt = 0; void togglePopup() }, DOUBLE_CLICK_WINDOW_MS)
+}
+
+/** 도킹 화면에서 두 번 누른 자리의 카드로 집중 모드를 켠다. 이미 켜져 있으면 끈다(카드가 한 장뿐이므로). */
+async function toggleDockedFocus(point: Electron.Point) {
+  if (focusId) { setFocus(null); return }
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  const b = widgetWindow.getBounds()
+  const x = Math.round(point.x - b.x), y = Math.round(point.y - b.y)
+  try {
+    const id = await widgetWindow.webContents.executeJavaScript(`(() => { const el = document.elementFromPoint(${x}, ${y}); return el?.closest('[data-account-id]')?.dataset.accountId || null })()`)
+    if (typeof id === 'string' && id) setFocus(id)
+  } catch (err) { console.warn('[Main] 도킹 집중 모드 대상 확인 실패', err) }
 }
 
 async function togglePopup() {
@@ -1574,7 +1588,7 @@ function setupIpcHandlers() {
     const win = BrowserWindow.fromWebContents(event.sender)
     const labels = ['아주 작게', '작게', '보통', '크게', '아주 크게']
     if (win && win === widgetWindow && accountStore.getConfig().placementMode === 'floating') {
-      const st = getAppState(), cards = Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
+      const st = getAppState(), cards = st.focus ? 1 : Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
       const sizes: Array<[number, number]> = [[220, 0], [320, 240], [480, 360], [700, 560], [980, 700]]
       const [w, h0] = sizes[i], h = Math.max(h0, minWindowHeight(w, cards, gap))
       const b = win.getBounds(), area = screen.getDisplayMatching(b).workArea
