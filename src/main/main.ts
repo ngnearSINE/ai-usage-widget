@@ -1469,14 +1469,17 @@ function setupIpcHandlers() {
     if (!file) return false
     return (await shell.openPath(file)) === ''
   })
-  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown; barColor?: unknown; launchCli?: unknown; launchApp?: unknown }) => {
-    const clean: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string; launchCli?: string; launchApp?: string } = {}
+  ipcMain.handle(IPC_CHANNELS.ACCOUNT_DISPLAY, (_event, id: string, patch: { showScoped?: unknown; hiddenInDock?: unknown; barColor?: unknown; launchCli?: unknown; launchApp?: unknown; launchCwd?: unknown }) => {
+    const clean: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string; launchCli?: string; launchApp?: string; launchCwd?: string } = {}
     // 직접 지정한 실행 대상: 있는 파일의 절대 경로만, 빈 값이면 자동으로 되돌린다.
     for (const k of ['launchCli', 'launchApp'] as const) {
       const v = patch?.[k]
       if (v === '') clean[k] = undefined
       else if (typeof v === 'string' && path.isAbsolute(v) && fs.existsSync(v)) clean[k] = v
     }
+    // CLI 시작 폴더: 있는 폴더만, 빈 값이면 홈 폴더로
+    if (patch?.launchCwd === '') clean.launchCwd = undefined
+    else if (typeof patch?.launchCwd === 'string' && path.isAbsolute(patch.launchCwd) && fs.existsSync(patch.launchCwd) && fs.statSync(patch.launchCwd).isDirectory()) clean.launchCwd = patch.launchCwd
     if (typeof patch?.showScoped === 'boolean') clean.showScoped = patch.showScoped
     if (typeof patch?.hiddenInDock === 'boolean') clean.hiddenInDock = patch.hiddenInDock
     // 평소 색: 'brand'(서비스 색으로 되돌림)·'green'·'#rrggbb'만 받는다.
@@ -1617,9 +1620,9 @@ function setupIpcHandlers() {
     const r = await dialog.showOpenDialog(win!, { title: kind === 'cli' ? 'Ctrl+두 번 클릭으로 실행할 CLI 고르기' : 'Shift+두 번 클릭으로 실행할 앱 고르기', properties: ['openFile'], filters })
     return r.canceled ? null : r.filePaths[0] || null
   })
-  ipcMain.handle(IPC_CHANNELS.PICK_FOLDER, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.PICK_FOLDER, async (event, title?: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender) || undefined
-    const r = await dialog.showOpenDialog(win!, { title: '로그인 폴더 고르기', properties: ['openDirectory', 'createDirectory'] })
+    const r = await dialog.showOpenDialog(win!, { title: typeof title === 'string' && title ? title.slice(0, 80) : '로그인 폴더 고르기', properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : r.filePaths[0] || null
   })
   // 두 번째 계정: Codex·Grok CLI의 다른 로그인 폴더. 그 폴더에 로그인 파일이 있어야 추가한다.

@@ -96,7 +96,9 @@ export function openCli(acc: AccountConfig): boolean {
   const env = { ...process.env }
   if (acc.homeDir && acc.provider === 'codex') env.CODEX_HOME = acc.homeDir
   if (acc.homeDir && acc.provider === 'xai') env.GROK_HOME = acc.homeDir
-  const opts = { cwd: os.homedir(), env, detached: true, stdio: 'ignore' as const }
+  // 시작 폴더: 직접 고른 폴더가 있으면 그곳, 없으면 홈 폴더
+  const cwd = acc.launchCwd && fs.existsSync(acc.launchCwd) && fs.statSync(acc.launchCwd).isDirectory() ? acc.launchCwd : os.homedir()
+  const opts = { cwd, env, detached: true, stdio: 'ignore' as const }
   if (process.platform === 'win32') {
     // start로 새 콘솔을 띄우면 Windows가 기본 터미널(Windows Terminal 등)로 연다. /k: CLI가 끝나도 창은 남는다.
     spawn('cmd.exe', ['/d', '/c', 'start', '""', 'cmd.exe', '/k', `"${exe}"`], { ...opts, windowsHide: true, windowsVerbatimArguments: true }).unref()

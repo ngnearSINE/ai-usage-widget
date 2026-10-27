@@ -302,7 +302,7 @@ export class AccountStore {
     return true
   }
 
-  public patchAccountDisplay(id: string, patch: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string; launchCli?: string; launchApp?: string }): void {
+  public patchAccountDisplay(id: string, patch: { showScoped?: boolean; hiddenInDock?: boolean; barColor?: string; launchCli?: string; launchApp?: string; launchCwd?: string }): void {
     this.saveAccounts(this.accounts.map(a => a.id === id ? { ...a, ...patch } : a))
   }
 

@@ -60,6 +60,7 @@ export interface AccountConfig {
   hiddenInDock?: boolean // 작업표시줄 도킹 화면에서만 숨김. 위젯 창에는 보인다
   launchCli?: string // Ctrl+두 번 클릭으로 실행할 CLI(직접 지정, 비우면 자동으로 찾음)
   launchApp?: string // Shift+두 번 클릭으로 실행할 앱(직접 지정, 비우면 자동으로 찾음)
+  launchCwd?: string // CLI를 열 때 시작 폴더(비우면 홈 폴더)
   homeDir?: string // 두 번째 계정: 그 서비스 CLI의 로그인 폴더(Codex CODEX_HOME, Grok GROK_HOME)
   barColor?: string // 그래프 평소 색: 없음=서비스 색, 'green', '#rrggbb'
   customMock?: {
