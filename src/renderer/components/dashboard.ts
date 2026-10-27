@@ -105,7 +105,7 @@ function shownUsages(state: AppState) {
 function startCardReorder(card: HTMLElement, down: PointerEvent) {
   const id = card.dataset.card!, startX = down.clientX, startY = down.clientY
   let started = false, grabX = 0, grabY = 0, order: string[] = [], slots: DOMRect[] = []
-  let ghost: HTMLElement | null = null, frame: DOMRect
+  let ghost: HTMLElement | null = null, frame: DOMRect, cardW = 0, cardH = 0
   const dash = () => host.querySelector<HTMLElement>('.dashboard')!
   const cardEl = () => host.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`)
   const rects = () => new Map([...host.querySelectorAll<HTMLElement>('[data-card]')].map(c => [c.dataset.card!, c.getBoundingClientRect()]))
@@ -128,7 +128,7 @@ function startCardReorder(card: HTMLElement, down: PointerEvent) {
       if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 6) return
       if (lastState.config.sortLowFirst) { notify('‘여유가 적은 서비스를 앞으로’가 켜져 있어 순서를 바꿀 수 없어요. 설정 → 표시에서 끌 수 있어요.'); cleanup(); return }
       started = true; dragId = id
-      const r = card.getBoundingClientRect(); grabX = startX - r.left; grabY = startY - r.top
+      const r = card.getBoundingClientRect(); grabX = startX - r.left; grabY = startY - r.top; cardW = r.width; cardH = r.height
       order = shownUsages(lastState).map(u => u.id)
       // 칸 위치는 시작할 때 고정한다(비켜 가는 애니메이션 도중의 위치로 계산하면 자리가 흔들린다).
       const at = rects(); slots = order.map(x => at.get(x)!).filter(Boolean)
@@ -145,11 +145,12 @@ function startCardReorder(card: HTMLElement, down: PointerEvent) {
       try { host.setPointerCapture(e.pointerId) } catch {}
     }
     follow(e.clientX, e.clientY)
-    // 포인터가 있는(없으면 가장 가까운) 칸에 들어간다.
+    // 들고 있는 카드의 가운데가 있는(없으면 가장 가까운) 칸에 들어간다. 카드를 어디를 잡았든 같은 만큼 끌면 자리가 바뀐다.
+    const cx = e.clientX - grabX + cardW / 2, cy = e.clientY - grabY + cardH / 2
     let slot = 0, best = Infinity
     slots.forEach((r, i) => {
-      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
-      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = inside ? -1 : dx * dx + dy * dy
+      const inside = cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom
+      const dx = cx - (r.left + r.width / 2), dy = cy - (r.top + r.height / 2), d = inside ? -1 : dx * dx + dy * dy
       if (d < best) { best = d; slot = i }
     })
     const next = order.filter(x => x !== id)
