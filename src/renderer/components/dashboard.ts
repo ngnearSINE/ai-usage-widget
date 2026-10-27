@@ -63,11 +63,16 @@ export function applyAppearance(config: WidgetConfig) {
   document.documentElement.dataset.bar = config.barStyle || 'silk'
   document.documentElement.dataset.motion = config.motion || 'subtle'
   document.documentElement.dataset.acrylic = String(config.useAcrylic !== false)
-  // 경고 배경: 세기는 0~100 연속값, 진한 곳은 테두리·가운데·한쪽(8방향)
+  // 경고 배경: 세기는 0~100 연속값(기본 30 = 예전 100%), 진한 곳은 테두리·가운데·한쪽(8방향)
   const heat = heatPlacement(config)
   document.documentElement.dataset.heatOrigin = heat.origin
   document.documentElement.dataset.heatSide = heat.side
-  document.documentElement.style.setProperty('--heat-max', (number(config.warnTintStrength, 0, 100, 50) / 100 * .45).toFixed(3))
+  document.documentElement.style.setProperty('--heat-max', (number(config.warnTintStrength, 0, 100, 30) / 100 * 1.5).toFixed(3))
+  // 퍼짐 0~100(기본 30 = 예전 모양): 진한 곳에서 번지는 길이와, 30을 넘으면 카드 전체에 깔리는 옅은 바탕
+  const spread = number(config.warnTintSpread, 0, 100, 30)
+  document.documentElement.style.setProperty('--heat-reach', (.4 + spread / 50).toFixed(3))
+  document.documentElement.style.setProperty('--heat-inner', `${(46 * (1 - spread / 100)).toFixed(1)}%`)
+  document.documentElement.style.setProperty('--heat-soft-pct', `${(Math.max(0, spread - 30) / 70 * 35).toFixed(1)}%`)
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
   document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
   document.documentElement.style.setProperty('--font-scale', String(number(config.fontScale, 85, 130, 100) / 100))
@@ -272,7 +277,7 @@ function layoutCards() {
   if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
-    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b> · ${state.preview ? '미리보기' : updated}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? '<span data-pv-fallback hidden> · 미리보기</span>' : ` · ${updated}`}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
   tickClock(true)
 }
 
@@ -283,7 +288,8 @@ function layoutCards() {
 function tickClock(force = false) {
   const clock = host?.querySelector<HTMLElement>('[data-clock]')
   if (!clock) return
-  const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  // 미리보기 앱이면 시각 뒤에 '(미리보기)'를 붙인다. 시계를 숨길 때는 왼쪽 상태 문구에 대신 보인다.
+  const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) + (lastState?.preview ? ' (미리보기)' : '')
   if (!force) { if (clock.dataset.on === '1' && clock.textContent !== now) clock.textContent = now; return }
   clock.textContent = now; clock.dataset.on = '1'
   const header = clock.parentElement!, r = clock.getBoundingClientRect()
@@ -293,7 +299,10 @@ function tickClock(force = false) {
   // 상태 칸은 늘어나 있을 수 있어 글자가 실제로 차지한 끝을 잰다.
   let statusRight = left?.right ?? 0
   if (status?.textContent) { const range = document.createRange(); range.selectNodeContents(status); statusRight = Math.max(statusRight, Math.min(range.getBoundingClientRect().right, status.getBoundingClientRect().right)) }
-  if (r.left < statusRight + 12 || (right && r.right > right.left - 12)) { clock.textContent = ''; clock.dataset.on = '' }
+  if (r.left < statusRight + 12 || (right && r.right > right.left - 12)) {
+    clock.textContent = ''; clock.dataset.on = ''
+    header.querySelector<HTMLElement>('[data-pv-fallback]')?.removeAttribute('hidden')
+  }
 }
 
 /* ---------- 메뉴 ---------- */

@@ -86,7 +86,8 @@ export interface WidgetConfig {
   popupBounds?: { x: number; y: number; width: number; height: number } // 작업 표시줄 팝업 위치·크기(옮기거나 키우면 기억)
   warnTint?: boolean // 경고 배경 색(기본 켬)
   warnTintLevel?: 'soft' | 'medium' | 'strong' // (예전) 세기 단계. warnTintStrength로 대체
-  warnTintStrength?: number // 세기 0~100(기본 50)
+  warnTintStrength?: number // 세기 0~100(기본 30)
+  warnTintSpread?: number // 퍼짐 0~100(기본 30 = 진한 곳에 모임, 올릴수록 카드 전체로)
   warnTintOrigin?: 'edge' | 'center' | 'side' | 'corners' | 'corner' // 진한 곳(기본 테두리). corners·corner는 예전 값
   warnTintSide?: HeatSide // '한쪽'일 때 방향(기본 왼쪽 위)
   autoUpdate?: boolean // 새 버전 자동 확인·다운로드(기본 켬, 설치판만)

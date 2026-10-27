@@ -35,6 +35,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   warnTintLevel: oneOf('soft', 'medium', 'strong'),
   warnTintOrigin: oneOf('edge', 'center', 'side', 'corners', 'corner'),
   warnTintStrength: num(0, 100),
+  warnTintSpread: num(0, 100),
   warnTintSide: oneOf('top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'),
   notifyQuiet: v => {
     const o = v as Record<string, unknown> | null, hm = (s: unknown) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s)

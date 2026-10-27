@@ -218,7 +218,7 @@ function displayTab(c: WidgetConfig) {
       + toggle('colorByUsage', '경고색으로 칠하기', '기준 아래로 내려가면 숫자와 막대를 주황·빨강으로 칠해요.', c.colorByUsage !== false)
       + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'smooth' ? 'smooth' : 'step', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
       + toggle('warnTint', '경고 배경 색', '남은 양이 줄수록 카드 배경이 노랑에서 빨강으로 은은하게 바뀌어요. 테두리는 칠하지 않아요.', c.warnTint !== false)
-      + `<div class="${c.warnTint === false ? 'is-disabled' : ''}">${slider('warnTintStrength', '세기', 0, 100, c.warnTintStrength ?? 50, '%')}
+      + `<div class="${c.warnTint === false ? 'is-disabled' : ''}">${slider('warnTintStrength', '세기', 0, 100, c.warnTintStrength ?? 30, '%')}${slider('warnTintSpread', '퍼짐', 0, 100, c.warnTintSpread ?? 30, '%')}
         <div class="field"><span>진한 곳</span>${segment('warnTintOrigin', heatPlacement(c).origin, [['edge', '테두리'], ['center', '가운데'], ['side', '한쪽']], '경고 배경이 진한 곳')}
         ${heatPlacement(c).origin === 'side' ? heatSidePicker(heatPlacement(c).side) : ''}</div></div>`
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
