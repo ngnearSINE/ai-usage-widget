@@ -48,6 +48,7 @@ export const api = {
   showCardMenu: (id: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.CARD_MENU, id),
   exportSettings: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke(IPC_CHANNELS.EXPORT_SETTINGS),
   importSettings: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_SETTINGS),
+  quitApp: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
   openAbout: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_ABOUT),
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.PICK_FOLDER),

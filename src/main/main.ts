@@ -1516,6 +1516,7 @@ function setupIpcHandlers() {
     return { ok: true, message: '설정을 불러왔어요.' }
   })
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
+  ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => { app.quit() })
   // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
     if (typeof url !== 'string' || !/^https:\/\/github\.com\/(ngnearSINE\/ai-usage-widget|sallyHADEV\/ai-usage-taskbar-widget)(\/[\w./-]*)?$/.test(url)) return false

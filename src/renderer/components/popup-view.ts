@@ -68,7 +68,7 @@ export function renderPopupView(container: HTMLElement, state: AppState, animate
     h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end)
   })
   window.addEventListener('keydown', e => {
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) { e.preventDefault(); void window.api.sizePreset(Number(e.code.slice(5))) }
+    if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && !e.repeat && /^Digit[1-5]$/.test(e.code)) void window.api.sizePreset(Number(e.code.slice(5)))
   })
   // 카드를 두 번 누르면 집중 모드를 켜고 끈다(위젯 창과 같은 동작). 공식 사용량 페이지는 우클릭 메뉴에.
   container.addEventListener('contextmenu', e => {

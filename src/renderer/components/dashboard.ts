@@ -27,6 +27,7 @@ const paths: Record<string, string> = {
   hidden: '<path d="m3 3 18 18M10.6 5.1A14 14 0 0 1 12 5c6.5 0 10 7 10 7a20 20 0 0 1-3.5 4.4M6.3 6.4A22 22 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5-1.1"/>',
   up: '<path d="m6 14 6-6 6 6"/>', down: '<path d="m6 10 6 6 6-6"/>',
   chev: '<path d="m7 10 5 5 5-5"/>',
+  menu: '<path d="M5 7h14M5 12h14M5 17h14"/>',
   taskbar: '<rect x="3" y="15" width="18" height="5" rx="1.5"/><path d="M7 17.5h2M11 17.5h2"/><path d="M12 4v7M9 8l3 3 3-3"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m14 6 4 4"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
@@ -201,9 +202,9 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
   updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
     <header class="dashboard-header"><div class="window-handle" data-window-drag title="끌어서 창 이동 · 아래로 끌면 도킹"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
-      <button class="view-btn" data-view-menu aria-haspopup="menu" title="보기 바꾸기">${DESIGNS.find(d => d[0] === design)![1]}${icon('chev')}</button>
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
+      <button class="tool" data-view-menu aria-haspopup="menu" title="메뉴 · 지금 디자인: ${DESIGNS.find(d => d[0] === design)![1]}" aria-label="메뉴">${icon('menu')}</button>
       <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? '항상 위 켜짐 · 눌러서 끄기' : '항상 위 꺼짐 · 눌러서 켜기'}" aria-label="항상 위에 표시">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
       <button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button></header>
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
@@ -306,8 +307,12 @@ function bindDelegated(container: HTMLElement) {
     if (view) {
       e.stopPropagation()
       const current = designOf(lastState.config)
-      openMenu(view, [...DESIGNS.map(([key, label, hint], i) => ({ key, label, hint: `${hint} · ${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
-        { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } }])
+      openMenu(view, [...DESIGNS.map(([key, label, hint], i) => ({ key, label, hint: `${hint} · Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
+        { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
+        { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
+        { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
+        '-',
+        { key: 'quit', label: '종료', run: () => { void window.api.quitApp() } }])
       return
     }
     const src = t.closest<HTMLElement>('[data-src]')
@@ -345,13 +350,16 @@ function bindDelegated(container: HTMLElement) {
     e.preventDefault()
     void window.api.showCardMenu?.(card.dataset.card!)
   })
-  // 숫자키 1~6으로 디자인 바꾸기, Ctrl+1~5로 크기 바꾸기(글자 입력 중이 아닐 때)
+  // 숫자키 1~5로 크기, Ctrl+1~6으로 디자인 바꾸기(글자 입력 중이 아닐 때)
   document.addEventListener('keydown', e => {
-    if ((e.target as HTMLElement).closest?.('input,textarea')) return
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) { e.preventDefault(); void window.api.sizePreset(Number(e.code.slice(5))).then(label => { if (label) notify(`크기: ${label}`) }); return }
-    if (e.ctrlKey || e.altKey || e.metaKey) return
-    const n = Number(e.key)
-    if (n >= 1 && n <= DESIGNS.length && !e.repeat) { void update({ design: DESIGNS[n - 1][0] }); notify(`디자인: ${DESIGNS[n - 1][1]}`) }
+    if ((e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.shiftKey || e.repeat) return
+    const m = /^Digit([1-9])$/.exec(e.code)
+    if (!m) return
+    const n = Number(m[1])
+    if (e.ctrlKey) {
+      if (n > DESIGNS.length) return
+      e.preventDefault(); void update({ design: DESIGNS[n - 1][0] }); notify(`디자인: ${DESIGNS[n - 1][1]}`)
+    } else if (n <= 5) void window.api.sizePreset(n).then(label => { if (label) notify(`크기: ${label}`) })
   })
 }
 

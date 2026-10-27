@@ -103,18 +103,19 @@ const smallVal = (x: ViewContext, w: QuotaWindow) => `<span class="num" style="c
 function headline(m: ServiceModel, x: ViewContext) {
   const w = worstWindow(m)
   if (!w) return { t: '', hot: false }
-  if (paceWarning(w)) return { t: `${w.label} 한도가 리셋보다 ${fmtDuration(w.resetMs! - w.toEmptyMs!)} 먼저 바닥날 수 있어요`, hot: true }
-  if (w.left <= x.warn) return { t: `${w.label} 여유가 ${w.left}%뿐이에요`, hot: true }
+  // 짧게: 언제 무엇이 일어나는지를 앞에
+  if (paceWarning(w)) return { t: `${fmtDuration(w.toEmptyMs)} 후 ${w.label} 한도 소진 예상`, hot: true }
+  if (w.left <= x.warn) return { t: `${w.label} 여유 ${w.left}%`, hot: true }
   const unused = unusedWeekly(m)
-  if (unused) return { t: `주간 여유 ${unused.left}%가 ${fmtDuration(unused.resetMs)} 뒤 초기화돼요`, hot: false }
-  if (w.runsOut) return { t: `지금 속도면 ${w.label} 한도가 ${fmtDuration(w.toEmptyMs)} 뒤 소진돼요`, hot: false }
-  return { t: windowsOf(m).length > 1 ? '두 한도 모두 여유 있어요' : '여유 있어요', hot: false }
+  if (unused) return { t: `${fmtDuration(unused.resetMs)} 후 주간 여유 ${unused.left}% 초기화`, hot: false }
+  if (w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 ${w.label} 한도 소진 예상`, hot: false }
+  return { t: windowsOf(m).length > 1 ? '두 한도 모두 여유' : '여유', hot: false }
 }
 function noteOf(w: QuotaWindow) {
   if (w.used === 0) return { t: '아직 쓰지 않음', hot: false }
   if (w.runsOut) return { t: `${fmtDuration(w.toEmptyMs)} 후 소진(예상)`, hot: paceWarning(w) }
   if (w.pace !== null && w.pace > 1.15) return { t: '시간보다 빠르게 쓰는 중', hot: false }
-  return { t: w.elapsed === null ? '리셋 시각 정보 없음' : '리셋 전까지 여유', hot: false }
+  return { t: w.elapsed === null ? '리셋 시각 정보 없음' : '여유', hot: false }
 }
 
 /** 넓은 카드의 한도 이름: 세션(5시간)·주간 · 전체 모델·주간 · Fable */

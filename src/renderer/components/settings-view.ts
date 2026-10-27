@@ -150,7 +150,7 @@ function renderPreview() {
   // 스테이지에 맞게 축소만 한다(확대하지 않음).
   const k = Math.min(1, (stage.clientWidth - 32) / W, (stage.clientHeight - 32) / H)
   updateMarkup(inner, `<div class="pv-win" style="width:${W}px;height:${H}px;transform:scale(${k.toFixed(3)})">
-    <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div><span class="view-btn">${DESIGNS.find(d => d[0] === design)![1]}${icon('chev')}</span></div>
+    <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div><span class="tool" aria-hidden="true">${icon('refresh')}</span><span class="tool" aria-hidden="true">${icon('sliders')}</span><span class="tool" aria-hidden="true" title="${DESIGNS.find(d => d[0] === design)![1]}">${icon('menu')}</span></div>
     <div class="dashboard-content">${grid}</div></div>`)
   inner.style.width = `${Math.round(W * k)}px`; inner.style.height = `${Math.round(H * k)}px`
   const cap = root.querySelector<HTMLElement>('[data-caption]')

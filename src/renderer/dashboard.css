@@ -762,3 +762,6 @@ body.is-popup-view #app { height:100vh; }
 .row-sub .row-note { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .row-sub .row-reset { flex-shrink:0; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .row-top.wide .row-val { margin-left:auto; }
+
+/* 정보·업데이트 창: 닫기 단추는 제목줄 맨 오른쪽 */
+.about-root .s-winbtns { margin-left:auto; }
