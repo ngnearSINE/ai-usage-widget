@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { AntigravityCliClient } from './antigravity-cli-client.js'
 import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
@@ -9,13 +11,35 @@ import { retainedUsage } from '../common/widget-layout.js'
 
 export class QuotaManager {
   private usages: Map<string, AccountUsage> = new Map()
-  // ponytail: 메모리 캐시만 (앱 재시작 시 소실), 필요하면 userData에 JSON 저장
+  // 마지막 실측값. 파일에도 남겨 재시작 직후 조회가 실패해도(로그인 만료 등) 마지막 값을 '갱신 지연'으로 보여 준다.
   private lastGood: Map<string, AccountUsage> = new Map()
+  private lastGoodSaveTimer: NodeJS.Timeout | undefined
   private timer: NodeJS.Timeout | null = null
   private isRefreshing: boolean = false
   private onStateChangeListeners: Array<(usages: AccountUsage[]) => void> = []
 
-  constructor(private accountStore: AccountStore) {}
+  constructor(private accountStore: AccountStore, private readonly lastGoodFile?: string) {
+    if (!lastGoodFile) return
+    try {
+      const saved = JSON.parse(fs.readFileSync(lastGoodFile, 'utf-8')) as Record<string, AccountUsage>
+      for (const [id, u] of Object.entries(saved)) if (u && typeof u === 'object' && u.primaryQuota) this.lastGood.set(id, { ...u, status: 'stale' })
+    } catch { /* 처음 실행이거나 파일이 없음 */ }
+  }
+
+  private saveLastGood() {
+    if (!this.lastGoodFile) return
+    clearTimeout(this.lastGoodSaveTimer)
+    this.lastGoodSaveTimer = setTimeout(() => {
+      try {
+        const ids = new Set(this.accountStore.getAccounts().map(a => a.id))
+        const out: Record<string, AccountUsage> = {}
+        for (const [id, u] of this.lastGood) if (ids.has(id) && !u.isEstimated) out[id] = u
+        fs.mkdirSync(path.dirname(this.lastGoodFile!), { recursive: true })
+        fs.writeFileSync(`${this.lastGoodFile}.tmp`, JSON.stringify(out), 'utf-8')
+        fs.renameSync(`${this.lastGoodFile}.tmp`, this.lastGoodFile!)
+      } catch (err) { console.warn('[QuotaManager] 마지막 사용량을 저장하지 못했습니다:', err) }
+    }, 1000)
+  }
 
   public addListener(listener: (usages: AccountUsage[]) => void) {
     this.onStateChangeListeners.push(listener)
@@ -176,6 +200,7 @@ export class QuotaManager {
       )
     } finally {
       this.isRefreshing = false
+      this.saveLastGood()
       this.notify()
     }
 

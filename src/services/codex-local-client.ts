@@ -15,13 +15,16 @@ export class CodexLocalClient {
     try {
       const appServerUsage = await CodexAppServerClient.fetchUsage(account)
       if (appServerUsage) {
-        this.cachedUsage = appServerUsage
-        this.lastFetchTime = Date.now()
+        // 대체 경로용 캐시는 기본 계정 것만(다른 로그인 폴더 계정의 값이 섞이지 않게)
+        if (!account.homeDir) { this.cachedUsage = appServerUsage; this.lastFetchTime = Date.now() }
         return appServerUsage
       }
     } catch (err) {
       console.warn('[CodexLocalClient] Codex app-server connection failed, falling back to Orca/local files:', err)
     }
+
+    // 다른 로그인 폴더 계정은 그 폴더의 실측만 쓴다(기본 계정의 대체 값과 섞이지 않게).
+    if (account.homeDir) throw new Error('이 로그인 폴더의 Codex 사용량을 받지 못했어요. 터미널에서 CODEX_HOME을 이 폴더로 두고 codex login을 했는지 확인해 주세요')
 
     // 1. Orca 로컬 세션 네임드 파이프 직결 조회 시도 (2순위)
     try {

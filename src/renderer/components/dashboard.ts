@@ -1,5 +1,6 @@
 import type { AccountUsage, AppState, QuotaInfo, WidgetConfig } from '../../common/types.js'
 import { barColor } from '../../common/bar-color.js'
+import { displayOf } from '../../common/display-options.js'
 import { visibleUsages } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
@@ -34,6 +35,7 @@ const clamp = (n: number) => Number.isFinite(n) ? Math.max(0, Math.min(100, Math
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
 let busy = false
 let dragId: string | null = null
+let previewOrder: string[] | null = null // 카드를 끄는 동안의 임시 순서
 let lastState: AppState
 let host: HTMLElement
 let toastTimer: ReturnType<typeof setTimeout>
@@ -67,12 +69,12 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   // 모델 전용 주간 한도(Fable 등)를 보기로 둔 계정은 작업표시줄에도 세 번째 줄로 보인다(숨긴 계정은 상태에서 이미 빠져 있다).
   const scoped = u.scopedQuotas || []
   const rows = [...quotas, ...scoped.map(s => s.quota)]
-  const warn = Math.max(1, Math.min(60, config.warnPercent ?? 20))
+  const warn = Math.max(1, Math.min(60, config.warnPercent ?? 20)), showUsed = displayOf(config, u.id).showUsed
   const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
-    const value = available && q ? clamp(config.showUsedPercent ? q.percentUsed : q.percentLeft) : null
+    const value = available && q ? clamp(showUsed ? q.percentUsed : q.percentLeft) : null
     const name = i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
-    const label = `${name} ${config.showUsedPercent ? '사용한 양' : '남은 양'}`
+    const label = `${name} ${showUsed ? '사용한 양' : '남은 양'}`
     // 줄마다 기본 색(--row-base: 서비스 평소 색과 그 흐린 색)에서 경고색으로 바뀐다(CSS에서 줄별로 정함).
     const fill = available && q ? barColor(clamp(q.percentLeft), 'var(--row-base)', colorOpts) : 'var(--row-base)'
     return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%;--fill:${fill}"></div></div><span class="mini-value" aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
@@ -88,11 +90,99 @@ export function openDesign() { void window.api.openSettings('design') }
 /* ---------- 본체 ---------- */
 const designOf = (config: WidgetConfig): DesignId => (DESIGNS.some(d => d[0] === config.design) ? config.design : 'rich') as DesignId
 function shownUsages(state: AppState) {
-  const list = visibleUsages(state.usages, state.accounts, state.config)
+  let list = visibleUsages(state.usages, state.accounts, state.config)
+  if (previewOrder) { const at = new Map(previewOrder.map((id, i) => [id, i])); return [...list].sort((a, b) => (at.get(a.id) ?? 999) - (at.get(b.id) ?? 999)) }
   // 여유가 적은 순 정렬은 연결된 서비스끼리만, 연결 안 된 카드는 뒤로.
   return state.config.sortLowFirst
     ? [...list].sort((a, b) => lowestLeft(serviceModel(a)) - lowestLeft(serviceModel(b)))
     : list
+}
+
+/* ---------- 카드 순서 끌기 ----------
+   카드를 누른 채 6px 넘게 움직이면 시작한다. 끄는 카드는 복제본이 포인터에 붙어 다니고, 원래 카드는 반투명 점선 칸이 되어
+   놓으면 들어갈 자리를 보여 준다. 그 칸이 옮겨 갈 때 다른 카드는 미끄러지듯 비켜 준다. 놓으면 복제본이 그 칸으로 들어간다.
+   여유 적은 순 정렬이 켜져 있으면 순서를 바꿀 수 없음을 알린다. */
+function startCardReorder(card: HTMLElement, down: PointerEvent) {
+  const id = card.dataset.card!, startX = down.clientX, startY = down.clientY
+  let started = false, grabX = 0, grabY = 0, order: string[] = [], slots: DOMRect[] = []
+  let ghost: HTMLElement | null = null, frame: DOMRect
+  const dash = () => host.querySelector<HTMLElement>('.dashboard')!
+  const cardEl = () => host.querySelector<HTMLElement>(`[data-card="${CSS.escape(id)}"]`)
+  const rects = () => new Map([...host.querySelectorAll<HTMLElement>('[data-card]')].map(c => [c.dataset.card!, c.getBoundingClientRect()]))
+  const follow = (x: number, y: number) => { if (ghost) ghost.style.transform = `translate(${x - grabX - frame.left}px, ${y - grabY - frame.top}px)` }
+  const markSlot = () => cardEl()?.classList.add('drop-slot')
+  const relayout = (next: string[]) => {
+    const before = rects()
+    previewOrder = next
+    layoutCards()
+    markSlot() // 다시 그리면 클래스가 원래대로 돌아가므로 다시 붙인다
+    for (const c of host.querySelectorAll<HTMLElement>('[data-card]')) {
+      const a = before.get(c.dataset.card!), b = c.getBoundingClientRect()
+      if (!a || (a.left === b.left && a.top === b.top)) continue
+      c.style.transition = 'none'; c.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px)`
+      requestAnimationFrame(() => { c.style.transition = 'transform .2s cubic-bezier(.2,.8,.2,1)'; c.style.transform = '' })
+    }
+  }
+  const move = (e: PointerEvent) => {
+    if (!started) {
+      if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 6) return
+      if (lastState.config.sortLowFirst) { notify('‘여유가 적은 서비스를 앞으로’가 켜져 있어 순서를 바꿀 수 없어요. 설정 → 표시에서 끌 수 있어요.'); cleanup(); return }
+      started = true; dragId = id
+      const r = card.getBoundingClientRect(); grabX = startX - r.left; grabY = startY - r.top
+      order = shownUsages(lastState).map(u => u.id)
+      // 칸 위치는 시작할 때 고정한다(비켜 가는 애니메이션 도중의 위치로 계산하면 자리가 흔들린다).
+      const at = rects(); slots = order.map(x => at.get(x)!).filter(Boolean)
+      frame = dash().getBoundingClientRect()
+      ghost = card.cloneNode(true) as HTMLElement
+      ghost.removeAttribute('data-card'); ghost.removeAttribute('data-tip')
+      ghost.classList.add('drag-ghost')
+      Object.assign(ghost.style, { width: `${r.width}px`, height: `${r.height}px` })
+      dash().appendChild(ghost)
+      markSlot()
+      document.body.classList.add('reordering')
+      window.api.hideTip?.()
+      // 카드는 자리를 옮길 때 DOM에서 빠졌다 들어가 포인터 붙잡기가 풀린다. 움직이지 않는 바깥 틀이 붙잡는다.
+      try { host.setPointerCapture(e.pointerId) } catch {}
+    }
+    follow(e.clientX, e.clientY)
+    // 포인터가 있는(없으면 가장 가까운) 칸에 들어간다.
+    let slot = 0, best = Infinity
+    slots.forEach((r, i) => {
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2), d = inside ? -1 : dx * dx + dy * dy
+      if (d < best) { best = d; slot = i }
+    })
+    const next = order.filter(x => x !== id)
+    next.splice(Math.min(slot, next.length), 0, id)
+    if (next.join('|') !== (previewOrder || order).join('|')) relayout(next)
+  }
+  const cleanup = () => { host.removeEventListener('pointermove', move); host.removeEventListener('pointerup', up); host.removeEventListener('pointercancel', cancel); document.body.classList.remove('reordering') }
+  const finish = async (save: boolean) => {
+    cleanup()
+    if (!started) return
+    const final = save ? previewOrder || order : order
+    // 들고 있던 카드를 들어갈 칸으로 내려놓는 짧은 움직임
+    const slotRect = cardEl()?.getBoundingClientRect()
+    if (ghost && slotRect && save) {
+      ghost.style.transition = 'transform .16s cubic-bezier(.2,.8,.2,1), box-shadow .16s'
+      ghost.style.transform = `translate(${slotRect.left - frame.left}px, ${slotRect.top - frame.top}px)`
+      ghost.classList.add('landing')
+      await new Promise(r => setTimeout(r, 170))
+    }
+    ghost?.remove(); ghost = null
+    previewOrder = null; dragId = null
+    if (save && final.join('|') !== order.join('|')) {
+      const i = final.indexOf(id), beforeId = final[i + 1] ?? null
+      try { const next = await window.api.moveAccount(id, beforeId); renderDashboard(host, next, true); notify('순서를 저장했어요.'); return }
+      catch { notify('순서를 저장하지 못했어요.') }
+    }
+    renderDashboard(host, lastState, true)
+  }
+  const up = () => { void finish(true) }
+  const cancel = () => { void finish(false) }
+  host.addEventListener('pointermove', move)
+  host.addEventListener('pointerup', up)
+  host.addEventListener('pointercancel', cancel)
 }
 
 export function renderDashboard(container: HTMLElement, state: AppState, force = false) {
@@ -106,8 +196,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
     <header class="dashboard-header"><div class="window-handle" data-window-drag title="끌어서 창 이동 · 아래로 끌면 도킹"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
       <button class="view-btn" data-view-menu aria-haspopup="menu" title="보기 바꾸기">${DESIGNS.find(d => d[0] === design)![1]}${icon('chev')}</button>
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
-      <button class="tool" data-settings="design" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
-      <button class="tool" data-settings="services" title="서비스 관리" aria-label="서비스 관리 열기">${icon('grid')}</button>
+      <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button></header>
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
     <div class="toast" role="status" aria-live="polite"></div>
@@ -204,7 +293,8 @@ function bindDelegated(container: HTMLElement) {
     if (view) {
       e.stopPropagation()
       const current = designOf(lastState.config)
-      openMenu(view, DESIGNS.map(([key, label, hint]) => ({ key, label, hint, on: current === key, run: () => { void update({ design: key }) } })))
+      openMenu(view, [...DESIGNS.map(([key, label, hint], i) => ({ key, label, hint: `${hint} · ${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
+        { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } }])
       return
     }
     const src = t.closest<HTMLElement>('[data-src]')
@@ -228,26 +318,24 @@ function bindDelegated(container: HTMLElement) {
     try { if (!await window.api.openServicePage(card.dataset.card!)) notify('이 서비스는 열 수 있는 사용량 페이지가 없어요.') }
     catch { notify('사용량 페이지를 열지 못했어요.') }
   })
-  // 카드를 끌어 순서를 바꾼다. 버튼 위에서 시작한 끌기는 무시한다.
-  container.addEventListener('dragstart', e => {
+  // 카드를 끌어 순서를 바꾼다(버튼 위에서 시작한 끌기와 오른쪽 단추는 제외).
+  container.addEventListener('pointerdown', e => {
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
-    if (!card || (e.target as HTMLElement).closest('button')) return
-    dragId = card.dataset.card!
-    e.dataTransfer!.setData('text/plain', dragId); e.dataTransfer!.effectAllowed = 'move'
-    card.classList.add('dragging')
+    if (!card || e.button !== 0 || (e.target as HTMLElement).closest('button') || card.closest('.pv-win')) return
+    startCardReorder(card, e)
   })
-  container.addEventListener('dragend', () => { dragId = null; renderDashboard(container, lastState, true) })
-  container.addEventListener('dragover', e => {
+  // 카드 우클릭: 그 서비스의 메뉴(메인 프로세스의 기본 메뉴라 작은 위젯에서도 잘리지 않는다)
+  container.addEventListener('contextmenu', e => {
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
-    if (dragId && card && card.dataset.card !== dragId) { e.preventDefault(); e.dataTransfer!.dropEffect = 'move'; container.querySelectorAll('.drop-target').forEach(c => c !== card && c.classList.remove('drop-target')); card.classList.add('drop-target') }
-  })
-  container.addEventListener('drop', async e => {
-    const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
-    if (!card || !dragId) return
+    if (!card) return
     e.preventDefault()
-    const id = dragId; dragId = null
-    try { const next = await window.api.moveAccount(id, card.dataset.card!); renderDashboard(container, next, true); notify('서비스 순서를 저장했어요.') }
-    catch { notify('순서를 저장하지 못했어요.') }
+    void window.api.showCardMenu?.(card.dataset.card!)
+  })
+  // 숫자키 1~6으로 디자인 바꾸기(글자 입력 중이 아닐 때)
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.altKey || e.metaKey || (e.target as HTMLElement).closest?.('input,textarea')) return
+    const n = Number(e.key)
+    if (n >= 1 && n <= DESIGNS.length && !e.repeat) { void update({ design: DESIGNS[n - 1][0] }); notify(`디자인: ${DESIGNS[n - 1][1]}`) }
   })
 }
 

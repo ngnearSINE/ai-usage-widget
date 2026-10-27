@@ -85,7 +85,8 @@ export class GrokCliClient {
   }
 
   public static async fetchUsage(account: AccountConfig): Promise<AccountUsage> {
-    const auth = readGrokAuth()
+    // 두 번째 계정: 그 계정의 로그인 폴더(GROK_HOME)의 auth.json
+    const auth = readGrokAuth(account.homeDir ? path.join(account.homeDir, 'auth.json') : grokAuthPath())
     if (!auth) return this.failed(account, 'unauthenticated', GROK_TEXT.notLoggedIn)
     if (auth.expiresAt !== null && auth.expiresAt < Date.now() + 30e3) return this.failed(account, 'error', GROK_TEXT.expired)
     const headers = { authorization: `Bearer ${auth.key}`, 'x-xai-token-auth': 'xai-grok-cli', accept: 'application/json' }

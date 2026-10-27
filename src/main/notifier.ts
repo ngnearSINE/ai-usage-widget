@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Notification } from 'electron'
 import type { AccountUsage, WidgetConfig } from '../common/types.js'
-import { evaluateNotifications, type NotifyState } from '../common/notify-rules.js'
+import { evaluateNotifications, inQuietHours, type NotifyState } from '../common/notify-rules.js'
 
 /** 사용량 갱신마다 알림 판정을 돌리고 Windows 알림을 띄운다. 보낸 기록은 파일에 남겨 앱을 다시 켜도 같은 주기에 반복하지 않는다. */
 export class UsageNotifier {
@@ -21,6 +21,8 @@ export class UsageNotifier {
     const changed = JSON.stringify(state) !== JSON.stringify(this.state)
     this.state = state
     if (changed) this.save()
+    // 쉬는 시간에는 보내지 않는다(이미 지난 알림을 나중에 몰아 보내지도 않는다: 기록은 위에서 저장됨).
+    if (inQuietHours(config.notifyQuiet)) return 0
     for (const e of events) this.show(e.title, e.body)
     return events.length
   }

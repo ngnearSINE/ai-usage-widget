@@ -29,6 +29,21 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   placementMode: oneOf('docked', 'floating'),
   colorMode: oneOf('step', 'smooth'),
   autoUpdate: bool,
+  notifyQuiet: v => {
+    const o = v as Record<string, unknown> | null, hm = (s: unknown) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s)
+    return o && typeof o.enabled === 'boolean' && hm(o.start) && hm(o.end) ? { enabled: o.enabled, start: o.start, end: o.end } : SKIP
+  },
+  displayByAccount: v => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return SKIP
+    const out: Record<string, Record<string, boolean>> = {}
+    for (const [id, o] of Object.entries(v as Record<string, any>)) {
+      if (!o || typeof o !== 'object') continue
+      const clean: Record<string, boolean> = {}
+      for (const k of ['showUsed', 'showPace', 'showReset']) if (typeof o[k] === 'boolean') clean[k] = o[k]
+      if (Object.keys(clean).length) out[id.slice(0, 200)] = clean
+    }
+    return out
+  },
   apiEndpoint: v => typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) && v.length <= 500 ? v.trim() : SKIP,
   apiScreen: num(1, 999),
   appearance: oneOf('dark', 'light', 'system'),

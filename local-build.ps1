@@ -38,7 +38,7 @@ if ($LASTEXITCODE -ne 0 -or !$lockHash) { throw '의존성 목록을 읽지 못�
 $receipt = Join-Path $buildRoot 'dependency.sha256'
 $needsInstall = !(Test-Path -LiteralPath (Join-Path $buildRoot 'node_modules/electron/dist/electron.exe'))
 if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -Raw).Trim() -ne $lockHash) { $needsInstall = $true }
-foreach ($entry in @('src','native','public','test','index.html','tsconfig.json','vite.config.ts','electron-builder.json','package.json','package-lock.json')) {
+foreach ($entry in @('src','native','public','test','index.html','tsconfig.json','vite.config.ts','electron-builder.json','package.json','package-lock.json','CHANGELOG.md')) {
   Copy-Item -LiteralPath (Join-Path $sourceRoot $entry) -Destination $buildRoot -Recurse -Force
 }
 # 사용 설명서 PDF는 배포본(설치 폴더·zip)에 '사용 설명서.pdf'로 들어간다(electron-builder.json extraFiles).

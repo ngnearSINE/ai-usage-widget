@@ -55,6 +55,7 @@ export interface AccountConfig {
   orgUuid?: string // Claude 조직(팀/개인). 있으면 그 조직 토큰으로 조회한다
   showScoped?: boolean // 모델 전용 한도(Fable 등) 보기. 기본 켬
   hiddenInDock?: boolean // 작업표시줄 도킹 화면에서만 숨김. 위젯 창에는 보인다
+  homeDir?: string // 두 번째 계정: 그 서비스 CLI의 로그인 폴더(Codex CODEX_HOME, Grok GROK_HOME)
   barColor?: string // 그래프 평소 색: 없음=서비스 색, 'green', '#rrggbb'
   customMock?: {
     primaryPercent: number
@@ -76,6 +77,8 @@ export interface WidgetConfig {
   refreshIntervalSec: number // 갱신 주기 (기본 60초)
   showWeeklyLimit: boolean
   colorByUsage: boolean // 사용량에 따른 색상 변화 (안전:그린 -> 주의:오렌지 -> 위험:레드)
+  displayByAccount?: Record<string, Partial<Record<'showUsed' | 'showPace' | 'showReset', boolean>>> // 서비스별 보여 줄 정보
+  notifyQuiet?: { enabled: boolean; start: string; end: string } // 알림 쉬는 시간(HH:MM, 자정을 넘을 수 있음). 그 사이 알림은 건너뜀
   autoUpdate?: boolean // 새 버전 자동 확인·다운로드(기본 켬, 설치판만)
   colorMode?: 'step' | 'smooth' // 경고색으로 바뀌는 방식: 기준에서 한 번에(기본) / 남은 양에 따라 부드럽게
   showUsedPercent?: boolean // true: 소모량(%) 표시, false/미설정: 남은량(%) 표시 (작업표시줄 바)

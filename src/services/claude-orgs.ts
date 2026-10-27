@@ -41,6 +41,23 @@ export function groupClaudeOrgs(found: Array<{ token: ClaudeToken; profile: Clau
   return [...byOrg.values()].sort((a, b) => Number(b.kind !== '개인') - Number(a.kind !== '개인') || a.label.localeCompare(b.label))
 }
 
+/**
+ * CLI 로그인이 만료된 조직과 만료된 지 몇 시간인지. 조직은 CLI 설정(~/.claude.json의 oauthAccount)에서 읽는다.
+ * 위젯은 다른 앱의 로그인 정보를 바꾸지 않으므로 직접 새로 고치지 않고, 사용자가 claude를 실행하도록 안내한다.
+ */
+export function cliExpiredOrg(): { orgUuid: string; hours: number } | null {
+  const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+  try {
+    const oauth = JSON.parse(fs.readFileSync(path.join(dir, '.credentials.json'), 'utf-8')).claudeAiOauth
+    if (typeof oauth?.expiresAt !== 'number' || oauth.expiresAt > Date.now()) return null
+    const cfgFile = process.env.CLAUDE_CONFIG_DIR ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json')
+    const orgUuid = JSON.parse(fs.readFileSync(cfgFile, 'utf-8'))?.oauthAccount?.organizationUuid
+    return typeof orgUuid === 'string' && orgUuid ? { orgUuid, hours: (Date.now() - oauth.expiresAt) / 3600e3 } : null
+  } catch { return null }
+}
+export const cliExpiredMessage = (hours: number) =>
+  `Claude Code CLI 로그인이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 터미널에서 claude를 한 번 실행하면 다시 연결돼요`
+
 /** CLI 로그인 파일은 있는데 토큰이 만료된 상태(어느 조직인지 아직 모름). */
 export function cliTokenExpired(): boolean {
   const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
@@ -115,7 +132,11 @@ export class ClaudeOrgs {
     if (cached && Date.now() - cached.at < USAGE_MIN_INTERVAL_MS) return { ...cached.usage, id: account.id, name: account.name }
     if ((this.backoffUntil.get(orgUuid) || 0) > Date.now()) throw new Error('Claude 사용량 API 요청 제한으로 잠시 쉬는 중')
     const org = (await this.discover()).find(o => o.orgUuid === orgUuid)
-    if (!org) throw new Error('이 조직의 로그인 토큰이 없거나 만료됐어요. Claude 앱에서 이 조직으로 한 번 전환하거나 claude를 실행하세요')
+    if (!org) {
+      const expired = cliExpiredOrg()
+      throw new Error(expired?.orgUuid === orgUuid ? cliExpiredMessage(expired.hours)
+        : '이 조직의 로그인 정보를 찾지 못했어요. Claude 데스크톱 앱에서 이 조직으로 한 번 전환하거나, 터미널에서 claude를 실행해 주세요')
+    }
     let lastStatus = 0
     for (const t of org.tokens) {
       // 한 토큰의 네트워크 오류(시간 초과 등)로 나머지 토큰을 건너뛰지 않는다.

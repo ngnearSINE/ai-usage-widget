@@ -9,6 +9,7 @@ import { renderCard, viewContext } from './usage-views.js'
 import { applyAppearance, escapeText, icon } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
 import { SMOOTH_START } from '../../common/bar-color.js'
+import { DISPLAY_KEYS, displayOf, displaySummary, setDisplay, setDisplayAll, type DisplayKey } from '../../common/display-options.js'
 
 /**
  * 설정 창: 왼쪽 미리보기(실제 위젯과 같은 렌더러·배치), 오른쪽 조절 항목.
@@ -18,7 +19,8 @@ type Tab = 'design' | 'display' | 'services' | 'alerts' | 'history' | 'general'
 const TABS: Array<[Tab, string]> = [['design', '디자인'], ['display', '표시'], ['services', '서비스'], ['alerts', '알림'], ['history', '기록'], ['general', '일반']]
 // 예전 탭 이름으로 열어도 옮겨 간 곳으로 간다.
 const TAB_ALIAS: Record<string, Tab> = { accounts: 'services', convenience: 'general', api: 'general' }
-const toTab = (v?: string | null): Tab | null => v ? (TABS.some(t => t[0] === v) ? v as Tab : TAB_ALIAS[v] || null) : null
+const lastTab = () => { try { return localStorage.getItem('settings.tab') } catch { return null } }
+const toTab = (v?: string | null): Tab | null => { if (v === 'last') v = lastTab() || 'design'; return v ? (TABS.some(t => t[0] === v) ? v as Tab : TAB_ALIAS[v] || null) : null }
 type SizeKey = 'current' | 'flat' | 'small' | 'tall' | 'large'
 const SIZES: Array<[SizeKey, string, number, number]> = [['current', '현재 창', 0, 0], ['flat', '납작', 640, 110], ['small', '작게', 300, 220], ['tall', '세로', 300, 640], ['large', '크게', 980, 560]]
 const INTERVALS: Array<[number, string]> = [[15, '15초'], [30, '30초'], [60, '1분'], [120, '2분'], [300, '5분']]
@@ -39,6 +41,8 @@ const openAdvanced = new Set<string>() // 펼쳐 둔 '고급' 접기
 let detected: DetectedApp[] | null = null
 let detecting = false
 let addingCustom = false
+let addingHome = false
+const homeDraft = { provider: 'codex' as 'codex' | 'xai', dir: '', name: '' }
 const customDraft = { name: '', p5: '100', pw: '100', color: '#8cbbff' }
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
@@ -71,13 +75,14 @@ export function initSettings(container: HTMLElement, initial: AppState, initialT
 /** 이름·주소·단축키를 입력하는 중인지. 그동안 새 상태로 다시 그리면 입력이 지워진다. */
 function typing() {
   const a = document.activeElement as HTMLElement | null
-  return !!a && root.contains(a) && (a.matches('input[type=text],input[type=url],input[type=number],input[type=color],.sc-input'))
+  return !!a && root.contains(a) && (a.matches('input[type=text],input[type=url],input[type=number],input[type=color],input[type=time],.sc-input'))
 }
 
 export function renderSettings(next: AppState, force = false) {
   state = next
   if (!force && (draft || typing())) { if (!draft) pendingState = next; return } // 슬라이더·입력 중에는 다시 그리지 않는다
   pendingState = null
+  try { localStorage.setItem('settings.tab', tab) } catch {}
   applyAppearance(config())
   const body0 = root.querySelector('.s-body')
   const scroll = body0?.getAttribute('data-for') === tab ? body0.scrollTop : 0
@@ -197,11 +202,18 @@ function displayTab(c: WidgetConfig) {
       + `<div class="field ${c.colorByUsage === false ? 'is-disabled' : ''}"><span>막대 색이 바뀌는 방식</span>${segment('colorMode', c.colorMode === 'smooth' ? 'smooth' : 'step', [['step', '기준에서 한 번에'], ['smooth', '남은 양에 따라 부드럽게']], '막대 색이 바뀌는 방식')}${colorScale(c, warn)}</div>`
       + toggle('sortLowFirst', '여유가 적은 서비스를 앞으로', '', !!c.sortLowFirst)
       + hint('남은 양이 기준보다 많아도, 지금 속도면 리셋보다 한참 먼저 바닥날 것 같으면 \'속도 주의\'로 알려요.'))
-    + section('보여 줄 정보', toggle('showUsedPercent', '쓴 양으로 표시', '끄면 남은 양으로 표시해요.', !!c.showUsedPercent)
-      + toggle('showPace', '페이스 눈금', '고르게 썼다면 지금 남아 있어야 할 위치에 흰 눈금을 그려요.', c.showPace !== false)
-      + toggle('showResetTime', '리셋까지 남은 시간', '', c.showResetTime !== false))
+    + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
       + `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`)
+}
+
+/** 서비스×항목 표. 맨 윗줄 '모든 서비스'는 일괄 변경(값이 섞이면 '일부'). 카드 우클릭 메뉴에서도 바꿀 수 있다. */
+function displayTable(c: WidgetConfig) {
+  const accs = state.accounts.filter(a => a.enabled && !a.hidden), ids = accs.map(a => a.id)
+  const head = `<div class="dt-row dt-head"><span></span>${DISPLAY_KEYS.map(([, label, tip]) => `<span title="${tip}">${label}</span>`).join('')}</div>`
+  const all = `<div class="dt-row dt-all"><span><b>모든 서비스</b></span>${DISPLAY_KEYS.map(([k, label]) => { const s = displaySummary(c, ids, k); return `<label class="dt-cell"><input type="checkbox" data-dall="${k}" ${s === 'on' ? 'checked' : ''} data-mixed="${s === 'mixed'}" aria-label="모든 서비스 ${label}"></label>` }).join('')}</div>`
+  const rows = accs.map(a => { const v = displayOf(c, a.id); return `<div class="dt-row"><span class="dt-name">${renderAiIcon(a.provider, a.name, c.iconStyle, 18)}<span>${escapeText(a.name)}</span></span>${DISPLAY_KEYS.map(([k, label]) => `<label class="dt-cell"><input type="checkbox" data-d1="${k}" data-id="${escapeText(a.id)}" ${v[k] ? 'checked' : ''} aria-label="${escapeText(a.name)} ${label}"></label>`).join('')}</div>` }).join('')
+  return `<div class="dt">${head}${all}${rows}</div>${hint('쓴 양으로: 끄면 남은 양. 페이스 눈금: 고르게 썼다면 지금 남아 있어야 할 위치. 카드를 우클릭해도 바꿀 수 있어요.')}`
 }
 
 const visibilityOf = (a: AccountConfig) => a.hidden ? 'none' : a.hiddenInDock ? 'window' : 'all'
@@ -210,6 +222,7 @@ function statusOf(a: AccountConfig, s: AppState): [string, string] {
   if (!a.enabled) return ['조회 꺼짐', 'off']
   if (a.hidden) return ['숨김', 'off']
   if (a.provider === 'custom') return ['직접 입력', 'ok']
+  if (u?.errorMessage && /로그인.*만료/.test(u.errorMessage)) return [u.status === 'stale' ? '로그인 만료 · 마지막 값' : '로그인 만료', 'warn']
   return u?.status === 'ready' ? (u.isEstimated ? ['추정값', 'warn'] : ['연결됨', 'ok']) : u?.status === 'stale' ? ['갱신 지연', 'warn'] : u?.status === 'loading' ? ['확인 중', 'off'] : ['연결 안 됨', 'bad']
 }
 function servicesTab(s: AppState) {
@@ -237,10 +250,18 @@ function servicesTab(s: AppState) {
       <div class="field-row"><label class="field"><span>5시간 남은 양(%)</span><input type="number" class="text-input" data-custom="p5" min="0" max="100" value="${escapeText(customDraft.p5)}"></label><label class="field"><span>주간 남은 양(%)</span><input type="number" class="text-input" data-custom="pw" min="0" max="100" value="${escapeText(customDraft.pw)}"></label><label class="field narrow"><span>색</span><input type="color" class="color-input" data-custom="color" value="${hex(customDraft.color)}"></label></div>
       <div class="svc-actions"><button class="primary-button" data-custom-save>추가</button><button class="ghost-button" data-custom-cancel>취소</button></div>
     </div>` : `<button class="secondary-button" data-custom-open>${icon('plus')}숫자를 직접 넣는 카드 추가</button>`
+  const env = homeDraft.provider === 'codex' ? 'CODEX_HOME' : 'GROK_HOME', cli = homeDraft.provider === 'codex' ? 'codex' : 'grok'
+  const home = addingHome ? `<div class="custom-form">
+      <div class="field"><span>서비스</span><div class="segmented" role="group" aria-label="서비스">${([['codex', 'Codex'], ['xai', 'Grok']] as const).map(([v, t]) => `<button data-home-provider="${v}" aria-pressed="${homeDraft.provider === v}">${t}</button>`).join('')}</div></div>
+      <div class="field"><span>로그인 폴더</span><div class="field-inline"><input type="text" class="text-input" data-home-dir readonly placeholder="폴더를 고르세요" value="${escapeText(homeDraft.dir)}"><button class="ghost-button" data-home-pick>폴더 고르기</button></div></div>
+      <label class="field"><span>이름(선택)</span><input type="text" class="text-input" data-home-name maxlength="60" placeholder="예: ${homeDraft.provider === 'codex' ? 'Codex 회사' : 'Grok 두 번째'}" value="${escapeText(homeDraft.name)}"></label>
+      ${hint(`먼저 그 폴더로 로그인해 두세요. 명령 프롬프트에서 <code>set ${env}=폴더 경로</code> 다음에 <code>${cli} login</code>을 실행하면 돼요. 평소 쓰는 계정과 따로 로그인돼요.`)}
+      <div class="svc-actions"><button class="primary-button" data-home-save>추가</button><button class="ghost-button" data-home-cancel>취소</button></div>
+    </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}다른 로그인 폴더의 계정 추가 (Codex·Grok)</button>`
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
     + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
     + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '로그인이 없거나 조회에 실패한 카드를 위젯에서 빼요. 잠깐의 오류는 마지막 값을 그대로 보여 줘요.', !!s.config.hideDisconnected)
-    + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
+    + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
     + advanced('services', `<button class="secondary-button danger" data-reset-defaults>기본 서비스 목록으로 되돌리기</button>${hint('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.')}`)
 }
 
@@ -263,6 +284,9 @@ function alertsTab(s: AppState) {
       + toggle('notifyReset', '한도가 다시 채워졌을 때', '빠듯했던 한도가 리셋됐을 때', c.notifyReset === true)
       + toggle('notifyUnused', '주간 여유가 많이 남았을 때', '주간 리셋이 24시간 안인데 40% 넘게 남았을 때', c.notifyUnused !== false)
       + hint('같은 리셋 주기 안에서는 종류마다 한 번만 알려요. 앱을 다시 켜도 반복하지 않고, 갱신이 늦어진 값으로는 알리지 않아요.'))
+    + section('쉬는 시간', (() => { const q = c.notifyQuiet || { enabled: false, start: '23:00', end: '08:00' }
+        return `<label class="setting-row"><span><b>알림 쉬는 시간</b><small>이 시간에는 사용량 알림을 보내지 않아요. 지난 알림을 나중에 몰아 보내지도 않아요.</small></span><input class="switch" type="checkbox" data-quiet-on ${q.enabled ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span></label>
+        <div class="field-row quiet-times ${q.enabled ? '' : 'is-disabled'}"><label class="field"><span>시작</span><input type="time" class="text-input" data-quiet="start" value="${q.start}"></label><label class="field"><span>끝</span><input type="time" class="text-input" data-quiet="end" value="${q.end}"></label></div>` })())
     + section('서비스별', rows ? `<div class="alert-table">${rows}</div>` : hint('조회 중인 서비스가 없어요.'), '체크한 한도만 알려요')
     + '</div>'
 }
@@ -328,14 +352,12 @@ function generalTab(s: AppState) {
         + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
         + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
         + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.'))
+      + section('설정 백업', `<div class="svc-actions"><button class="ghost-button" data-backup="export">${icon('arrow')}파일로 내보내기</button><button class="ghost-button" data-backup="import">${icon('plus')}파일에서 불러오기</button></div>${hint('화면·알림 설정과 카드 목록을 파일 하나로 저장해요. 로그인 정보는 담지 않아요. 다른 PC로 옮기거나 다시 설치할 때 쓰세요.')}`)
       + section('외부 디스플레이로 보내기', toggle('apiPushEnabled', '사용량 보내기', '확인할 때마다 아래 주소로 사용량을 HTTP POST로 보내요(책상 위 작은 화면 등).', !!c.apiPushEnabled)
         + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>
         <label class="field"><span>화면 번호</span><input type="number" class="text-input short" data-api-screen min="1" step="1" value="${c.apiScreen ?? 1}"></label>`), '고급 설정')
-    + section('정보와 업데이트', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}<span class="update-line ${updateTone(s)}">${updateText(s)}</span></p>`
-      + (s.update && s.update.status !== 'unsupported' ? toggle('autoUpdate', '자동 업데이트', '새 버전이 나오면 뒤에서 내려받고, 다음에 앱을 다시 시작할 때 설치해요.', c.autoUpdate !== false)
-        + (s.update.status === 'ready' ? `<button class="primary-button wide" data-update-install>${icon('refresh')}다시 시작해 ${escapeText(s.update.version || '')} 설치</button>`
-          : `<button class="secondary-button" data-update-check ${['checking', 'downloading'].includes(s.update.status) ? 'disabled' : ''}>${icon('refresh')}지금 확인</button>`)
-        : hint('자동 업데이트는 설치판에서만 돼요. 휴대용(zip)은 새 버전을 직접 내려받아 주세요.'))
+    + section('정보', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}<span class="update-line ${updateTone(s)}">${updateText(s)}</span></p>`
+      + `<button class="secondary-button" data-open-about>${icon('refresh')}정보·업데이트 열기</button>`
       + (s.guideAvailable ? `<button class="secondary-button" data-open-guide>${icon('book')}사용 설명서 열기</button>` : ''))
 }
 function updateText(s: AppState) {
@@ -389,6 +411,12 @@ function bindEvents() {
   body.querySelectorAll<HTMLDetailsElement>('[data-adv]').forEach(el => el.ontoggle = () => { if (el.open) openAdvanced.add(el.dataset.adv!); else openAdvanced.delete(el.dataset.adv!) })
   body.querySelectorAll<HTMLElement>('[data-config]').forEach(el => el.onclick = () => { void update({ [el.dataset.config!]: el.dataset.value }) })
   body.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach(el => el.onchange = () => { void update({ [el.dataset.toggle!]: el.checked }) })
+  body.querySelectorAll<HTMLInputElement>('[data-dall]').forEach(el => { el.indeterminate = el.dataset.mixed === 'true'; el.onchange = () => { void update(setDisplayAll(config(), el.dataset.dall as DisplayKey, el.checked)) } })
+  body.querySelectorAll<HTMLInputElement>('[data-d1]').forEach(el => el.onchange = () => { void update(setDisplay(config(), el.dataset.id!, el.dataset.d1 as DisplayKey, el.checked)) })
+  const quiet = () => config().notifyQuiet || { enabled: false, start: '23:00', end: '08:00' }
+  const quietOn = body.querySelector<HTMLInputElement>('[data-quiet-on]')
+  if (quietOn) quietOn.onchange = () => { void update({ notifyQuiet: { ...quiet(), enabled: quietOn.checked } }) }
+  body.querySelectorAll<HTMLInputElement>('[data-quiet]').forEach(el => el.onchange = () => { if (/^\d\d:\d\d$/.test(el.value)) void update({ notifyQuiet: { ...quiet(), [el.dataset.quiet!]: el.value } }) })
   body.querySelectorAll<HTMLElement>('[data-interval]').forEach(el => el.onclick = () => { void update({ refreshIntervalSec: Number(el.dataset.interval) }) })
   body.querySelectorAll<HTMLElement>('[data-source-all]').forEach(el => el.onclick = () => {
     const v = el.dataset.sourceAll as ValueSource, all: Record<string, ValueSource> = {}
@@ -435,8 +463,15 @@ function bindEvents() {
   if (ep) ep.onchange = () => { const v = ep.value.trim(); if (/^https?:\/\/\S+$/i.test(v)) void update({ apiEndpoint: v }); else { notify('http:// 또는 https://로 시작하는 주소를 넣어 주세요.'); ep.value = state.config.apiEndpoint || 'http://localhost:8080/api/usage' } }
   const scr = body.querySelector<HTMLInputElement>('[data-api-screen]')
   if (scr) scr.onchange = () => { const v = parseInt(scr.value, 10); if (v >= 1) void update({ apiScreen: v }); else scr.value = String(state.config.apiScreen ?? 1) }
+  onClickOf('[data-open-about]', () => { void window.api.openAbout() })
   onClickOf('[data-update-check]', () => run(window.api.checkUpdate(), '업데이트를 확인하지 못했어요.'))
   onClickOf('[data-update-install]', () => run(window.api.installUpdate(), '업데이트를 설치하지 못했어요.'))
+  body.querySelectorAll<HTMLElement>('[data-backup]').forEach(el => el.onclick = async () => {
+    try {
+      const r = el.dataset.backup === 'export' ? await window.api.exportSettings() : await window.api.importSettings()
+      if (r.message) notify(r.message)
+    } catch { notify(el.dataset.backup === 'export' ? '내보내지 못했어요.' : '불러오지 못했어요.') }
+  })
   onClickOf('[data-open-guide]', () => run(window.api.openGuide().then(ok => { if (!ok) notify('사용 설명서를 찾지 못했어요.') }), '사용 설명서를 열지 못했어요.'))
 
   // 기록
@@ -507,6 +542,22 @@ function bindEvents() {
     ;(document.activeElement as HTMLElement | null)?.blur()
     renderSettings(state, true)
     run(window.api.addCustomAccount({ name, provider: 'custom', customMock: { primaryPercent: 100 - pct('p5'), primaryReset: '', weeklyPercent: 100 - pct('pw'), weeklyReset: '', iconLetter: name.charAt(0).toUpperCase(), brandColor: val('color') } }), '추가하지 못했어요.')
+  })
+  // 다른 로그인 폴더의 계정
+  onClickOf('[data-home-open]', () => { addingHome = true; renderSettings(state, true) })
+  onClickOf('[data-home-cancel]', () => { addingHome = false; renderSettings(state, true) })
+  body.querySelectorAll<HTMLElement>('[data-home-provider]').forEach(el => el.onclick = () => { homeDraft.provider = el.dataset.homeProvider as 'codex' | 'xai'; renderSettings(state, true) })
+  onClickOf('[data-home-pick]', async () => { const dir = await window.api.pickFolder(); if (dir) { homeDraft.dir = dir; renderSettings(state, true) } })
+  const homeName = body.querySelector<HTMLInputElement>('[data-home-name]')
+  if (homeName) homeName.oninput = () => { homeDraft.name = homeName.value }
+  onClickOf('[data-home-save]', async () => {
+    if (!homeDraft.dir) { notify('로그인 폴더를 골라 주세요.'); return }
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    try {
+      const r = await window.api.addHomeAccount(homeDraft.provider, homeDraft.dir, homeDraft.name)
+      if (r.message) notify(r.message)
+      if (r.ok) { addingHome = false; Object.assign(homeDraft, { dir: '', name: '' }); renderSettings(r.state || state, true) }
+    } catch { notify('추가하지 못했어요.') }
   })
   onClickOf('[data-reset-defaults]', () => {
     if (!confirm('서비스 목록을 기본으로 되돌릴까요?\n직접 추가한 카드와 바꾼 이름이 사라져요.')) return

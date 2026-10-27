@@ -4,6 +4,7 @@ import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
 import { applyAppearance, renderDashboard, renderDockedUsage, openDesign } from './components/dashboard.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
+import { renderAbout } from './components/about-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
 import { lowestLeft, serviceModel } from '../common/usage-model.js'
 
@@ -63,7 +64,7 @@ const appEl = document.getElementById('app')!
 
 if (viewType === 'popup') {
   document.body.classList.add('is-popup-view')
-} else if (viewType === 'settings') {
+} else if (viewType === 'settings' || viewType === 'about') {
   document.body.classList.add('is-settings-view')
 } else {
   document.body.classList.add('is-widget-view')
@@ -339,6 +340,11 @@ async function init() {
   const state = await window.api.getState()
   window.api.onOpenDesign?.(openDesign)
 
+  if (viewType === 'about') {
+    renderAbout(appEl, state)
+    window.api.onStateChange((nextState) => renderAbout(appEl, nextState))
+    return
+  }
   if (viewType === 'settings') {
     initSettings(appEl, state, urlParams.get('tab') || undefined)
     window.api.onStateChange((nextState) => renderSettings(nextState))

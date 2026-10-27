@@ -13,14 +13,14 @@ interface PendingRequest {
   timer: NodeJS.Timeout
 }
 
-export class CodexAppServerClient {
-  private static childProcess: ChildProcess | null = null
-  private static rl: readline.Interface | null = null
-  private static nextId = 1
-  private static pendingRequests = new Map<number, PendingRequest>()
-  private static isInitialized = false
-  private static cachedUsage?: AccountUsage
-  private static lastFetchTime = 0
+class CodexAppServerConn {
+  private childProcess: ChildProcess | null = null
+  private rl: readline.Interface | null = null
+  private nextId = 1
+  private pendingRequests = new Map<number, PendingRequest>()
+  private isInitialized = false
+  private cachedUsage?: AccountUsage
+  private lastFetchTime = 0
   private static executablePath: string | null = null
 
   /**
@@ -100,20 +100,22 @@ export class CodexAppServerClient {
   /**
    * codex app-server 프로세스 실행 및 JSON-RPC 연결
    */
-  private static connecting: Promise<void> | null = null
-  private static quitHooked = false
+  private connecting: Promise<void> | null = null
+  static quitHooked = false
+
+  constructor(private readonly home = '') {}
 
   // 여러 계정이 동시에 조회해도 프로세스는 하나만 띄운다(둘이 각자 띄우면 나중 것이 앞 것을 끈다).
-  private static ensureConnected(): Promise<void> {
+  private ensureConnected(): Promise<void> {
     if (this.childProcess && this.isInitialized && !this.childProcess.killed) return Promise.resolve()
     this.connecting ||= this.connect().finally(() => { this.connecting = null })
     return this.connecting
   }
 
-  private static async connect(): Promise<void> {
+  private async connect(): Promise<void> {
     this.close()
 
-    const executable = this.findCodexExecutable()
+    const executable = CodexAppServerConn.findCodexExecutable()
     if (!executable) {
       throw new Error('Codex 실행 파일(codex.exe)을 찾을 수 없습니다.')
     }
@@ -124,7 +126,9 @@ export class CodexAppServerClient {
       try {
         const child = this.childProcess = spawn(executable, ['app-server'], {
           windowsHide: true,
-          stdio: ['pipe', 'pipe', 'ignore']
+          stdio: ['pipe', 'pipe', 'ignore'],
+          // 두 번째 계정: 그 계정의 로그인 폴더를 쓴다(Codex 공식 CODEX_HOME)
+          ...(this.home ? { env: { ...process.env, CODEX_HOME: this.home } } : {})
         })
 
         if (!this.childProcess.stdin || !this.childProcess.stdout) {
@@ -156,10 +160,10 @@ export class CodexAppServerClient {
         })
 
         // 앱 종료 시 프로세스 확실한 정리(다시 띄울 때마다 쌓이지 않게 한 번만 건다)
-        if (!this.quitHooked) {
-          this.quitHooked = true
-          app?.once('before-quit', () => this.close())
-          process.once('exit', () => this.close())
+        if (!CodexAppServerConn.quitHooked) {
+          CodexAppServerConn.quitHooked = true
+          app?.once('before-quit', () => CodexAppServerClient.close())
+          process.once('exit', () => CodexAppServerClient.close())
         }
 
         // JSON-RPC 핸드셰이크: initialize -> initialized
@@ -198,7 +202,7 @@ export class CodexAppServerClient {
     })
   }
 
-  private static handleLine(line: string): void {
+  private handleLine(line: string): void {
     const trimmed = line.trim()
     if (!trimmed) return
 
@@ -220,7 +224,7 @@ export class CodexAppServerClient {
     }
   }
 
-  private static sendRequest<T = any>(method: string, params: any = {}, timeoutMs = 4000): Promise<T> {
+  private sendRequest<T = any>(method: string, params: any = {}, timeoutMs = 4000): Promise<T> {
     if (!this.childProcess?.stdin || this.childProcess.killed) {
       return Promise.reject(new Error('Codex app-server is not running'))
     }
@@ -246,7 +250,7 @@ export class CodexAppServerClient {
     })
   }
 
-  private static sendNotification(method: string, params: any = {}): void {
+  private sendNotification(method: string, params: any = {}): void {
     if (!this.childProcess?.stdin || this.childProcess.killed) return
     const payload = JSON.stringify({ method, params }) + '\n'
     try {
@@ -254,7 +258,7 @@ export class CodexAppServerClient {
     } catch {}
   }
 
-  public static close(): void {
+  public close(): void {
     this.isInitialized = false
     for (const [, req] of this.pendingRequests) {
       clearTimeout(req.timer)
@@ -280,7 +284,7 @@ export class CodexAppServerClient {
   /**
    * codex app-server를 통해 공식 실시간 사용량 조회
    */
-  public static async fetchUsage(account: AccountConfig): Promise<AccountUsage | null> {
+  public async fetchUsage(account: AccountConfig): Promise<AccountUsage | null> {
     const now = Date.now()
     // 10초 캐시
     if (this.cachedUsage && (now - this.lastFetchTime < 10000)) {
@@ -438,7 +442,7 @@ export class CodexAppServerClient {
     return usage
   }
 
-  private static formatPlanName(raw: string): string {
+  private formatPlanName(raw: string): string {
     const lower = raw.toLowerCase()
     switch (lower) {
       case 'plus': return 'ChatGPT Plus'
@@ -449,4 +453,17 @@ export class CodexAppServerClient {
       default: return raw.charAt(0).toUpperCase() + raw.slice(1)
     }
   }
+}
+
+/** 로그인 폴더마다 연결 하나. 기본 계정은 빈 문자열(평소 ~/.codex). */
+export class CodexAppServerClient {
+  private static conns = new Map<string, CodexAppServerConn>()
+  static findCodexExecutable() { return CodexAppServerConn.findCodexExecutable() }
+  static fetchUsage(account: AccountConfig) {
+    const home = account.homeDir || ''
+    let c = this.conns.get(home)
+    if (!c) { c = new CodexAppServerConn(home); this.conns.set(home, c) }
+    return c.fetchUsage(account)
+  }
+  static close() { for (const c of this.conns.values()) c.close() }
 }

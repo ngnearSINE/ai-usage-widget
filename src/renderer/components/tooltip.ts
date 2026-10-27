@@ -13,7 +13,8 @@ function hide() {
 
 export function initTooltips() {
   document.addEventListener('pointerover', e => {
-    const el = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-tip]') || null
+    // 카드를 끌어 순서를 바꾸는 동안에는 설명을 띄우지 않는다.
+    const el = document.body.classList.contains('reordering') ? null : (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-tip]') || null
     if (el === current) return
     const wasShowing = !!current
     current = el

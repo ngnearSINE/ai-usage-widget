@@ -29,6 +29,14 @@ function periodOf(w: QuotaWindow, now: number, prev?: WindowRecord): { resetAt: 
   return { resetAt, period: `r${Math.round(resetAt / 60e3)}` }
 }
 
+/** 지금이 알림 쉬는 시간인지(시작 ≤ 지금 < 끝, 끝이 시작보다 이르면 자정을 넘는 구간). */
+export function inQuietHours(q: WidgetConfig['notifyQuiet'], now = new Date()): boolean {
+  if (!q?.enabled) return false
+  const min = (s: string) => { const [h, m] = s.split(':').map(Number); return h * 60 + m }
+  const t = now.getHours() * 60 + now.getMinutes(), a = min(q.start), b = min(q.end)
+  return a === b ? false : a < b ? t >= a && t < b : t >= a || t < b
+}
+
 export const muteKey = (accountId: string, key: '5h' | 'weekly') => `${accountId}:${key}`
 
 export function evaluateNotifications(usages: AccountUsage[], config: WidgetConfig, prev: NotifyState, now = Date.now()): { events: NotifyEvent[]; state: NotifyState } {

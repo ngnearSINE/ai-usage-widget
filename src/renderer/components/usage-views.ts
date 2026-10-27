@@ -4,6 +4,7 @@ import {
   type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
 import { barColor, type ColorMode } from '../../common/bar-color.js'
+import { displayOf } from '../../common/display-options.js'
 
 /** 대시보드 카드 렌더러. 디자인마다 기본 형태와 작은 카드 형태가 있고, 작아져도 다른 디자인으로 바꿔 그리지 않는다. */
 export interface ViewContext {
@@ -16,6 +17,8 @@ export interface ViewContext {
   colorMode: ColorMode
   iconStyle: WidgetConfig['iconStyle']
   source: (id: string) => ValueSource
+  /** 서비스별 보여 줄 정보(없으면 위의 전체 값) */
+  per?: (id: string) => { showUsed: boolean; showPace: boolean; showReset: boolean }
   history?: Record<string, HistoryPoint[]>
 }
 export function viewContext(config: WidgetConfig, history?: Record<string, HistoryPoint[]>): ViewContext {
@@ -24,6 +27,7 @@ export function viewContext(config: WidgetConfig, history?: Record<string, Histo
     warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)), showPace: config.showPace !== false,
     showReset: config.showResetTime !== false, showUsed: !!config.showUsedPercent, colorByUsage: config.colorByUsage !== false,
     colorMode: config.colorMode === 'smooth' ? 'smooth' : 'step', iconStyle: config.iconStyle, source: id => config.valueSource?.[id] || 'weekly', history,
+    per: id => displayOf(config, id),
   }
 }
 
@@ -333,7 +337,7 @@ const logo = (u: AccountUsage, x: ViewContext, tagged = true) => {
   return `<span class="logo ${tag ? 'tagged' : ''}">${renderAiIcon(u.provider, u.name, x.iconStyle, 18)}${tag ? `<i class="logo-tag">${esc(tag)}</i>` : ''}</span>`
 }
 const cardAttrs = (u: AccountUsage, sev: string, cls: string, style = '') =>
-  `class="ucard ${cls} ${sev ? 'sev-' + sev : ''} ${u.status === 'stale' ? 'is-stale' : ''}" data-card="${esc(u.id)}" draggable="true" style="--brand:${hex(u.brandColor)};${style}"`
+  `class="ucard ${cls} ${sev ? 'sev-' + sev : ''} ${u.status === 'stale' ? 'is-stale' : ''}" data-card="${esc(u.id)}" style="--brand:${hex(u.brandColor)};${style}"`
 
 function offlineCard(u: AccountUsage, x: ViewContext, box: { w: number; h: number }, style: string) {
   const msg = u.status === 'loading' ? '확인 중' : '연결 안 됨'
@@ -364,6 +368,7 @@ function compactCard(u: AccountUsage, m: ServiceModel, design: DesignId, x: View
 
 /** 카드 하나. box는 격자 칸 크기(px). */
 export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, box: { w: number; h: number }, style = '') {
+  if (x.per) x = { ...x, ...x.per(u.id), per: undefined }
   const m = serviceModel(u)
   if (!m.available || !windowsOf(m).length) return offlineCard(u, x, box, style)
   if (formOf(design, box.w, box.h) === 'compact') return compactCard(u, m, design, x, box, style)

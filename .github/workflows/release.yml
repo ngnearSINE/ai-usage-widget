@@ -36,3 +36,18 @@ jobs:
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Releases 설명을 CHANGELOG.md의 이번 버전 절로 채우기
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = '${{ github.ref_name }}'.TrimStart('v')
+          $lines = Get-Content CHANGELOG.md -Encoding utf8
+          $start = [Array]::IndexOf($lines, "## $v")
+          if ($start -lt 0) { Write-Warning "CHANGELOG.md에 '## $v' 절이 없습니다."; exit 0 }
+          $body = @()
+          for ($i = $start + 1; $i -lt $lines.Count -and -not $lines[$i].StartsWith('## '); $i++) { $body += $lines[$i] }
+          ($body -join "`n").Trim() | Set-Content notes.md -Encoding utf8
+          gh release edit '${{ github.ref_name }}' --notes-file notes.md

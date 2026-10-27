@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
 import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
@@ -16,6 +16,7 @@ import { detectLang, setLang, t } from '../common/i18n.js'
 import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
+import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
 import { Updater } from './updater.js'
 import { previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
@@ -217,6 +218,37 @@ function restoreLayout() {
   return true
 }
 // 서비스 종류별 사용량 웹페이지. 렌더러는 계정 ID만 보내고 주소는 여기서 정한다.
+/** 카드 우클릭 메뉴. 기본 메뉴라 작은 위젯에서도 잘리지 않는다. */
+function showCardMenu(sender: Electron.WebContents, id: string) {
+  const acc = accountStore.getAccounts().find(a => a.id === id)
+  const win = BrowserWindow.fromWebContents(sender)
+  if (!acc || !win) return
+  const cfg = accountStore.getConfig(), usage = quotaManager?.getUsages().find(u => u.id === id)
+  const save = (patch: Partial<WidgetConfig>) => { accountStore.saveConfig({ ...accountStore.getConfig(), ...sanitizeConfigPatch(patch) }); broadcastState() }
+  const src = cfg.valueSource?.[id] || 'weekly', disp = displayOf(cfg, id)
+  const accounts = accountStore.getAccounts(), index = accounts.findIndex(a => a.id === id)
+  const url = servicePageUrl(id)
+  Menu.buildFromTemplate([
+    { label: acc.name, enabled: false },
+    { type: 'separator' },
+    { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
+    ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
+    { type: 'separator' },
+    { label: '큰 숫자 기준', submenu: ([['weekly', '주간'], ['5h', usage?.primaryKind === 'monthly' ? '월간' : '5시간'], ['tight', '빠듯한 쪽']] as const).map(([k, label]) => ({
+      label, type: 'radio' as const, checked: src === k, click: () => save({ valueSource: { ...accountStore.getConfig().valueSource, [id]: k } }) })) },
+    { label: '보여 줄 정보', submenu: DISPLAY_KEYS.map(([k, label]) => ({ label: k === 'showUsed' ? '쓴 양으로 표시' : k === 'showReset' ? '리셋까지 남은 시간' : label, type: 'checkbox' as const, checked: disp[k],
+      click: (item: Electron.MenuItem) => save(setDisplay(accountStore.getConfig(), id, k, item.checked)) })) },
+    { type: 'separator' },
+    { label: '앞으로 옮기기', enabled: index > 0, click: () => { accountStore.reorderAccount(id, 'up'); broadcastState() } },
+    { label: '뒤로 옮기기', enabled: index < accounts.length - 1, click: () => { accountStore.reorderAccount(id, 'down'); broadcastState() } },
+    { type: 'separator' },
+    { label: '작업 표시줄에서만 숨기기', type: 'checkbox', checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
+    { label: '이 카드 숨기기', click: () => { accountStore.hideAccount(id, true); broadcastState() } },
+    { type: 'separator' },
+    { label: '서비스 설정…', click: () => openSettingsWindow('services') },
+  ]).popup({ window: win })
+}
+
 function servicePageUrl(accountId: string) {
   const acc = accountStore.getAccounts().find(a => a.id === accountId)
   const key = `${acc?.provider || ''} ${acc?.name || ''}`.toLowerCase()
@@ -279,9 +311,28 @@ function registerShortcuts() {
 }
 
 /* ---------- 설정 창: 큰 미리보기 + 조절 항목. 위젯이 작아도 편하게 편집하고, 바꾸면 위젯에도 즉시 반영된다. ---------- */
-const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'history', 'convenience', 'accounts', 'general', 'api'] as const
+const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'history', 'general', 'convenience', 'accounts', 'api', 'last'] as const
 type SettingsTab = typeof SETTINGS_TABS[number]
 // 설정 창도 위젯과 같은 배경(불투명도·아크릴)을 쓰도록 테두리 없는 공통 창으로 만들고, 창 단추는 화면이 그린다.
+let aboutWindow: SurfaceWindow | null = null
+/** '정보·업데이트' 창. 하나만 띄운다. */
+function openAboutWindow() {
+  if (aboutWindow && !aboutWindow.isDestroyed()) { if (aboutWindow.isMinimized()) aboutWindow.restore(); aboutWindow.show(); aboutWindow.focus(); return }
+  hidePopup(true)
+  const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
+  const area = screen.getDisplayMatching(anchor).workArea, width = 440, height = Math.min(600, area.height - 40)
+  const win = aboutWindow = new SurfaceWindow({
+    x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
+    show: false, title: 'AI 사용량 정보', resizable: false, maximizable: false, minimizable: false, autoHideMenuBar: true,
+    webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
+  }, currentSurfaceKind())
+  win.on('page-title-updated', event => event.preventDefault())
+  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.on('closed', () => { if (aboutWindow === win) aboutWindow = null })
+  if (process.env.VITE_DEV_SERVER_URL) void win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=about`)
+  else void win.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'about' } })
+}
+
 function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Rectangle) {
   if (!SETTINGS_TABS.includes(tab)) tab = 'design'
   if (settingsWindow && !settingsWindow.isDestroyed()) {
@@ -1120,8 +1171,9 @@ function updateTrayMenu() {
     },
     {
       label: '설정',
-      click: () => openSettingsWindow('design')
+      click: () => openSettingsWindow('last')
     },
+    { label: '정보·업데이트', click: () => openAboutWindow() },
     { type: 'separator' },
     {
       label: t('trayAutoLaunch'),
@@ -1141,9 +1193,7 @@ function updateTrayMenu() {
       }
     },
     // 설치판에서만: 새 버전이 받아져 있으면 바로 설치, 아니면 확인
-    ...(updater && updater.state.status !== 'unsupported' ? [updater.state.status === 'ready'
-      ? { label: `새 버전 ${updater.state.version} 설치하고 다시 시작`, click: () => { updater?.install() } }
-      : { label: updater.state.status === 'downloading' ? `새 버전 받는 중… ${updater.state.percent ?? 0}%` : '업데이트 확인', enabled: updater.state.status !== 'downloading' && updater.state.status !== 'checking', click: () => { void updater?.check(true) } }] : []),
+    ...(updater?.state.status === 'ready' ? [{ label: `새 버전 ${updater.state.version} 설치하고 다시 시작`, click: () => { updater?.install() } }] : []),
     { type: 'separator' },
     {
       label: t('trayQuit'),
@@ -1375,7 +1425,7 @@ function setupIpcHandlers() {
   ipcMain.on(IPC_CHANNELS.TIP_HIDE, () => hideTip())
   ipcMain.on(IPC_CHANNELS.WINDOW_CONTROL, (event, action: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win !== settingsWindow) return
+    if (!win || (win !== settingsWindow && win !== aboutWindow)) return
     if (action === 'minimize') win.minimize()
     else if (action === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize() }
     else if (action === 'close') win.close()
@@ -1398,6 +1448,67 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.OPEN_SETTINGS, (_event, tab?: SettingsTab) => {
     openSettingsWindow(tab || 'design')
   })
+  // 설정 백업·복원: 화면·알림 설정과 카드 목록만(로그인 정보는 앱이 갖고 있지 않다). 불러올 때도 같은 검사를 거친다.
+  ipcMain.handle(IPC_CHANNELS.EXPORT_SETTINGS, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || undefined
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const r = await dialog.showSaveDialog(win!, { title: '설정 내보내기', defaultPath: `ai-usage-settings-${stamp}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
+    if (r.canceled || !r.filePath) return { ok: false }
+    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, ...config } = accountStore.getConfig()
+    fs.writeFileSync(r.filePath, JSON.stringify({ app: 'ai-usage-widget', version: app.getVersion(), exportedAt: new Date().toISOString(), config, accounts: accountStore.getAccounts() }, null, 2), 'utf-8')
+    return { ok: true, message: '설정을 파일로 내보냈어요.' }
+  })
+  ipcMain.handle(IPC_CHANNELS.IMPORT_SETTINGS, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || undefined
+    const r = await dialog.showOpenDialog(win!, { title: '설정 불러오기', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+    if (r.canceled || !r.filePaths[0]) return { ok: false }
+    let data: any
+    try { data = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf-8')) } catch { return { ok: false, message: '읽을 수 없는 파일이에요.' } }
+    if (data?.app !== 'ai-usage-widget' || typeof data.config !== 'object') return { ok: false, message: '이 앱에서 내보낸 설정 파일이 아니에요.' }
+    const accounts = Array.isArray(data.accounts) ? data.accounts.filter((a: any) => a && typeof a.id === 'string' && typeof a.name === 'string' && typeof a.provider === 'string')
+      .map((a: any) => ({ id: a.id.slice(0, 120), name: a.name.slice(0, 80), provider: a.provider, enabled: a.enabled !== false, ...(typeof a.orgUuid === 'string' ? { orgUuid: a.orgUuid } : {}), ...(typeof a.homeDir === 'string' ? { homeDir: a.homeDir } : {}),
+        ...(a.hidden === true ? { hidden: true } : {}), ...(a.hiddenInDock === true ? { hiddenInDock: true } : {}), ...(a.showScoped === false ? { showScoped: false } : {}), ...(ownColor(a.barColor) ? { barColor: a.barColor } : {}),
+        ...(a.customMock && typeof a.customMock === 'object' ? { customMock: a.customMock } : {}), ...(a.isLocalIde === true ? { isLocalIde: true } : {}) })) : []
+    const ok = await dialog.showMessageBox(win!, { type: 'question', buttons: ['불러오기', '취소'], defaultId: 0, cancelId: 1, title: '설정 불러오기',
+      message: '이 파일의 설정으로 바꿀까요?', detail: `${data.exportedAt ? new Date(data.exportedAt).toLocaleString('ko-KR') + '에 ' : ''}내보낸 설정${accounts.length ? `과 카드 ${accounts.length}개` : ''}로 지금 설정을 바꿔요.` })
+    if (ok.response !== 0) return { ok: false }
+    const prev = accountStore.getConfig()
+    const next = { ...prev, ...sanitizeConfigPatch(data.config), placementMode: prev.placementMode }
+    accountStore.saveConfig(next)
+    if (accounts.length) accountStore.saveAccounts(accounts as AccountConfig[])
+    if (prev.openAtLogin !== next.openAtLogin) applyAutoLaunch(Boolean(next.openAtLogin))
+    registerShortcuts(); applySurface(); applyWindowTopmost(next); updateTrayMenu(); broadcastState()
+    if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
+    return { ok: true, message: '설정을 불러왔어요.' }
+  })
+  ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
+  // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
+  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
+    if (typeof url !== 'string' || !/^https:\/\/github\.com\/(ngnearSINE\/ai-usage-widget|sallyHADEV\/ai-usage-taskbar-widget)(\/[\w./-]*)?$/.test(url)) return false
+    await shell.openExternal(url); return true
+  })
+  ipcMain.handle(IPC_CHANNELS.PICK_FOLDER, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || undefined
+    const r = await dialog.showOpenDialog(win!, { title: '로그인 폴더 고르기', properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : r.filePaths[0] || null
+  })
+  // 두 번째 계정: Codex·Grok CLI의 다른 로그인 폴더. 그 폴더에 로그인 파일이 있어야 추가한다.
+  ipcMain.handle(IPC_CHANNELS.ADD_HOME_ACCOUNT, (_event, provider: unknown, homeDir: unknown, name: unknown) => {
+    if (provider !== 'codex' && provider !== 'xai') return { ok: false, message: '지원하지 않는 서비스예요.' }
+    if (typeof homeDir !== 'string' || !path.isAbsolute(homeDir) || !fs.existsSync(homeDir) || !fs.statSync(homeDir).isDirectory()) return { ok: false, message: '폴더를 찾을 수 없어요.' }
+    if (!fs.existsSync(path.join(homeDir, 'auth.json'))) {
+      const cmd = provider === 'codex' ? 'codex login' : 'grok login', env = provider === 'codex' ? 'CODEX_HOME' : 'GROK_HOME'
+      return { ok: false, message: `이 폴더에 로그인 정보가 없어요. 터미널에서 ${env}를 이 폴더로 두고 ${cmd}를 먼저 해 주세요.` }
+    }
+    const same = accountStore.getAccounts().find(a => a.provider === provider && path.resolve(a.homeDir || '') === path.resolve(homeDir))
+    if (same) return { ok: false, message: `이미 '${same.name}' 카드로 추가돼 있어요.` }
+    const label = typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : `${provider === 'codex' ? 'Codex' : 'Grok'} · ${path.basename(homeDir)}`
+    accountStore.addAccount({ id: `${provider}-home-${Date.now()}`, name: label, provider, enabled: true, homeDir })
+    broadcastState()
+    if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
+    return { ok: true, message: `'${label}' 카드를 추가했어요.`, state: getAppState() }
+  })
+  ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))
 
   ipcMain.handle(IPC_CHANNELS.DETECT_LOCAL_APPS, async () => {
     return await LocalAppDetector.detectAll()
@@ -1418,7 +1529,7 @@ function setupIpcHandlers() {
 
 app.whenReady().then(() => {
   accountStore = new AccountStore()
-  quotaManager = new QuotaManager(accountStore)
+  quotaManager = new QuotaManager(accountStore, isPreview ? undefined : path.join(app.getPath('userData'), 'last-usage.json'))
 
   // 미리보기는 합성 기록으로 그래프를 보여 주고 파일에 쓰지 않는다.
   history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages()) : undefined)
@@ -1427,7 +1538,7 @@ app.whenReady().then(() => {
   updater = new Updater({
     preview: isPreview,
     onChange: () => { broadcastState(); updateTrayMenu() },
-    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, '앱을 다시 시작하면 설치돼요. 설정 → 일반에서 바로 설치할 수도 있어요.', () => openSettingsWindow('general')),
+    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, '앱을 다시 시작하면 설치돼요. 눌러서 바뀐 점을 보고 바로 설치할 수 있어요.', () => openAboutWindow()),
   })
   updater.schedule(accountStore.getConfig().autoUpdate !== false)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {
