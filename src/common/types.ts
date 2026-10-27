@@ -20,6 +20,7 @@ export interface ModelQuotaDetail {
 }
 
 export interface AccountUsage {
+  everConnected?: boolean // 한 번이라도 값을 받은 적 있는 계정(연결이 끊겨도 숨기지 않음)
   id: string
   name: string
   provider: ProviderType

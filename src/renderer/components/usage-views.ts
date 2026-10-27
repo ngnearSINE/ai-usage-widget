@@ -5,6 +5,7 @@ import {
 import { renderAiIcon } from './ai-icons.js'
 import { barColor, heatOf, type ColorMode } from '../../common/bar-color.js'
 import { displayOf } from '../../common/display-options.js'
+import { staleTip } from '../../common/stale-notice.js'
 
 /** 대시보드 카드 렌더러. 디자인마다 기본 형태와 작은 카드 형태가 있고, 작아져도 다른 디자인으로 바꿔 그리지 않는다. */
 export interface ViewContext {
@@ -78,8 +79,8 @@ export function tipOther(w: QuotaWindow, x: ViewContext) {
 const hhmm = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '' }
 function cardTip(u: AccountUsage, m: ServiceModel, x: ViewContext) {
   const h = headline(m, x)
-  return esc([u.name, u.tier || '', ...[...windowsOf(m), ...m.scoped].map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
-    h.t, `${u.status === 'stale' ? '갱신 지연 · 마지막 확인' : '확인'} ${hhmm(u.updatedAt)}`].filter(Boolean).join('\n'))
+  return esc([...(u.status === 'stale' ? [staleTip(u), ''] : []), u.name, u.tier || '', ...[...windowsOf(m), ...m.scoped].map(w => `${w.label} ${shown(x, w)}% ${x.showUsed ? '사용' : '남음'} · ${w.resetMs === null ? '리셋 정보 없음' : `리셋 ${fmtDurationShort(w.resetMs)} 뒤`}`),
+    h.t, `${u.status === 'stale' ? '마지막으로 받은 시각' : '확인'} ${hhmm(u.updatedAt)}`].filter((v, i, a) => v !== '' || (i > 0 && a[i - 1] !== '')).join('\n'))
 }
 
 const bar = (x: ViewContext, m: ServiceModel, w: QuotaWindow, vert = false) => {
@@ -365,17 +366,22 @@ export function accountTag(name: string) {
   if (!m) return ''
   return m[1] === '개인' ? [...m[2]].slice(0, 5).join('') : m[1] === '엔터프라이즈' ? '엔터' : m[1]
 }
+/** 새 값을 받지 못하는 중인 카드: 마지막 값을 보여 주는 중이거나, 연결됐던 계정이 지금 끊겼다. */
+export const isOutOfDate = (u: AccountUsage) => u.status === 'stale' || (!!u.everConnected && (u.status === 'error' || u.status === 'unauthenticated'))
+const staleMark = (u: AccountUsage) => isOutOfDate(u)
+  ? `<span class="stale-mark" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}" aria-label="새 값을 받지 못하는 중">!</span>` : ''
 const logo = (u: AccountUsage, x: ViewContext, tagged = true) => {
   const tag = tagged ? accountTag(u.name) : ''
-  return `<span class="logo ${tag ? 'tagged' : ''}">${renderAiIcon(u.provider, u.name, x.iconStyle, 18)}${tag ? `<i class="logo-tag">${esc(tag)}</i>` : ''}</span>`
+  return `<span class="logo ${tag ? 'tagged' : ''}">${renderAiIcon(u.provider, u.name, x.iconStyle, 18)}${tag ? `<i class="logo-tag">${esc(tag)}</i>` : ''}${staleMark(u)}</span>`
 }
 const cardAttrs = (u: AccountUsage, sev: string, cls: string, style = '') =>
   `class="ucard ${cls} ${sev ? 'sev-' + sev : ''} ${u.status === 'stale' ? 'is-stale' : ''}" data-card="${esc(u.id)}" style="--brand:${hex(u.brandColor)};${style}"`
 
 function offlineCard(u: AccountUsage, x: ViewContext, box: { w: number; h: number }, style: string) {
-  const msg = u.status === 'loading' ? '확인 중' : '연결 안 됨'
+  const msg = u.status === 'loading' ? '확인 중' : u.everConnected ? '연결 끊김' : '연결 안 됨'
   const compact = box.h < 90
-  return `<div ${cardAttrs(u, '', compact ? 'compact is-offline center' : 'is-offline', style)} data-tip="${esc([u.name, u.errorMessage || msg].join('\n'))}">${compact
+  const tip = u.status !== 'loading' && u.everConnected ? staleTip(u, Date.now(), false) : [u.name, u.errorMessage || msg].join('\n')
+  return `<div ${cardAttrs(u, '', compact ? 'compact is-offline center' : 'is-offline', style)} data-tip="${esc(tip)}">${compact
     ? `<div class="c-id">${logo(u, x)}${box.w >= 220 ? `<span class="svc">${esc(u.name)}</span>` : ''}</div><div class="c-main"><span class="c-status">${msg}</span></div>`
     : `<div class="card-head">${logo(u, x)}<span class="svc">${esc(u.name)}</span></div><div class="body offline-body"><span class="lbl">${msg}</span>${box.h >= 140 && u.errorMessage ? `<span class="cap offline-detail">${esc(u.errorMessage)}</span>` : ''}</div>`}</div>`
 }
@@ -423,6 +429,6 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
   return `<div ${cardAttrs(u, sev, '', style)} data-tip="${cardTip(u, m, x)}">
-    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && !isOutOfDate(u) && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${isOutOfDate(u) && box.w >= 240 ? `<span class="stale-chip" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}">갱신 안 됨</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

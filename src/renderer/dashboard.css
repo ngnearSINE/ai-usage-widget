@@ -798,3 +798,13 @@ body.is-popup-view #app { height:100vh; }
 /* 경고 배경 기본값으로 */
 .heat-reset-row { display:flex; justify-content:flex-end; margin-top:8px; }
 .heat-reset-row .ghost-button:disabled { opacity:.45; cursor:default; }
+
+/* 새 값을 받지 못하는 카드: 로고 오른쪽 위 작은 ! (마우스를 올리면 쉬운 안내) */
+.logo { position:relative; }
+.stale-mark { position:absolute; right:-4px; bottom:-3px; width:12px; height:12px; border-radius:50%; display:grid; place-items:center; font-size:9px; font-weight:800; line-height:1; color:#1b1300; background:var(--warn); box-shadow:0 0 0 1.5px rgb(var(--surface)); cursor:help; }
+.logo.tagged .stale-mark { right:auto; left:11px; }
+.docked-service { position:relative; }
+.stale-mark.dock { right:1px; top:1px; bottom:auto; left:auto; width:10px; height:10px; font-size:8px; }
+.stale-chip { flex-shrink:0; font-size:10px; font-weight:600; line-height:16px; padding:0 6px; border-radius:8px; color:var(--warn); background:color-mix(in srgb,var(--warn) 14%,transparent); border:1px solid color-mix(in srgb,var(--warn) 35%,transparent); white-space:nowrap; cursor:help; }
+.stale-chip::before { content:'!'; display:inline-grid; place-items:center; width:11px; height:11px; margin-right:4px; border-radius:50%; font-size:8px; font-weight:800; color:#1b1300; background:var(--warn); vertical-align:-1px; }
+.card-head:has(.stale-chip) .stale-mark { display:none; }

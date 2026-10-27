@@ -286,7 +286,7 @@ function servicesTab(s: AppState) {
     </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}다른 로그인 폴더의 계정 추가 (Codex·Grok)</button>`
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
     + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
-    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '로그인이 없거나 조회에 실패한 카드를 위젯에서 빼요. 잠깐의 오류는 마지막 값을 그대로 보여 줘요.', !!s.config.hideDisconnected)
+    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 위젯에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
     + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
     + advanced('services', `<button class="secondary-button danger" data-reset-defaults>기본 서비스 목록으로 되돌리기</button>${hint('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.')}`)
 }

@@ -39,7 +39,8 @@ export function visibleUsages(usages: AccountUsage[], accounts: AccountConfig[],
   const byId = new Map(usages.map(u => [u.id, u]))
   return accounts.filter(a => a.enabled && !a.hidden && !(docked && a.hiddenInDock)).flatMap(a => {
     const u = byId.get(a.id)
-    if (!u || (config.hideDisconnected && !['ready', 'stale'].includes(u.status))) return []
+    // '연결 안 된 서비스 숨기기'는 한 번도 연결된 적 없는 계정에만. 한 번 연결됐던 계정은 끊겨도 계속 보여 준다.
+    if (!u || (config.hideDisconnected && !['ready', 'stale'].includes(u.status) && !u.everConnected)) return []
     return [u]
   })
 }

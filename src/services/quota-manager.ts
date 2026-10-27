@@ -62,12 +62,9 @@ export class QuotaManager {
     const result: AccountUsage[] = []
 
     for (const acc of accounts) {
-      const existing = this.usages.get(acc.id)
-      if (existing) {
-        result.push(existing)
-      } else {
-        result.push(this.createInitialUsage(acc))
-      }
+      // 아직 조회 전이면 기억해 둔 마지막 값부터 보여 준다(켜자마자 카드가 비거나 숨지 않게).
+      const usage = this.usages.get(acc.id) || this.lastGood.get(acc.id) || this.createInitialUsage(acc)
+      result.push(this.lastGood.has(acc.id) ? { ...usage, everConnected: true } : usage)
     }
     return result
   }
