@@ -58,7 +58,8 @@ test('Retry-After 헤더를 초·날짜로 해석하고 없으면 5분 쉰다', 
 })
 
 test('캐시된 실측값은 리셋 카운트다운만 다시 계산한다', () => {
-  const reset = new Date(Date.now() + 2 * 3600000 + 60000).toISOString()
+  // 분 경계에 딱 맞추면 테스트가 1ms만 늦어도 2h 00m이 된다(느린 빌드 서버에서 실패). 30초 여유를 둔다.
+  const reset = new Date(Date.now() + 2 * 3600000 + 90000).toISOString()
   const usage = parseClaudeDesktopLiveUsage({ five_hour: { utilization: 15, resets_at: reset } }, account)
   const stale = { ...usage, primaryQuota: { ...usage.primaryQuota, resetCountdown: 'old' } }
   assert.equal(refreshCountdowns(stale).primaryQuota.resetCountdown, '2h 01m')
