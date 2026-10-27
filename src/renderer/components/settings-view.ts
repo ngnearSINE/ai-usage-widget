@@ -120,17 +120,22 @@ function usePreviewSample() {
   if (sample !== 'auto') return sample === 'sample'
   return state.preview || !visibleUsages(state.usages, state.accounts, state.config).length
 }
+/**
+ * 미리보기 위젯의 배치 크기(CSS 픽셀). 스케일과 상관없이 같아야 디자인(카드 배치)이 그대로다.
+ * 현재 창: 저장된 창 크기 ÷ 저장된 스케일. 다른 크기: 100% 기준 크기.
+ */
 function previewSize(): [number, number] {
   if (size !== 'current') { const s = SIZES.find(x => x[0] === size)!; return [s[2], s[3]] }
-  const b = state.config.windowBounds
-  return [b?.width || DEFAULT_WINDOW_SIZE.width, b?.height || DEFAULT_WINDOW_SIZE.height]
+  const b = state.config.windowBounds, z = number(state.config.fontScale, 80, 150, 100) / 100
+  return [Math.round((b?.width || DEFAULT_WINDOW_SIZE.width) / z), Math.round((b?.height || DEFAULT_WINDOW_SIZE.height) / z)]
 }
 function renderPreview() {
   const stage = root?.querySelector<HTMLElement>('[data-stage]'), inner = root?.querySelector<HTMLElement>('[data-stage-inner]')
   if (!stage || !inner || !state) return
-  const cfg = config(), [W0, H0] = previewSize()
-  // 스케일: 위젯은 창 크기(W0×H0) 안에 1/스케일만큼의 CSS 픽셀로 그려진다. 설정 창도 같은 스케일이라 그대로 맞추면 실제 모습과 같다.
-  const zoom = number(cfg.fontScale, 80, 150, 100) / 100, W = Math.round(W0 / zoom), H = Math.round(H0 / zoom)
+  const cfg = config(), [W, H] = previewSize()
+  // 스케일을 바꿔도 창이 같은 비율로 커지므로 배치(W×H CSS 픽셀)는 그대로이고 크기만 바뀐다.
+  // 설정 창은 아직 저장된 스케일(saved)로 그려지므로, 끄는 동안의 스케일(zoom)과의 비율만큼 키우거나 줄여 보여 준다.
+  const zoom = number(cfg.fontScale, 80, 150, 100) / 100, saved = number(state.config.fontScale, 80, 150, 100) / 100, rel = zoom / saved
   const usages = usePreviewSample() ? previewUsages(Date.now(), previewSpread()) : state.usages
   const accounts = usePreviewSample() ? usages.map(u => ({ id: u.id, name: u.name, provider: u.provider, enabled: true })) : state.accounts
   let list = visibleUsages(usages, accounts, cfg)
@@ -150,14 +155,16 @@ function renderPreview() {
     if (L.per < list.length) note = ` · ${list.length}개 중 ${L.per}개씩 페이지로 표시`
   }
   const warnN = list.filter(u => severity(serviceModel(u), x.warn, x.crit, x.per ? x.per(u.id).showPace : x.showPace)).length
-  // 스테이지에 맞게 축소만 한다(확대하지 않음).
-  const k = Math.min(1, (stage.clientWidth - 32) / W, (stage.clientHeight - 32) / H)
+  // 실제 크기 비율(rel)로 보이되, 스테이지보다 크면 맞춰 줄인다.
+  const k = Math.min(rel, (stage.clientWidth - 32) / W, (stage.clientHeight - 32) / H)
   updateMarkup(inner, `<div class="pv-win" style="width:${W}px;height:${H}px;transform:scale(${k.toFixed(3)})">
     <div class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status"><b>${list.length}개 연결</b>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}</span></div>${W >= 520 ? `<span class="header-clock num" aria-hidden="true">${previewClock()}</span>` : ''}<span class="tool pin on" aria-hidden="true">${icon('pinFill')}</span><span class="tool" aria-hidden="true">${icon('refresh')}</span><span class="tool" aria-hidden="true">${icon('sliders')}</span><span class="tool" aria-hidden="true" title="${DESIGNS.find(d => d[0] === design)![1]}">${icon('menu')}</span></div>
     <div class="dashboard-content">${grid}</div></div>`)
   inner.style.width = `${Math.round(W * k)}px`; inner.style.height = `${Math.round(H * k)}px`
   const cap = root.querySelector<HTMLElement>('[data-caption]')
-  if (cap) cap.textContent = `${W0}×${H0}${size === 'current' ? ' (지금 위젯 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${k < 1 ? ` · ${Math.round(k * zoom * 100)}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
+  // 창 크기는 이 스케일에서의 실제 픽셀. 화면 비율 = 미리보기 크기 ÷ 실제 크기.
+  const shownPct = Math.round(k / rel * 100)
+  if (cap) cap.textContent = `${Math.round(W * zoom)}×${Math.round(H * zoom)}${size === 'current' ? ' (지금 위젯 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${shownPct < 100 ? ` · ${shownPct}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
 }
 
 /* ---------- 공통 조각 ---------- */
