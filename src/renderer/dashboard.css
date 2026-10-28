@@ -87,13 +87,6 @@ body.is-dashboard-view #app { display:block; cursor:default; align-items:stretch
 @container (max-width:340px) { .header-status { display:none; } }
 
 /* ---------- 메뉴 ---------- */
-.dashboard .menu { position:absolute; z-index:30; min-width:200px; background:rgb(var(--surface)); border:1px solid var(--line-strong); border-radius:8px; padding:4px; box-shadow:0 14px 36px rgba(0,0,0,.4); }
-.dashboard .menu button { display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px; border-radius:5px; font-size:12px; text-align:left; }
-.dashboard .menu button:hover, .dashboard .menu button:focus-visible { background:var(--hover); outline:none; }
-.dashboard .menu button small { margin-left:auto; color:var(--dim); font-size:11px; }
-.dashboard .menu .sep { height:1px; background:var(--line); margin:4px 2px; }
-.dashboard .menu .check { display:inline-grid; place-items:center; width:14px; color:var(--accent); }
-.dashboard .menu .check svg { width:13px; height:13px; }
 
 /* ---------- 격자와 카드 ---------- */
 .dashboard-content { flex:1; min-height:0; padding:6px; overflow:hidden; display:flex; }
@@ -475,7 +468,7 @@ body.is-settings-view #app { display:block; height:100vh; }
   .dashboard-header { padding:0 4px 0 8px; gap:2px; }
   .dashboard-header .window-handle { min-width:22px; }
   .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
-  .dashboard:has(.header-hot:hover) .dashboard-header, .dashboard-header:hover, .dashboard:has(.menu) .dashboard-header { opacity:1; pointer-events:auto; transform:none; }
+  .dashboard:has(.header-hot:hover) .dashboard-header, .dashboard-header:hover { opacity:1; pointer-events:auto; transform:none; }
 }
 
 /* 도킹 미리보기: 실제 들어갈 자리에 위젯 모양 + 강조색 윤곽. 나타날 때 살짝 커지고, 윤곽 빛이 은은하게 숨 쉰다. */
@@ -714,7 +707,7 @@ body.is-web-view [data-src] { pointer-events:none; }
 /* 집중 모드: 그 서비스 하나만, 제목줄은 자동 숨김(위쪽 가장자리에 마우스를 올리면 나타남) */
 .dashboard.focus-mode .dashboard-header { position:absolute; left:0; right:0; top:0; z-index:6; opacity:0; pointer-events:none; transform:translateY(-6px); transition:opacity .14s ease, transform .14s ease; background:rgb(var(--surface)); box-shadow:0 4px 12px rgba(0,0,0,.25); }
 .dashboard.focus-mode .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
-.dashboard.focus-mode:has(.header-hot:hover) .dashboard-header, .dashboard.focus-mode .dashboard-header:hover, .dashboard.focus-mode:has(.menu) .dashboard-header { opacity:1; pointer-events:auto; transform:none; }
+.dashboard.focus-mode:has(.header-hot:hover) .dashboard-header, .dashboard.focus-mode .dashboard-header:hover { opacity:1; pointer-events:auto; transform:none; }
 .dashboard .focus-chip { display:inline-flex; align-items:center; gap:4px; height:20px; padding:0 8px; border-radius:10px; font-size:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .dashboard .focus-chip:hover { background:color-mix(in srgb,var(--accent) 24%,transparent); }
 

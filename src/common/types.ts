@@ -157,6 +157,9 @@ export interface UpdateState {
   notes?: string // 새 버전에서 바뀌는 점(릴리스 설명, 마크다운 목록)
 }
 
+/** 화면이 띄워 달라고 보내는 메뉴 항목(메인이 Windows 기본 메뉴로 그린다). on이 있으면 고르는 항목, accel은 오른쪽 안내. */
+export type MenuItemSpec = { key: string; label: string; on?: boolean; accel?: string } | '-'
+
 /** 웹 페이지 서버 상태: 열렸는지, 접속 주소, 열지 못한 이유 */
 export interface WebStatus { running: boolean; urls: string[]; error?: string }
 

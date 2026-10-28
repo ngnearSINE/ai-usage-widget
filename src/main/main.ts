@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
-import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
 import { AccountStore } from '../services/account-store.js'
 import { QuotaManager } from '../services/quota-manager.js'
 import { calculatePopupPosition, calculateWidgetPosition, getTaskbarInfo } from './taskbar-position.js'
@@ -1798,6 +1798,23 @@ function setupIpcHandlers() {
   })
   ipcMain.handle(IPC_CHANNELS.SET_FOCUS, (_event, id: unknown) => setFocus(typeof id === 'string' ? id : null))
   ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))
+  // 제목줄 메뉴(☰)·카드 기준(▾): 화면 안에 그리면 작은 창에서 잘리므로 Windows 기본 메뉴로 띄우고 고른 항목만 돌려준다.
+  ipcMain.handle(IPC_CHANNELS.POPUP_MENU, (event, items: unknown, at: { x?: unknown; y?: unknown } | undefined) => new Promise<string | null>(resolve => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !Array.isArray(items) || items.length > 40) { resolve(null); return }
+    let chosen: string | null = null
+    const template = items.map((it): Electron.MenuItemConstructorOptions => it === '-' || !it || typeof it !== 'object'
+      ? { type: 'separator' }
+      : {
+          label: String(it.label).slice(0, 80),
+          ...(typeof it.on === 'boolean' ? { type: 'radio' as const, checked: it.on } : {}),
+          ...(typeof it.accel === 'string' ? { accelerator: it.accel, registerAccelerator: false } : {}),
+          click: () => { chosen = String(it.key) },
+        })
+    // 화면 좌표(CSS 픽셀)를 창 좌표로: 스케일(확대 비율)을 곱한다.
+    const z = event.sender.getZoomFactor(), x = Math.round(Number(at?.x) * z), y = Math.round(Number(at?.y) * z)
+    Menu.buildFromTemplate(template).popup({ window: win, ...(Number.isFinite(x) && Number.isFinite(y) ? { x, y } : {}), callback: () => setImmediate(() => resolve(chosen)) })
+  }))
   // Ctrl+두 번 클릭은 CLI, Shift+두 번 클릭은 데스크톱 앱. 못 찾으면 false.
   ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_TOOL, async (_event, kind: unknown, id: unknown) => {
     const acc = accountStore.getAccounts().find(a => a.id === String(id))

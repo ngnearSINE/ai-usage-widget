@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
-import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
 
 export const api = {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.GET_STATE),
@@ -43,6 +43,7 @@ export const api = {
   checkUpdate: (): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
   installUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
   showCardMenu: (id: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.CARD_MENU, id),
+  popupMenu: (items: MenuItemSpec[], at: { x: number; y: number }): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.POPUP_MENU, items, at),
   exportSettings: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke(IPC_CHANNELS.EXPORT_SETTINGS),
   importSettings: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_SETTINGS),
   quitApp: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),

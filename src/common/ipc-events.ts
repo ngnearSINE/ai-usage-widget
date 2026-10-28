@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
   ACCOUNT_DISPLAY: 'account:display',
   OPEN_GUIDE: 'app:open-guide',
   CARD_MENU: 'widget:card-menu',
+  POPUP_MENU: 'widget:popup-menu',
   PICK_FILE: 'dialog:pick-file',
   OPEN_SERVICE_TOOL: 'widget:open-service-tool',
   SET_FOCUS: 'widget:set-focus',
