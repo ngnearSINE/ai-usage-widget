@@ -22,3 +22,9 @@ test('한 번 연결됐던 카드는 연결 안 된 서비스 숨기기를 켜�
   const shown = visibleUsages([use('a', 'error', true), use('b', 'error'), use('c', 'stale', true), use('d', 'loading')], ['a', 'b', 'c', 'd'].map(acc), cfg).map(u => u.id)
   assert.deepEqual(shown, ['a', 'c'])
 })
+
+test('로그인 폴더 Claude 카드는 그 폴더로 다시 로그인하라고 안내한다', () => {
+  const n = staleNotice({ provider: 'claude', name: 'Claude 회사', errorMessage: '이 로그인 폴더에서 Claude Code 로그인 정보를 찾지 못했어요. 터미널에서 CLAUDE_CONFIG_DIR을 이 폴더로 두고 claude로 로그인해 주세요' })
+  assert.match(n.fix, /CLAUDE_CONFIG_DIR/)
+  assert.match(staleNotice({ provider: 'claude', name: 'C', errorMessage: 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 이 로그인 폴더로 다시 로그인해 주세요' }).fix, /CLAUDE_CONFIG_DIR/)
+})

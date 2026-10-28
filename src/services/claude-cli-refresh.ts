@@ -29,15 +29,16 @@ export function refreshDecision(o: CliOauth | undefined, now: number, lastFailAt
 
 export const cliConfigDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
 
-let lastFailAt = 0
-let needsRelogin = false
+// 로그인 폴더마다 따로 센다(기본 폴더와 '다른 로그인 폴더' 계정).
+const lastFailAt = new Map<string, number>()
+const needsRelogin = new Map<string, boolean>()
 let enabled = false
 /** 실제 사용자 데이터로 도는 앱에서만 켠다(미리보기는 다른 앱의 로그인 파일을 건드리지 않는다). */
 export function setCliRefreshEnabled(on: boolean) { enabled = on }
-let running: Promise<RefreshDecision | 'refreshed' | 'failed'> | null = null
+const running = new Map<string, Promise<RefreshDecision | 'refreshed' | 'failed'>>()
 
 /** 갱신 토큰이 끝나 다시 로그인해야 하는지(마지막 시도 기준). */
-export const cliNeedsRelogin = () => needsRelogin
+export const cliNeedsRelogin = (dir = cliConfigDir()) => needsRelogin.get(path.resolve(dir)) === true
 
 /** CLI 잠금(디렉터리)을 잡는다. 60초 넘은 잠금은 오래된 것으로 보고 치운다. */
 function takeLock(lock: string): boolean {
@@ -49,26 +50,30 @@ function takeLock(lock: string): boolean {
   }
 }
 
-/** 필요하면 대신 갱신한다. 여러 곳에서 불러도 한 번만 돈다. */
+/** 필요하면 대신 갱신한다. 같은 폴더는 여러 곳에서 불러도 한 번만 돈다. */
 export function refreshCliTokenIfExpired(dir = cliConfigDir()): Promise<RefreshDecision | 'refreshed' | 'failed'> {
   if (!enabled) return Promise.resolve('none')
-  running ||= run(dir).finally(() => { running = null })
-  return running
+  const key = path.resolve(dir)
+  let job = running.get(key)
+  if (!job) { job = run(key).finally(() => running.delete(key)); running.set(key, job) }
+  return job
 }
 
 async function run(dir: string): Promise<RefreshDecision | 'refreshed' | 'failed'> {
   const file = path.join(dir, '.credentials.json'), lock = path.join(dir, '.oauth_refresh.lock')
+  const failedAt = () => lastFailAt.get(dir) || 0
+  const fail = (relogin?: boolean) => { lastFailAt.set(dir, Date.now()); if (relogin !== undefined) needsRelogin.set(dir, relogin); return 'failed' as const }
   let raw: any
   try { raw = JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return 'none' }
-  const first = refreshDecision(raw?.claudeAiOauth, Date.now(), lastFailAt)
-  needsRelogin = first === 'relogin'
+  const first = refreshDecision(raw?.claudeAiOauth, Date.now(), failedAt())
+  needsRelogin.set(dir, first === 'relogin')
   if (first !== 'refresh') return first
   if (!takeLock(lock)) return 'wait' // CLI가 지금 갱신 중
   try {
     // 잠금을 잡은 뒤 다시 읽는다(그사이 CLI가 갱신했을 수 있다).
     raw = JSON.parse(fs.readFileSync(file, 'utf8'))
     const o: CliOauth = raw?.claudeAiOauth
-    const again = refreshDecision(o, Date.now(), lastFailAt)
+    const again = refreshDecision(o, Date.now(), failedAt())
     if (again !== 'refresh') return again
     const res = await fetch(TOKEN_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(30000),
@@ -76,13 +81,11 @@ async function run(dir: string): Promise<RefreshDecision | 'refreshed' | 'failed
     })
     if (res.status !== 200) {
       const body = await res.text().catch(() => '')
-      lastFailAt = Date.now()
       // 갱신 토큰이 무효(만료·다른 곳에서 이미 사용)면 다시 로그인해야 한다.
-      needsRelogin = res.status === 400 && body.includes('invalid_grant')
-      return 'failed'
+      return fail(res.status === 400 && body.includes('invalid_grant'))
     }
     const j = await res.json() as { access_token?: string; refresh_token?: string; expires_in?: number; refresh_token_expires_in?: number; scope?: string }
-    if (typeof j.access_token !== 'string' || typeof j.expires_in !== 'number') { lastFailAt = Date.now(); return 'failed' }
+    if (typeof j.access_token !== 'string' || typeof j.expires_in !== 'number') return fail()
     const now = Date.now()
     const next = {
       ...raw.claudeAiOauth,
@@ -96,11 +99,10 @@ async function run(dir: string): Promise<RefreshDecision | 'refreshed' | 'failed
     const tmp = `${file}.tmp-${process.pid}`
     fs.writeFileSync(tmp, JSON.stringify({ ...raw, claudeAiOauth: next }), { mode: 0o600 })
     fs.renameSync(tmp, file)
-    lastFailAt = 0; needsRelogin = false
+    lastFailAt.delete(dir); needsRelogin.set(dir, false)
     return 'refreshed'
   } catch {
-    lastFailAt = Date.now()
-    return 'failed'
+    return fail()
   } finally {
     fs.rmSync(lock, { recursive: true, force: true })
   }

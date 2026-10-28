@@ -16,3 +16,19 @@ test('CLI 토큰 대신 갱신: 쓰는 중인 토큰은 건드리지 않고 만�
   assert.equal(refreshDecision({ ...base, expiresAt: 0 }, now), 'none', '만료 시각이 없는 장기 토큰은 대상 아님')
   assert.equal(refreshDecision(undefined, now), 'none')
 })
+
+test('로그인 폴더마다 따로 판단한다: 유효한 폴더는 그대로, 로그인 파일이 없는 폴더는 건드리지 않는다', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path')
+  const { refreshCliTokenIfExpired, setCliRefreshEnabled } = await import('../src/services/claude-cli-refresh.js')
+  const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'aiu-claude-')), empty = fs.mkdtempSync(path.join(os.tmpdir(), 'aiu-claude-'))
+  fs.writeFileSync(path.join(fresh, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3600e3 } }))
+  setCliRefreshEnabled(true)
+  try {
+    const [a, b] = await Promise.all([refreshCliTokenIfExpired(fresh), refreshCliTokenIfExpired(empty)])
+    assert.equal(a, 'fresh')
+    assert.equal(b, 'none')
+  } finally {
+    setCliRefreshEnabled(false)
+    fs.rmSync(fresh, { recursive: true, force: true }); fs.rmSync(empty, { recursive: true, force: true })
+  }
+})

@@ -87,3 +87,10 @@ test('요청 제한(429)을 연달아 받을수록 오래 쉬되 10분을 넘지
   assert.equal(rateLimitWait(30e3, 5), 10 * min)
   assert.equal(rateLimitWait(15 * min, 1), 15 * min)
 })
+
+test('로그인 폴더로 추가한 Claude 카드는 예전 카드로 보고 조직에 묶지 않는다', () => {
+  const home: AccountConfig = { id: 'claude-home-1', name: 'Claude 회사', provider: 'claude', enabled: true, homeDir: 'C:\claude-work' }
+  const r = syncClaudeOrgAccounts([home], [], [{ orgUuid: 'team-1', label: 'Claude 팀 · A', fromCli: true }])
+  assert.equal(r.accounts.find(a => a.id === home.id)?.orgUuid, undefined)
+  assert.equal(r.accounts.length, 2, '찾은 조직은 따로 카드가 된다')
+})

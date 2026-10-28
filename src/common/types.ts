@@ -61,7 +61,7 @@ export interface AccountConfig {
   launchCli?: string // Ctrl+두 번 클릭으로 실행할 CLI(직접 지정, 비우면 자동으로 찾음)
   launchApp?: string // Shift+두 번 클릭으로 실행할 앱(직접 지정, 비우면 자동으로 찾음)
   launchCwd?: string // CLI를 열 때 시작 폴더(비우면 홈 폴더)
-  homeDir?: string // 두 번째 계정: 그 서비스 CLI의 로그인 폴더(Codex CODEX_HOME, Grok GROK_HOME)
+  homeDir?: string // 두 번째 계정: 그 서비스 CLI의 로그인 폴더(Codex CODEX_HOME, Grok GROK_HOME, Claude CLAUDE_CONFIG_DIR)
   barColor?: string // 그래프 평소 색: 없음=서비스 색, 'green', '#rrggbb'
   customMock?: {
     primaryPercent: number
@@ -107,6 +107,7 @@ export interface WidgetConfig {
   doubleClickToOpenPopup?: boolean // true면 위젯 더블클릭으로만 상세 팝업 열기 (기본 false)
   uiVersion?: number
   windowBounds?: { x: number; y: number; width: number; height: number }
+  focusId?: string // 집중 모드로 보던 카드(계정 id). 앱을 다시 켜도 이어서 본다
   appearance?: 'dark' | 'light' | 'system'
   barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
   motion?: 'off' | 'subtle' | 'expressive'

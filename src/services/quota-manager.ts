@@ -176,6 +176,8 @@ export class QuotaManager {
               // agy CLI가 기존 로그인 세션으로 조회 (RPC 포트/CSRF/토큰을 다루지 않음)
               usage = await AntigravityCliClient.fetchUsage(acc)
               // 다른 공급자와 같은 stale 보존 규칙을 아래에서 적용한다.
+            } else if (acc.provider === 'claude' && acc.homeDir) {
+              usage = await ClaudeOrgs.fetchHomeUsage(acc)
             } else if (acc.provider === 'claude' && acc.orgUuid) {
               usage = await ClaudeOrgs.fetchUsage(acc)
             } else if (acc.provider === 'claude') {

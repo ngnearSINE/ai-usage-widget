@@ -89,13 +89,14 @@ export async function findApp(provider: string): Promise<AppEntry | null> {
 /** 메뉴를 빨리 띄우려고 미리 앱 목록을 읽어 둔다. */
 export function warmLaunchers() { void installedApps() }
 
-/** CLI를 기본 터미널에서 실행한 채로 연다. 두 번째 계정은 그 로그인 폴더(CODEX_HOME·GROK_HOME)로. */
+/** CLI를 기본 터미널에서 실행한 채로 연다. 두 번째 계정은 그 로그인 폴더(CODEX_HOME·GROK_HOME·CLAUDE_CONFIG_DIR)로. */
 export function openCli(acc: AccountConfig): boolean {
   const exe = acc.launchCli && fs.existsSync(acc.launchCli) ? acc.launchCli : findCli(acc.provider)
   if (!exe) return false
   const env = { ...process.env }
   if (acc.homeDir && acc.provider === 'codex') env.CODEX_HOME = acc.homeDir
   if (acc.homeDir && acc.provider === 'xai') env.GROK_HOME = acc.homeDir
+  if (acc.homeDir && acc.provider === 'claude') env.CLAUDE_CONFIG_DIR = acc.homeDir
   // 시작 폴더: 직접 고른 폴더가 있으면 그곳, 없으면 홈 폴더
   const cwd = acc.launchCwd && fs.existsSync(acc.launchCwd) && fs.statSync(acc.launchCwd).isDirectory() ? acc.launchCwd : os.homedir()
   const opts = { cwd, env, detached: true, stdio: 'ignore' as const }

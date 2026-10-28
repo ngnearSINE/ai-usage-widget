@@ -4,7 +4,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { parseClaudeDesktopLiveUsage, parseRetryAfterMs, readClaudeDesktopTokens } from './claude-desktop-oauth.js'
-import { cliNeedsRelogin } from './claude-cli-refresh.js'
+import { cliConfigDir, cliNeedsRelogin, refreshCliTokenIfExpired } from './claude-cli-refresh.js'
 
 /**
  * Claude 조직(팀/개인)별 사용량. 한 계정(이메일)이 여러 조직에 속할 수 있고 한도와 로그인 토큰은 조직마다 따로다.
@@ -80,16 +80,14 @@ export const cliExpiredMessage = (hours: number) => cliNeedsRelogin()
   : `Claude Code CLI 토큰이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)`
 
 /** CLI 로그인 파일은 있는데 토큰이 만료된 상태(어느 조직인지 아직 모름). */
-export function cliTokenExpired(): boolean {
-  const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+export function cliTokenExpired(dir = cliConfigDir()): boolean {
   try {
     const oauth = JSON.parse(fs.readFileSync(path.join(dir, '.credentials.json'), 'utf-8')).claudeAiOauth
     return typeof oauth?.accessToken === 'string' && typeof oauth.expiresAt === 'number' && oauth.expiresAt <= Date.now()
   } catch { return false }
 }
 
-function readCliToken(): ClaudeToken | null {
-  const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+function readCliToken(dir = cliConfigDir()): ClaudeToken | null {
   try {
     const oauth = JSON.parse(fs.readFileSync(path.join(dir, '.credentials.json'), 'utf-8')).claudeAiOauth
     if (typeof oauth?.accessToken !== 'string' || !oauth.accessToken) return null
@@ -149,45 +147,87 @@ export class ClaudeOrgs {
   }
 
   /** 요청 제한으로 쉬는 동안: 마지막 값이 새로우면 경고 없이 그 값을, 오래됐으면 오류(카드에 '잠깐 조회를 막았어요' 안내)를. */
-  private static whileLimited(account: AccountConfig, message: string): AccountUsage {
-    const cached = this.lastUsage.get(account.orgUuid!)
+  private static whileLimited(key: string, account: AccountConfig, message: string): AccountUsage {
+    const cached = this.lastUsage.get(key)
     if (cached && Date.now() - cached.at < QUIET_STALE_MS) return { ...cached.usage, id: account.id, name: account.name }
     throw new Error(message)
   }
 
   static async fetchUsage(account: AccountConfig): Promise<AccountUsage> {
     const orgUuid = account.orgUuid!
-    const cached = this.lastUsage.get(orgUuid)
-    if (cached && Date.now() - cached.at < USAGE_MIN_INTERVAL_MS) return { ...cached.usage, id: account.id, name: account.name }
-    if ((this.backoffUntil.get(orgUuid) || 0) > Date.now()) return this.whileLimited(account, 'Claude 사용량 API 요청 제한으로 잠시 쉬는 중')
+    const early = this.beforeRequest(orgUuid, account)
+    if (early) return early
     const org = (await this.discover()).find(o => o.orgUuid === orgUuid)
     if (!org) {
       const expired = cliExpiredOrg()
       throw new Error(expired?.orgUuid === orgUuid ? cliExpiredMessage(expired.hours)
         : '이 조직의 로그인 정보를 찾지 못했어요. Claude 데스크톱 앱에서 이 조직으로 한 번 전환하거나, 터미널에서 claude를 실행해 주세요')
     }
+    const result = await this.requestUsage(orgUuid, account, org.tokens, org)
+    if (typeof result !== 'number') return result
+    // 토큰이 모두 거절되면 다음 조회 때 다시 찾는다.
+    this.discoveredAt = 0
+    throw new Error(`이 조직의 사용량을 받지 못했어요${result ? ` (HTTP ${result})` : ''}`)
+  }
+
+  /**
+   * '다른 로그인 폴더' 계정: 그 폴더(CLAUDE_CONFIG_DIR)에 로그인한 Claude Code 토큰 하나로 조회한다.
+   * 기본 로그인과 같은 규칙으로 만료되고 10분이 지나면 대신 갱신한다.
+   */
+  static async fetchHomeUsage(account: AccountConfig): Promise<AccountUsage> {
+    const dir = path.resolve(account.homeDir!), key = `home:${dir}`
+    const early = this.beforeRequest(key, account)
+    if (early) return early
+    await refreshCliTokenIfExpired(dir).catch(() => {})
+    const token = readCliToken(dir)
+    if (!token) {
+      throw new Error(cliTokenExpired(dir)
+        ? cliNeedsRelogin(dir)
+          ? 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 이 로그인 폴더로 다시 로그인해 주세요'
+          : 'Claude Code CLI 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요'
+        : '이 로그인 폴더에서 Claude Code 로그인 정보를 찾지 못했어요. 터미널에서 CLAUDE_CONFIG_DIR을 이 폴더로 두고 claude로 로그인해 주세요')
+    }
+    const profile = await this.profileOf(token.token)
+    const info = profile ? { ...profile, ...claudeOrgLabel(profile) } : null
+    const result = await this.requestUsage(key, account, [token], info)
+    if (typeof result !== 'number') return result
+    throw new Error(`이 로그인 폴더의 Claude 사용량을 받지 못했어요${result ? ` (HTTP ${result})` : ''}`)
+  }
+
+  /** 막 받은 값이 있거나 요청 제한으로 쉬는 중이면 묻지 않고 답한다. */
+  private static beforeRequest(key: string, account: AccountConfig): AccountUsage | null {
+    const cached = this.lastUsage.get(key)
+    if (cached && Date.now() - cached.at < USAGE_MIN_INTERVAL_MS) return { ...cached.usage, id: account.id, name: account.name }
+    if ((this.backoffUntil.get(key) || 0) > Date.now()) return this.whileLimited(key, account, 'Claude 사용량 API 요청 제한으로 잠시 쉬는 중')
+    return null
+  }
+
+  /** 토큰을 차례로 써서 사용량을 묻는다. 모두 거절되면 마지막 HTTP 상태(없으면 0)를 돌려준다. */
+  private static async requestUsage(key: string, account: AccountConfig, tokens: ClaudeToken[],
+    org: (ClaudeProfile & { kind: string; label: string }) | null): Promise<AccountUsage | number> {
     let lastStatus = 0
-    for (const t of org.tokens) {
+    for (const t of tokens) {
       // 한 토큰의 네트워크 오류(시간 초과 등)로 나머지 토큰을 건너뛰지 않는다.
       let res: Response
       try { res = await fetch(`${API}/usage`, { headers: headers(t.token), signal: AbortSignal.timeout(5000), redirect: 'error' }) }
       catch { continue }
       if (res.status === 429) {
         await res.body?.cancel().catch(() => {})
-        const strikes = (this.strikes.get(orgUuid) || 0) + 1
-        this.strikes.set(orgUuid, strikes)
-        this.backoffUntil.set(orgUuid, Date.now() + rateLimitWait(parseRetryAfterMs(res.headers.get('retry-after')), strikes))
-        return this.whileLimited(account, 'Claude 사용량 API 요청 제한(HTTP 429)')
+        const strikes = (this.strikes.get(key) || 0) + 1
+        this.strikes.set(key, strikes)
+        this.backoffUntil.set(key, Date.now() + rateLimitWait(parseRetryAfterMs(res.headers.get('retry-after')), strikes))
+        return this.whileLimited(key, account, 'Claude 사용량 API 요청 제한(HTTP 429)')
       }
       if (!res.ok) { lastStatus = res.status; await res.body?.cancel().catch(() => {}); continue }
       const usage = parseClaudeDesktopLiveUsage(await res.json(), account)
-      const result: AccountUsage = { ...usage, name: account.name || org.label, email: org.email, plan: claudePlan(org.orgType, org.rateTier) || undefined, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}`, dataSource: t.source === 'cli' ? 'claude-cli' : 'claude-desktop-live' }
-      this.lastUsage.set(orgUuid, { at: Date.now(), usage: result })
-      this.strikes.delete(orgUuid)
+      const result: AccountUsage = {
+        ...usage, name: account.name || org?.label || 'Claude', dataSource: t.source === 'cli' ? 'claude-cli' : 'claude-desktop-live',
+        ...(org ? { email: org.email, plan: claudePlan(org.orgType, org.rateTier) || undefined, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}` } : {}),
+      }
+      this.lastUsage.set(key, { at: Date.now(), usage: result })
+      this.strikes.delete(key)
       return result
     }
-    // 토큰이 모두 거절되면 다음 조회 때 다시 찾는다.
-    this.discoveredAt = 0
-    throw new Error(`이 조직의 사용량을 받지 못했어요${lastStatus ? ` (HTTP ${lastStatus})` : ''}`)
+    return lastStatus
   }
 }
