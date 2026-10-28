@@ -54,7 +54,6 @@ export const api = {
   pickFolder: (title?: string): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.PICK_FOLDER, title),
   addHomeAccount: (provider: 'codex' | 'xai', homeDir: string, name: string): Promise<{ ok: boolean; message?: string; state?: AppState }> => ipcRenderer.invoke(IPC_CHANNELS.ADD_HOME_ACCOUNT, provider, homeDir, name),
   sizePreset: (n: number): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.SIZE_PRESET, n),
-  popupResize: (phase: 'start' | 'move' | 'end', edge?: string): void => ipcRenderer.send(IPC_CHANNELS.POPUP_RESIZE, phase, edge),
   setFocus: (id: string | null): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.SET_FOCUS, id),
   openServiceTool: (kind: 'cli' | 'app', id: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_TOOL, kind, id),
   pickFile: (kind: 'cli' | 'app'): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.PICK_FILE, kind),

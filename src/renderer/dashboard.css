@@ -612,23 +612,13 @@ body.is-dock-preview.dock-enter #app { animation:dock-enter .18s cubic-bezier(.2
 .about b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
 
 
-/* ---------- 작업 표시줄 상세 팝업: 위젯과 같은 카드를 세로로 ---------- */
-body.is-popup-view #app { height:100vh; }
-.dashboard.popup-v2 { height:100vh; }
-.popup-v2 .dashboard-header { padding:0 6px 0 14px; height:40px; min-height:40px; }
-.popup-v2 .window-handle { cursor:default; }
-.pop-list { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:8px 8px 10px; display:flex; flex-direction:column; gap:var(--card-gap); scrollbar-gutter:stable; }
-.pop-card { flex-shrink:0; display:flex; }
-.pop-card>.ucard { flex:1; min-width:0; }
-.popup-v2 .empty-state { margin:auto; }
-.popup-v2.popup-enter { animation:popupSlideUp .25s cubic-bezier(.16,1,.3,1) both; }
-.popup-v2.popup-enter .pop-card { animation:card-in .3s both; animation-delay:calc(var(--index,0) * 35ms); }
-:root[data-motion="off"] .popup-v2.popup-enter, :root[data-motion="off"] .popup-v2.popup-enter .pop-card { animation:none; }
+/* ---------- 작업 표시줄 상세 팝업: 위젯과 같은 화면, 열릴 때 아래에서 올라온다 ---------- */
+.dashboard.popup-enter { animation:popupSlideUp .25s cubic-bezier(.16,1,.3,1) both; }
+:root[data-motion="off"] .dashboard.popup-enter { animation:none; }
 
 .field-note { font-size:11px; color:var(--dim); }
 .settings-root .sc-row { grid-template-columns:minmax(0,1fr) 116px 28px auto; }
 .settings-root .sc-label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.popup-v2 .src { display:none; }
 
 /* 서비스 평소 색·색 변화 띠 */
 .color-choice { display:flex; align-items:center; gap:8px; }
@@ -715,22 +705,22 @@ body.is-popup-view #app { height:100vh; }
 :root[data-heat-origin="center"] .ucard[style*="--heat:"]::before { background:radial-gradient(ellipse 85% 85% at 50% 50%, var(--heat-k), var(--heat-soft) calc(100% * var(--heat-reach))); }
 
 /* ---------- 마우스 빛: 테두리 스포트라이트 + 옅은 안쪽 빛, 서서히 켜고 끈다 ---------- */
-.service-grid .ucard, .pop-list .ucard { --glow:0; transition:--glow .45s ease, border-color .25s, box-shadow .25s, transform .2s; }
-.service-grid .ucard:hover, .pop-list .ucard:hover { --glow:1; }
-.service-grid .ucard::after, .pop-list .ucard::after {
+.service-grid .ucard { --glow:0; transition:--glow .45s ease, border-color .25s, box-shadow .25s, transform .2s; }
+.service-grid .ucard:hover { --glow:1; }
+.service-grid .ucard::after {
   content:""; position:absolute; inset:0; z-index:2; border-radius:inherit; pointer-events:none; padding:1.5px;
   background:
     radial-gradient(220px circle at var(--mx, -200px) var(--my, -200px), rgb(140 185 255 / calc(var(--glow) * 1)), rgb(124 170 255 / calc(var(--glow) * .35)) 40%, transparent 75%);
   -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude;
 }
-.service-grid .ucard > :first-child, .pop-list .ucard > :first-child { position:relative; }
-.service-grid .ucard, .pop-list .ucard { background-image:radial-gradient(320px circle at var(--mx, -400px) var(--my, -400px), rgb(110 160 255 / calc(var(--glow) * .11)), transparent 70%); }
-:root[data-appearance="light"] .service-grid .ucard::after, :root[data-appearance="light"] .pop-list .ucard::after {
+.service-grid .ucard > :first-child { position:relative; }
+.service-grid .ucard { background-image:radial-gradient(320px circle at var(--mx, -400px) var(--my, -400px), rgb(110 160 255 / calc(var(--glow) * .11)), transparent 70%); }
+:root[data-appearance="light"] .service-grid .ucard::after {
   background:radial-gradient(220px circle at var(--mx, -200px) var(--my, -200px), rgb(60 110 230 / calc(var(--glow) * .85)), rgb(60 110 230 / calc(var(--glow) * .25)) 40%, transparent 75%);
 }
 :root[data-motion="off"] .ucard::after { display:none; }
-:root[data-motion="off"] .service-grid .ucard, :root[data-motion="off"] .pop-list .ucard { background-image:none; }
-@media (prefers-reduced-motion:reduce) { .service-grid .ucard::after, .pop-list .ucard::after { display:none; } }
+:root[data-motion="off"] .service-grid .ucard { background-image:none; }
+@media (prefers-reduced-motion:reduce) { .service-grid .ucard::after { display:none; } }
 
 /* 종합 카드 보강: 플랜 배지·속도 칩 */
 .plan-pill { flex-shrink:0; font-size:10px; font-weight:600; line-height:16px; padding:0 6px; border-radius:8px; border:1px solid var(--line-strong); color:var(--muted); background:var(--soft); white-space:nowrap; }
@@ -741,19 +731,12 @@ body.is-popup-view #app { height:100vh; }
 
 .dashboard .tool.pin.on { color:var(--accent); }
 
-/* 팝업: 제목줄로 옮기기 */
-.popup-v2 .dashboard-header { -webkit-app-region:drag; }
-.popup-v2 .dashboard-header .tool, .popup-v2 .dashboard-header button { -webkit-app-region:no-drag; }
-.popup-v2 .window-handle { cursor:default; }
-
 /* 집중 모드: 그 서비스 하나만, 제목줄은 자동 숨김(위쪽 가장자리에 마우스를 올리면 나타남) */
 .dashboard.focus-mode .dashboard-header { position:absolute; left:0; right:0; top:0; z-index:6; opacity:0; pointer-events:none; transform:translateY(-6px); transition:opacity .14s ease, transform .14s ease; background:rgb(var(--surface)); box-shadow:0 4px 12px rgba(0,0,0,.25); }
 .dashboard.focus-mode .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
 .dashboard.focus-mode:has(.header-hot:hover) .dashboard-header, .dashboard.focus-mode .dashboard-header:hover, .dashboard.focus-mode:has(.menu) .dashboard-header { opacity:1; pointer-events:auto; transform:none; }
 .dashboard .focus-chip { display:inline-flex; align-items:center; gap:4px; height:20px; padding:0 8px; border-radius:10px; font-size:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .dashboard .focus-chip:hover { background:color-mix(in srgb,var(--accent) 24%,transparent); }
-.popup-v2.focus-mode .pop-list { padding-top:8px; }
-.popup-v2.focus-mode .pop-card { flex:1; height:auto!important; }
 
 .row-sub { display:flex; align-items:baseline; gap:8px; min-width:0; }
 .row-sub .row-note { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

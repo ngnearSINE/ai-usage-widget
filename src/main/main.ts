@@ -1062,7 +1062,47 @@ function savePopupBounds(b: Electron.Rectangle) {
   clearTimeout(popupSaveTimer)
   popupSaveTimer = setTimeout(() => accountStore.saveConfig({ ...accountStore.getConfig(), popupBounds: { x: b.x, y: b.y, width: b.width, height: b.height } }), 300)
 }
-let popupResize: { edge: string; start: Electron.Rectangle; origin: Electron.Point } | null = null
+
+/** 팝업 창 옮기기·크기 바꾸기. 위젯 창과 같은 제스처(렌더러가 좌표를 보냄)이고, 작업표시줄 도킹만 없다. */
+function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}) {
+  if (interacting || !popupWindow || popupWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
+  interacting = true
+  const win = popupWindow
+  cancelHidePopup()
+  hideTip()
+  const origin = pointerOrigin && Number.isFinite(pointerOrigin.x) && Number.isFinite(pointerOrigin.y)
+    ? { x: Math.round(pointerOrigin.x), y: Math.round(pointerOrigin.y) } : screen.getCursorScreenPoint()
+  const shown = getAppState(), cardCount = shown.focus ? 1 : Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
+  const start = win.getBounds()
+  let last = origin
+  const update = (p: { x: number; y: number }) => {
+    if (win.isDestroyed()) return
+    last = p
+    const dx = p.x - origin.x, dy = p.y - origin.y
+    if (kind === 'move') { win.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false); return }
+    const edge = kind.slice(7)
+    let { x, y, width, height } = start
+    if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
+    if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
+    const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
+    if (edge.includes('s')) height = Math.max(minH, start.height + dy)
+    if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
+    if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+  }
+  interactionMove = update
+  endInteraction = async (p?: { x: number; y: number }) => {
+    if (!interacting) return
+    if (p) update(p)
+    interacting = false
+    endInteraction = null
+    interactionMove = null
+    if (win.isDestroyed()) return
+    const bounds = fitWindow(win.getBounds(), screen.getDisplayNearestPoint(last).workArea)
+    win.setBounds(bounds)
+    savePopupBounds(bounds)
+  }
+}
 
 function createPopupWindow() {
   const config = accountStore.getConfig()
@@ -1539,7 +1579,8 @@ function setupIpcHandlers() {
     broadcastState()
     return getAppState()
   })
-  ipcMain.handle(IPC_CHANNELS.BEGIN_INTERACTION, (_event, kind: string, origin?: {x:number;y:number}) => beginWindowInteraction(kind, origin, true))
+  ipcMain.handle(IPC_CHANNELS.BEGIN_INTERACTION, (event, kind: string, origin?: {x:number;y:number}) =>
+    popupWindow && !popupWindow.isDestroyed() && event.sender === popupWindow.webContents ? beginPopupInteraction(kind, origin) : beginWindowInteraction(kind, origin, true))
   // 밀린 좌표는 마지막 것만 적용한다(창 이동 호출이 수 ms 걸려 큐가 쌓이는 것을 막음).
   let pendingMove: {x:number;y:number} | null = null
   ipcMain.on(IPC_CHANNELS.MOVE_INTERACTION, (_event, p?: {x:number;y:number}) => {
@@ -1711,21 +1752,6 @@ function setupIpcHandlers() {
       return labels[i]
     }
     return null
-  })
-  // 팝업 크기 조절: 화면 안 손잡이를 끄는 동안 커서 좌표로 창 크기를 바꾼다.
-  ipcMain.on(IPC_CHANNELS.POPUP_RESIZE, (event, phase: string, edge?: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win !== popupWindow) return
-    if (phase === 'start' && typeof edge === 'string' && /^(n|s|e|w|ne|nw|se|sw)$/.test(edge)) { popupResize = { edge, start: win.getBounds(), origin: screen.getCursorScreenPoint() }; return }
-    if (!popupResize) return
-    const p = screen.getCursorScreenPoint(), dx = p.x - popupResize.origin.x, dy = p.y - popupResize.origin.y, s = popupResize.start, e = popupResize.edge
-    let { x, y, width, height } = s
-    if (e.includes('e')) width = Math.max(280, s.width + dx)
-    if (e.includes('w')) { width = Math.max(280, s.width - dx); x = s.x + s.width - width }
-    if (e.includes('s')) height = Math.max(200, s.height + dy)
-    if (e.includes('n')) { height = Math.max(200, s.height - dy); y = s.y + s.height - height }
-    win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
-    if (phase === 'end') { popupResize = null; savePopupBounds(win.getBounds()) }
   })
   ipcMain.handle(IPC_CHANNELS.SET_FOCUS, (_event, id: unknown) => setFocus(typeof id === 'string' ? id : null))
   ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))

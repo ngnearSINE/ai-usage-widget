@@ -17,7 +17,6 @@ export const IPC_CHANNELS = {
   PICK_FILE: 'dialog:pick-file',
   OPEN_SERVICE_TOOL: 'widget:open-service-tool',
   SET_FOCUS: 'widget:set-focus',
-  POPUP_RESIZE: 'popup:resize',
   SIZE_PRESET: 'window:size-preset',
   PICK_FOLDER: 'app:pick-folder',
   ADD_HOME_ACCOUNT: 'account:add-home',

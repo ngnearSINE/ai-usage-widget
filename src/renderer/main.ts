@@ -1,8 +1,7 @@
-import { renderPopupView } from './components/popup-view.js'
 import { renderAiIcon } from './components/ai-icons.js'
 import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { applyAppearance, renderDashboard, renderDockedUsage, openDesign } from './components/dashboard.js'
+import { applyAppearance, renderDashboard, renderDockedUsage, openDesign, setPopupSurface } from './components/dashboard.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
 import { renderAbout } from './components/about-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
@@ -63,7 +62,8 @@ if (dockPreview) {
 const appEl = document.getElementById('app')!
 
 if (viewType === 'popup') {
-  document.body.classList.add('is-popup-view')
+  document.body.classList.add('is-popup-view', 'is-dashboard-view')
+  setPopupSurface(true)
 } else if (viewType === 'settings' || viewType === 'about') {
   document.body.classList.add('is-settings-view')
 } else {
@@ -168,10 +168,13 @@ function renderWidget(state: AppState) {
   }
 }
 
-function renderPopup(state: AppState) {
+function renderPopup(state: AppState, animate = false) {
   currentState = state
-  applyAppearance(state.config)
-  renderPopupView(appEl, state)
+  renderDashboard(appEl, state, animate)
+  if (!animate) return
+  // 열릴 때마다 아래에서 올라오는 등장 효과
+  const root = appEl.querySelector<HTMLElement>('.dashboard')
+  root?.classList.remove('popup-enter'); void root?.offsetWidth; root?.classList.add('popup-enter')
 }
 
 // 브라우저 직접 접근 및 E2E 테스트 지원을 위한 Mock API
@@ -330,12 +333,6 @@ async function init() {
   // 아니라 개별 모듈을 네트워크로 받아오는 방식이라 이 왕복이 느려질 수 있는데,
   // 그 사이에 창은 이미 떠 있어서 클릭해도 반응이 없는 것처럼 보이는 문제를 줄인다.
   if (viewType === 'popup') {
-    // ESC 키 입력 시 팝업 닫기
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        window.api.hidePopup()
-      }
-    })
   }
 
   const state = await window.api.getState()
@@ -360,7 +357,7 @@ async function init() {
     // 메인이 팝업을 투명하게 띄운 상태: 등장 애니메이션 첫 프레임이 화면에 반영된 뒤 불투명 전환 요청
     window.api.onPopupOpened((nextState) => {
       currentState = nextState
-      renderPopupView(appEl, nextState, true)
+      renderPopup(nextState, true)
       requestAnimationFrame(() => requestAnimationFrame(() => window.api.popupReady()))
     })
   } else {
