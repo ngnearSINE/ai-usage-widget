@@ -81,6 +81,14 @@ export function applyAppearance(config: WidgetConfig) {
   document.documentElement.style.setProperty('--heat-soft-pct', `${(Math.max(0, spread - 30) / 70 * 35).toFixed(1)}%`)
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
   document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
+  // 배경 색: 고르지 않으면 테마 바탕(라이트·다크에 따라 바뀜). 고르면 바탕은 그 색 그대로, 글씨·선 색만 테마를 따른다.
+  const bg = /^#[\da-f]{6}$/i.test(config.backgroundColor || '') ? config.backgroundColor! : '', root = document.documentElement.style
+  if (bg) {
+    const n = parseInt(bg.slice(1), 16)
+    root.setProperty('--surface', `${n >> 16}, ${n >> 8 & 255}, ${n & 255}`)
+    root.setProperty('--surface-raised', `color-mix(in srgb, ${bg} 94%, var(--ink))`)
+    root.setProperty('--surface-hover', `color-mix(in srgb, ${bg} 86%, var(--ink))`)
+  } else for (const k of ['--surface', '--surface-raised', '--surface-hover']) root.removeProperty(k)
   document.documentElement.style.setProperty('--font-scale', '1') // 스케일은 창 전체 확대·축소로(메인 프로세스)
   document.documentElement.style.setProperty('--card-gap', `${number(config.cardGap, 4, 16, 6)}px`)
   if (!mediaQuery) {

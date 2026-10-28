@@ -114,6 +114,7 @@ export interface WidgetConfig {
   barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
   motion?: 'off' | 'subtle' | 'expressive'
   accentColor?: string
+  backgroundColor?: string // 창 배경 색(#rrggbb). 없으면 테마 바탕, 있으면 바탕은 이 색이고 글씨·선은 테마를 따른다
   fontScale?: number // 스케일: 위젯·팝업·설정·정보 창 전체 확대·축소(%, 기본 100)
   cardGap?: number
   hideDisconnected?: boolean

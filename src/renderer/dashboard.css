@@ -291,6 +291,10 @@ body.reordering, body.reordering * { cursor:grabbing!important; }
 .color-swatches>button[aria-pressed="true"]::after { content:""; position:absolute; inset:-3px; border:1px solid var(--swatch); border-radius:50%; }
 .color-swatches svg { width:12px; height:12px; }
 .custom-color { width:24px; height:24px; border:1px dashed var(--muted); border-radius:50%; overflow:hidden; display:block; cursor:pointer; }
+.dashboard .color-swatches>button.swatch-auto { width:auto; height:24px; padding:0 10px; border-radius:12px; display:inline-flex; gap:4px; font-size:11px; color:var(--ink); background:var(--soft); border:1px solid var(--line-strong); }
+.color-swatches>button.swatch-auto[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+.color-swatches>button.swatch-auto[aria-pressed="true"]::after { display:none; }
+.color-swatches>button:not(.swatch-auto) { box-shadow:inset 0 0 0 1px var(--line-strong); }
 .custom-color input { width:38px; height:38px; margin:-7px; cursor:pointer; border:0; background:none; padding:0; }
 .setting-hint { margin-top:8px; font-size:10px; color:var(--dim); line-height:1.7; }
 .slider-setting { display:block; margin-bottom:14px; }

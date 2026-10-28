@@ -80,6 +80,10 @@ test('설정 변경은 아는 키와 올바른 형식만 받는다', async () =>
   assert.deepEqual(sanitizeConfigPatch({ windowBounds: { x: 1, y: 2, width: 'a', height: 4 } }), {})
   assert.deepEqual(sanitizeConfigPatch({ shortcuts: { toggle: 'Ctrl+Alt+U', lock: 5 } }), { shortcuts: { toggle: 'Ctrl+Alt+U' } })
   assert.deepEqual(sanitizeConfigPatch(null), {})
+  // 배경 색: #rrggbb만 받고, ''(고르지 않음)은 지운다
+  assert.deepEqual(sanitizeConfigPatch({ backgroundColor: '#1B1D27' }), { backgroundColor: '#1B1D27' })
+  assert.deepEqual(sanitizeConfigPatch({ backgroundColor: '' }), { backgroundColor: undefined })
+  assert.deepEqual(sanitizeConfigPatch({ backgroundColor: 'red' }), {})
 })
 
 test('어림값으로 바뀌면 마지막 실측을 갱신 지연으로 유지한다', () => {

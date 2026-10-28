@@ -60,6 +60,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   barStyle: oneOf('silk', 'aurora', 'neon', 'segments', 'mono', 'spectrum'),
   motion: oneOf('off', 'subtle', 'expressive'),
   accentColor: v => typeof v === 'string' && /^#[\da-f]{6}$/i.test(v) ? v : SKIP,
+  backgroundColor: v => typeof v === 'string' && /^#[\da-f]{6}$/i.test(v) ? v : v === '' || v === null ? undefined : SKIP, // '' = 고르지 않음(테마 바탕)
   fontScale: num(80, 150), // 스케일(창 전체 확대·축소, %)
   cardGap: num(4, 16),
   opacity: num(0, 100),
