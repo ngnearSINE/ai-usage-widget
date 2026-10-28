@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { claudeOrgLabel, claudePlan, groupClaudeOrgs, type ClaudeToken } from '../src/services/claude-orgs.js'
+import { claudeOrgLabel, claudePlan, groupClaudeOrgs, rateLimitWait, type ClaudeToken } from '../src/services/claude-orgs.js'
 import { listClaudeDesktopTokens } from '../src/services/claude-desktop-oauth.js'
 import { syncClaudeOrgAccounts } from '../src/common/claude-org-sync.js'
 import type { AccountConfig } from '../src/common/types.js'
@@ -78,4 +78,12 @@ test('플랜 배지: 조직 종류와 사용량 등급', () => {
   assert.equal(claudePlan('claude_pro'), 'Pro')
   assert.equal(claudePlan('claude_enterprise'), 'Enterprise')
   assert.equal(claudePlan(''), '')
+})
+
+test('요청 제한(429)을 연달아 받을수록 오래 쉬되 10분을 넘지 않고, 서비스가 알려 준 시간보다 짧게 쉬지 않는다', () => {
+  const min = 60e3
+  assert.equal(rateLimitWait(30e3, 1), 4 * min)
+  assert.equal(rateLimitWait(30e3, 2), 8 * min)
+  assert.equal(rateLimitWait(30e3, 5), 10 * min)
+  assert.equal(rateLimitWait(15 * min, 1), 15 * min)
 })
