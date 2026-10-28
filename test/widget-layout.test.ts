@@ -76,7 +76,7 @@ test('최소 창 높이는 보이는 카드가 모두 들어가는 높이다(서
 
 test('설정 변경은 아는 키와 올바른 형식만 받는다', async () => {
   const { sanitizeConfigPatch } = await import('../src/common/config-schema.js')
-  assert.deepEqual(sanitizeConfigPatch({ opacity: 140, design: 'bars', evil: 1, useAcrylic: 'yes', apiEndpoint: 'javascript:alert(1)', cardGap: 7.4 }), { opacity: 100, design: 'bars', cardGap: 7 })
+  assert.deepEqual(sanitizeConfigPatch({ opacity: 140, design: 'bars', evil: 1, useAcrylic: 'yes', cardGap: 7.4 }), { opacity: 100, design: 'bars', cardGap: 7 })
   assert.deepEqual(sanitizeConfigPatch({ windowBounds: { x: 1, y: 2, width: 'a', height: 4 } }), {})
   assert.deepEqual(sanitizeConfigPatch({ shortcuts: { toggle: 'Ctrl+Alt+U', lock: 5 } }), { shortcuts: { toggle: 'Ctrl+Alt+U' } })
   assert.deepEqual(sanitizeConfigPatch(null), {})

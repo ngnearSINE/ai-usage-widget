@@ -5,7 +5,6 @@ import type { AccountConfig, WidgetConfig } from '../common/types.js'
 import type { DetectedApp } from './local-app-detector.js'
 import { GrokCliClient } from './grok-cli-client.js'
 import { mergeClaudeAccounts } from './claude-account-migration.js'
-import { DEFAULT_API_ENDPOINT } from './usage-push.js'
 import { moveAccountBefore } from '../common/widget-layout.js'
 import { syncClaudeOrgAccounts, type ClaudeOrgSeen } from '../common/claude-org-sync.js'
 
@@ -24,9 +23,6 @@ const DEFAULT_CONFIG: WidgetConfig = {
   alwaysOnTop: true,
   openAtLogin: true,
   doubleClickToOpenPopup: false,
-  apiPushEnabled: false,
-  apiEndpoint: DEFAULT_API_ENDPOINT,
-  apiScreen: 1,
   uiVersion: 5,
   appearance: 'dark',
   barStyle: 'silk',

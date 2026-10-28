@@ -7,7 +7,6 @@ import { IPC_CHANNELS } from '../common/ipc-events.js'
 import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
 import { AccountStore } from '../services/account-store.js'
 import { QuotaManager } from '../services/quota-manager.js'
-import { pushUsage } from '../services/usage-push.js'
 import { calculatePopupPosition, calculateWidgetPosition, getTaskbarInfo } from './taskbar-position.js'
 import { LocalAppDetector } from '../services/local-app-detector.js'
 import { TaskbarDocker } from './taskbar-docker.js'
@@ -1779,7 +1778,6 @@ app.whenReady().then(() => {
   quotaManager.addProgressListener(() => broadcastState())
   quotaManager.addListener((usages) => {
     broadcastState()
-    void pushUsage(usages, accountStore.getConfig())
     // 미리보기는 합성 데이터라 실제 알림을 만들지 않는다(테스트 알림은 가능).
     if (!isPreview) {
       history?.record(usages)

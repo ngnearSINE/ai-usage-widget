@@ -23,7 +23,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   verticalOffsetPx: num(-40, 40),
   refreshIntervalSec: num(15, 3600),
   showWeeklyLimit: bool, colorByUsage: bool, showUsedPercent: bool, alwaysOnTop: bool, showCardBackground: bool,
-  openAtLogin: bool, doubleClickToOpenPopup: bool, apiPushEnabled: bool, hideDisconnected: bool, showResetTime: bool,
+  openAtLogin: bool, doubleClickToOpenPopup: bool, hideDisconnected: bool, showResetTime: bool,
   showServiceName: bool, useAcrylic: bool, showPace: bool, sortLowFirst: bool, notifyEnabled: bool, notifyLow: bool,
   notifyPace: bool, notifyReset: bool, notifyUnused: bool, trayShowNumber: bool, clickThrough: bool, rememberPerMonitor: bool,
   placementMode: oneOf('docked', 'floating'),
@@ -54,8 +54,6 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
     }
     return out
   },
-  apiEndpoint: v => typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) && v.length <= 500 ? v.trim() : SKIP,
-  apiScreen: num(1, 999),
   appearance: oneOf('dark', 'light', 'system'),
   barStyle: oneOf('silk', 'aurora', 'neon', 'segments', 'mono', 'spectrum'),
   motion: oneOf('off', 'subtle', 'expressive'),

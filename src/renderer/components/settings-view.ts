@@ -448,10 +448,7 @@ function generalTab(s: AppState) {
         + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
         + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
         + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.')))
-      + section('설정 백업', `<div class="svc-actions"><button class="ghost-button" data-backup="export">${icon('arrow')}파일로 내보내기</button><button class="ghost-button" data-backup="import">${icon('plus')}파일에서 불러오기</button></div>${hint('화면·알림 설정과 카드 목록을 파일 하나로 저장해요. 로그인 정보는 담지 않아요. 다른 PC로 옮기거나 다시 설치할 때 쓰세요.')}`)
-      + section('외부 디스플레이로 보내기', toggle('apiPushEnabled', '사용량 보내기', '확인할 때마다 아래 주소로 사용량을 HTTP POST로 보내요(책상 위 작은 화면 등).', !!c.apiPushEnabled)
-        + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>
-        <label class="field"><span>화면 번호</span><input type="number" class="text-input short" data-api-screen min="1" step="1" value="${c.apiScreen ?? 1}"></label>`), '고급 설정')
+      + section('설정 백업', `<div class="svc-actions"><button class="ghost-button" data-backup="export">${icon('arrow')}파일로 내보내기</button><button class="ghost-button" data-backup="import">${icon('plus')}파일에서 불러오기</button></div>${hint('화면·알림 설정과 카드 목록을 파일 하나로 저장해요. 로그인 정보는 담지 않아요. 다른 PC로 옮기거나 다시 설치할 때 쓰세요.')}`), '고급 설정')
     + section('정보', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}<span class="update-line ${updateTone(s)}">${updateText(s)}</span></p>`
       + (s.update && s.update.status !== 'unsupported' || s.preview ? `<label class="field"><span>자동 업데이트 설치 시각</span>${updateHourSelect(s)}</label>${hint('새 버전은 미리 받아 두고 이 시각(PC 시계 기준)에 설치하고 다시 시작해요. PC가 꺼져 있거나 잠자기였으면 2시간 안에 켜질 때 설치하고, 아니면 다음 날로 미뤄요.')}` : '')
       + `<button class="secondary-button" data-open-about>${icon('refresh')}정보·업데이트 열기</button>`
@@ -639,11 +636,6 @@ function bindEvents() {
   body.querySelectorAll<HTMLElement>('[data-sc-default]').forEach(el => el.onclick = () => { const k = el.dataset.scDefault as ShortcutKey; void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [k]: SHORTCUT_DEFAULTS[k] } }) })
   onClickOf('[data-clear-layouts]', () => { void update({ layoutsByMonitor: {} }) })
 
-  // 외부 디스플레이: 입력을 마칠 때(Enter·포커스 이동)만 저장한다.
-  const ep = body.querySelector<HTMLInputElement>('[data-api-endpoint]')
-  if (ep) ep.onchange = () => { const v = ep.value.trim(); if (/^https?:\/\/\S+$/i.test(v)) void update({ apiEndpoint: v }); else { notify('http:// 또는 https://로 시작하는 주소를 넣어 주세요.'); ep.value = state.config.apiEndpoint || 'http://localhost:8080/api/usage' } }
-  const scr = body.querySelector<HTMLInputElement>('[data-api-screen]')
-  if (scr) scr.onchange = () => { const v = parseInt(scr.value, 10); if (v >= 1) void update({ apiScreen: v }); else scr.value = String(state.config.apiScreen ?? 1) }
   onClickOf('[data-open-about]', () => { void window.api.openAbout() })
   onClickOf('[data-update-check]', () => run(window.api.checkUpdate(), '업데이트를 확인하지 못했어요.'))
   onClickOf('[data-update-install]', () => run(window.api.installUpdate(), '업데이트를 설치하지 못했어요.'))
