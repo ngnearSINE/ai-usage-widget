@@ -47,7 +47,7 @@ const homeDraft = { provider: 'codex' as 'codex' | 'xai', dir: '', name: '' }
 const customDraft = { name: '', p5: '100', pw: '100', color: '#8cbbff' }
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
-const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#a99bff'
+const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#8cbbff'
 /** 배경 색 고르기: '고르지 않음'(테마 바탕), 어두운 색 4·밝은 색 2, 직접 고르기. 체크 표시는 바탕 밝기에 맞춰 흰색·검정. */
 const BG_COLORS = ['#1b1d27', '#16233a', '#1f2b24', '#2b1f2e', '#f3eee4', '#e9f0f8']
 function bgSwatches(c: WidgetConfig) {
@@ -242,7 +242,7 @@ function designTab(c: WidgetConfig) {
       + `<div class="field"><span>배경 색</span>${bgSwatches(c)}</div>`
       + hint('고르지 않으면 테마(라이트·다크)에 맞춰 바뀌어요. 색을 고르면 배경은 그 색 그대로, 글씨색만 테마를 따라요.'))
     + section('막대 색', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 먼저예요')
-    + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
+    + section('강조색', `<div class="color-swatches">${['#8cbbff', '#a99bff', '#79c7b2', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
     + section('서비스 아이콘', segment('iconStyle', c.iconStyle === 'monochrome' ? 'monochrome' : 'color', [['color', '브랜드 색'], ['monochrome', '단색']], '서비스 아이콘'))
     + section('크기와 간격', slider('fontScale', '스케일', 80, 150, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
     + section('움직임', segment('motion', c.motion || 'subtle', [['off', '없음'], ['subtle', '은은하게'], ['expressive', '생동감 있게']], '움직임') + hint('Windows의 애니메이션 효과 끄기 설정도 함께 따라요.'))

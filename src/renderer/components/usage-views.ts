@@ -47,7 +47,7 @@ function spark(m: ServiceModel, x: ViewContext, w: QuotaWindow, height: number) 
 }
 
 const esc = (v: string) => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
-const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#a99bff'
+const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#8cbbff'
 const chev = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>'
 
 /* ---------- 값·색 ---------- */

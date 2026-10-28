@@ -19,7 +19,7 @@ function updateTrayIcon(state: AppState) {
     return
   }
   const value = lowestLeft(tight.m), warn = c.warnPercent ?? 20, crit = Math.min(warn, c.critPercent ?? 10)
-  const bg = value <= crit ? '#ff6b73' : value <= warn ? '#f0b65a' : (/^#[\da-f]{6}$/i.test(c.accentColor || '') ? c.accentColor! : '#a99bff')
+  const bg = value <= crit ? '#ff6b73' : value <= warn ? '#f0b65a' : (/^#[\da-f]{6}$/i.test(c.accentColor || '') ? c.accentColor! : '#8cbbff')
   const key = `${value}|${bg}|${tooltip}`
   if (key === lastTrayKey) return
   lastTrayKey = key
@@ -192,7 +192,7 @@ if (!(window as any).api) {
       showWeeklyLimit: true,
       colorByUsage: true,
       showCardBackground: false,
-      placementMode: 'floating', uiVersion: 2, appearance: 'dark', barStyle: 'silk', accentColor: '#a99bff', motion: 'subtle', hideDisconnected: true
+      placementMode: 'floating', uiVersion: 2, appearance: 'dark', barStyle: 'silk', accentColor: '#8cbbff', motion: 'subtle', hideDisconnected: true
     },
     accounts: [
       { id: 'local-antigravity', name: 'Google Antigravity', provider: 'antigravity', enabled: true },

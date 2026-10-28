@@ -40,7 +40,7 @@ const paths: Record<string, string> = {
 }
 export const icon = (name: string) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.grid}</svg>`
 export const escapeText = (value: string) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
-const color = (value?: string) => /^#[\da-f]{6}$/i.test(value || '') ? value! : '#a99bff'
+const color = (value?: string) => /^#[\da-f]{6}$/i.test(value || '') ? value! : '#8cbbff'
 const clamp = (n: number) => Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
 let busy = false

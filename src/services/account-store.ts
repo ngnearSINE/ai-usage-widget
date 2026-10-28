@@ -27,11 +27,11 @@ const DEFAULT_CONFIG: WidgetConfig = {
   apiPushEnabled: false,
   apiEndpoint: DEFAULT_API_ENDPOINT,
   apiScreen: 1,
-  uiVersion: 4,
+  uiVersion: 5,
   appearance: 'dark',
   barStyle: 'silk',
   motion: 'subtle',
-  accentColor: '#a99bff',
+  accentColor: '#8cbbff',
   fontScale: 100,
   cardGap: 6,
   hideDisconnected: true,
@@ -151,6 +151,10 @@ export class AccountStore {
           config.useAcrylic = effect === 'acrylic'
           // 예전 아크릴 틴트는 불투명도에 0.72를 곱해 칠했으므로 보이는 정도가 같게 옮긴다.
           config.opacity = effect === 'solid' ? 100 : effect === 'acrylic' ? Math.round(alpha * .72) : alpha
+        }
+        // 기본 강조색이 보라(#a99bff) → 파랑(#8cbbff)으로 바뀌었다(uiVersion 5). 예전 기본값 그대로면 새 기본값으로 옮긴다.
+        if (!saved.uiVersion || saved.uiVersion < 5) {
+          if (saved.accentColor === undefined || String(saved.accentColor).toLowerCase() === '#a99bff') config.accentColor = DEFAULT_CONFIG.accentColor
         }
         delete (config as any).backgroundEffect
         delete (config as any).alphaPercent

@@ -11,8 +11,8 @@
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-ACCENT = (169, 155, 255)  # 기본 강조색 #a99bff
-TILE = (38, 37, 55)       # 강조색 14%를 어두운 바탕에 섞은 색(정보 창 로고 바탕)
+ACCENT = (140, 187, 255)  # 기본 강조색 #8cbbff
+TILE = tuple(round(a * .14 + d * .86) for a, d in zip(ACCENT, (17, 18, 23)))  # 강조색 14%를 어두운 바탕에 섞은 색(정보 창 로고 바탕)
 SS = 8
 PUBLIC = Path(__file__).resolve().parent.parent / 'public'
 
