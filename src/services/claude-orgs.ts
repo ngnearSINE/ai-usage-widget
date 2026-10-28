@@ -13,7 +13,16 @@ import { cliNeedsRelogin } from './claude-cli-refresh.js'
  */
 const API = 'https://api.anthropic.com/api/oauth'
 const DISCOVER_TTL_MS = 60e3
-const USAGE_MIN_INTERVAL_MS = 30e3
+// Claude 사용량 API는 요청 제한(429)이 빡빡하고 Claude Code도 같은 주소를 묻는다. 설정 안내대로 2분에 한 번만 묻는다.
+const USAGE_MIN_INTERVAL_MS = 2 * 60e3
+const MAX_BACKOFF_MS = 10 * 60e3
+// 막혀 있어도 마지막 값이 이만큼 새로우면 경고(!) 없이 그 값을 보여 준다.
+const QUIET_STALE_MS = 15 * 60e3
+
+/** 429를 연달아 받을수록 오래 쉰다(4·8·10분…). 서비스가 알려 준 시간보다 짧게 쉬지는 않는다. */
+export function rateLimitWait(retryAfterMs: number, strikes: number): number {
+  return Math.max(retryAfterMs, Math.min(MAX_BACKOFF_MS, USAGE_MIN_INTERVAL_MS * 2 ** strikes))
+}
 
 export interface ClaudeToken { token: string; expiresAt: number | null; source: 'cli' | 'desktop'; scopes: string[] }
 export interface ClaudeProfile { orgUuid: string; orgName: string; orgType: string; rateTier?: string; email: string }
@@ -101,6 +110,7 @@ export class ClaudeOrgs {
   private static profiles = new Map<string, ClaudeProfile>()
   private static lastUsage = new Map<string, { at: number; usage: AccountUsage }>()
   private static backoffUntil = new Map<string, number>()
+  private static strikes = new Map<string, number>()
 
   static discover(force = false): Promise<ClaudeOrg[]> {
     if (!force && Date.now() - this.discoveredAt < DISCOVER_TTL_MS) return Promise.resolve(this.orgs)
@@ -138,11 +148,18 @@ export class ClaudeOrgs {
     } catch { return null }
   }
 
+  /** 요청 제한으로 쉬는 동안: 마지막 값이 새로우면 경고 없이 그 값을, 오래됐으면 오류(카드에 '잠깐 조회를 막았어요' 안내)를. */
+  private static whileLimited(account: AccountConfig, message: string): AccountUsage {
+    const cached = this.lastUsage.get(account.orgUuid!)
+    if (cached && Date.now() - cached.at < QUIET_STALE_MS) return { ...cached.usage, id: account.id, name: account.name }
+    throw new Error(message)
+  }
+
   static async fetchUsage(account: AccountConfig): Promise<AccountUsage> {
     const orgUuid = account.orgUuid!
     const cached = this.lastUsage.get(orgUuid)
     if (cached && Date.now() - cached.at < USAGE_MIN_INTERVAL_MS) return { ...cached.usage, id: account.id, name: account.name }
-    if ((this.backoffUntil.get(orgUuid) || 0) > Date.now()) throw new Error('Claude 사용량 API 요청 제한으로 잠시 쉬는 중')
+    if ((this.backoffUntil.get(orgUuid) || 0) > Date.now()) return this.whileLimited(account, 'Claude 사용량 API 요청 제한으로 잠시 쉬는 중')
     const org = (await this.discover()).find(o => o.orgUuid === orgUuid)
     if (!org) {
       const expired = cliExpiredOrg()
@@ -157,13 +174,16 @@ export class ClaudeOrgs {
       catch { continue }
       if (res.status === 429) {
         await res.body?.cancel().catch(() => {})
-        this.backoffUntil.set(orgUuid, Date.now() + parseRetryAfterMs(res.headers.get('retry-after')))
-        throw new Error('Claude 사용량 API 요청 제한(HTTP 429)')
+        const strikes = (this.strikes.get(orgUuid) || 0) + 1
+        this.strikes.set(orgUuid, strikes)
+        this.backoffUntil.set(orgUuid, Date.now() + rateLimitWait(parseRetryAfterMs(res.headers.get('retry-after')), strikes))
+        return this.whileLimited(account, 'Claude 사용량 API 요청 제한(HTTP 429)')
       }
       if (!res.ok) { lastStatus = res.status; await res.body?.cancel().catch(() => {}); continue }
       const usage = parseClaudeDesktopLiveUsage(await res.json(), account)
       const result: AccountUsage = { ...usage, name: account.name || org.label, email: org.email, plan: claudePlan(org.orgType, org.rateTier) || undefined, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}`, dataSource: t.source === 'cli' ? 'claude-cli' : 'claude-desktop-live' }
       this.lastUsage.set(orgUuid, { at: Date.now(), usage: result })
+      this.strikes.delete(orgUuid)
       return result
     }
     // 토큰이 모두 거절되면 다음 조회 때 다시 찾는다.

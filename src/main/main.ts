@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
-import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
 import { AccountStore } from '../services/account-store.js'
 import { QuotaManager } from '../services/quota-manager.js'
 import { calculatePopupPosition, calculateWidgetPosition, getTaskbarInfo } from './taskbar-position.js'
@@ -24,6 +24,7 @@ import { roundedWindowShape } from '../common/window-shape.js'
 import { UsageNotifier } from './notifier.js'
 import { UsageHistory } from './history-store.js'
 import { previewHistory } from '../common/history.js'
+import { previewDaily } from '../common/stats.js'
 import { DESIGNS } from '../common/usage-model.js'
 import { SurfaceWindow, surfaceKind } from './surface-window.js'
 import { WebServer, DEFAULT_WEB_PORT, hashPassword } from './web-server.js'
@@ -186,6 +187,9 @@ function broadcastState() {
   if (aboutWindow && !aboutWindow.isDestroyed()) {
     aboutWindow.webContents.send(IPC_CHANNELS.STATE_CHANGED, state)
   }
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    statsWindow.webContents.send(IPC_CHANNELS.STATE_CHANGED, state)
+  }
 }
 
 
@@ -287,6 +291,7 @@ async function showCardMenu(sender: Electron.WebContents, id: string) {
     { label: 'CLI 열기  (Ctrl+두 번 클릭)', enabled: !!cli, click: () => { openCli(acc) } },
     { label: '앱 열기  (Shift+두 번 클릭)', enabled: !!app, click: () => { void openApp(acc) } },
     { type: 'separator' },
+    { label: '이 서비스 통계', click: () => openStatsWindow(id) },
     { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
     ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
     { type: 'separator' },
@@ -367,16 +372,17 @@ function registerShortcuts() {
 }
 
 /* ---------- 설정 창: 큰 미리보기 + 조절 항목. 위젯이 작아도 편하게 편집하고, 바꾸면 위젯에도 즉시 반영된다. ---------- */
-const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'history', 'general', 'convenience', 'accounts', 'api', 'last'] as const
+const SETTINGS_TABS = ['design', 'display', 'services', 'alerts', 'general', 'convenience', 'accounts', 'api', 'last'] as const
 type SettingsTab = typeof SETTINGS_TABS[number]
 // 설정 창도 위젯과 같은 배경(불투명도·아크릴)을 쓰도록 테두리 없는 공통 창으로 만들고, 창 단추는 화면이 그린다.
 let aboutWindow: SurfaceWindow | null = null
+let statsWindow: SurfaceWindow | null = null
 /** 스케일(설정의 %): 창 전체 확대·축소. 작업 표시줄에 붙은 위젯은 작업 표시줄 높이에 맞춰야 하므로 늘 1. */
 const uiZoom = () => Math.max(.8, Math.min(1.5, (accountStore?.getConfig().fontScale ?? 100) / 100))
 function applyZoom() {
   const z = uiZoom(), docked = accountStore.getConfig().placementMode === 'docked'
   const set = (w: { isDestroyed(): boolean; webContents: Electron.WebContents } | null | undefined, f: number) => { if (w && !w.isDestroyed() && Math.abs(w.webContents.getZoomFactor() - f) > .001) w.webContents.setZoomFactor(f) }
-  set(widgetWindow, docked ? 1 : z); set(popupWindow, z); set(settingsWindow, z); set(aboutWindow, z)
+  set(widgetWindow, docked ? 1 : z); set(popupWindow, z); set(settingsWindow, z); set(aboutWindow, z); set(statsWindow, z)
 }
 /** 스케일이 바뀐 비율만큼 창 크기를 바꾼다(왼쪽 위는 그대로, 화면 안으로). 작업 표시줄에 붙은 위젯은 빼고. */
 function rescaleWindows(ratio: number) {
@@ -398,7 +404,7 @@ function rescaleWindows(ratio: number) {
     const area = screen.getDisplayMatching(settingsWindow.getBounds()).workArea
     settingsWindow.setMinimumSize(Math.min(area.width - 40, Math.round(760 * uiZoom())), Math.min(area.height - 40, Math.round(520 * uiZoom())))
   }
-  resize(settingsWindow); resize(aboutWindow)
+  resize(settingsWindow); resize(aboutWindow); resize(statsWindow)
   broadcastState() // 설정 미리보기가 바뀐 위젯 크기를 따라가게
 }
 
@@ -430,10 +436,40 @@ function openAboutWindow() {
   }, currentSurfaceKind())
   keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
-  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.once('ready-to-show', () => { syncDialogTopmost(); win.show(); applyWindowShape(win, 'native') })
+  win.on('focus', syncDialogTopmost)
   win.on('closed', () => { if (aboutWindow === win) aboutWindow = null })
   if (process.env.VITE_DEV_SERVER_URL) void win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=about`)
   else void win.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'about' } })
+}
+
+/** 사용량 통계 창. id를 주면 그 서비스를 앞에 보여 준다(카드 우클릭 '이 서비스 통계'). */
+function openStatsWindow(id?: string) {
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    if (id) statsWindow.webContents.send(IPC_CHANNELS.OPEN_STATS, id)
+    if (statsWindow.isMinimized()) statsWindow.restore()
+    statsWindow.show(); statsWindow.focus()
+    return
+  }
+  hidePopup(true)
+  const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
+  const area = screen.getDisplayMatching(anchor).workArea
+  const width = Math.min(area.width - 40, Math.round(820 * uiZoom())), height = Math.min(area.height - 40, Math.round(640 * uiZoom()))
+  const win = statsWindow = new SurfaceWindow({
+    x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
+    minWidth: Math.min(area.width - 40, Math.round(420 * uiZoom())), minHeight: Math.min(area.height - 40, Math.round(360 * uiZoom())),
+    show: false, title: 'AI 사용량 통계', autoHideMenuBar: true,
+    webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
+  }, currentSurfaceKind())
+  keepZoom(win)
+  win.on('page-title-updated', event => event.preventDefault())
+  win.once('ready-to-show', () => { syncDialogTopmost(); win.show(); applyWindowShape(win, 'native') })
+  win.on('focus', syncDialogTopmost)
+  win.on('resize', () => { if (!win.isDestroyed()) applyWindowShape(win, win.isMaximized() ? 0 : 'native') })
+  win.on('closed', () => { if (statsWindow === win) statsWindow = null })
+  const query = { view: 'stats', ...(id ? { id } : {}) }
+  if (process.env.VITE_DEV_SERVER_URL) void win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?${new URLSearchParams(query)}`)
+  else void win.loadFile(path.join(__dirname, '../dist/index.html'), { query })
 }
 
 function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Rectangle) {
@@ -456,7 +492,8 @@ function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Recta
   }, currentSurfaceKind())
   keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
-  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.once('ready-to-show', () => { syncDialogTopmost(); win.show(); applyWindowShape(win, 'native') })
+  win.on('focus', syncDialogTopmost)
   win.on('closed', () => { if (settingsWindow === win) settingsWindow = null })
   if (process.env.VITE_DEV_SERVER_URL) void settingsWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=settings&tab=${tab}`)
   else void settingsWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'settings', tab } })
@@ -537,6 +574,7 @@ function rebuildSurfaces() {
 }
 
 function applyWindowTopmost(config: WidgetConfig) {
+  syncDialogTopmost()
   if (!widgetWindow || widgetWindow.isDestroyed()) return
 
   if (config.placementMode === 'floating') {
@@ -552,6 +590,19 @@ function applyWindowTopmost(config: WidgetConfig) {
     // [중요 원칙]: 작업표시줄 child HWND 도킹 모드에서는 setAlwaysOnTop 및 staytop을 일절 사용하지 않음
     TaskbarDocker.stopStayTop()
     widgetWindow.setAlwaysOnTop(false)
+  }
+}
+
+/**
+ * 핀(항상 위)을 켠 창은 '항상 위' 층에 있어서, 보통 창인 설정·정보·통계 창은 겹치면 늘 그 뒤로 숨는다.
+ * 핀이 켜져 있으면 이 창들도 같은 층(floating)에 올려, 나중에 띄우거나 누른 창이 위에 오게 한다.
+ */
+function syncDialogTopmost() {
+  const c = accountStore.getConfig(), pinned = c.placementMode === 'floating' && c.alwaysOnTop !== false
+  for (const w of [settingsWindow, aboutWindow, statsWindow]) {
+    if (!w || w.isDestroyed()) continue
+    w.setAlwaysOnTop(pinned, 'floating')
+    if (pinned && w.isFocused()) w.moveTop()
   }
 }
 
@@ -883,7 +934,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
       const display = screen.getDisplayNearestPoint(origin)
       const rect = r || { x: origin.x - 100, y: 0, width: currentWidgetWidth, height: 0 }
       slide = { grabDx: origin.x - rect.x, display, top: display.bounds.y + display.bounds.height - getTaskbarInfo(display).taskbarHeight, width: rect.width, offset: rect.x - display.bounds.x }
-    } else if (kind === 'move') showDockPreview(false, origin, true, ghostWidth)
+    } else if (kind === 'move' && dockSupported) showDockPreview(false, origin, true, ghostWidth)
 
     const slideTo = (offset: number) => {
       // 도킹은 수 ms~수십 ms 걸리므로 하나씩, 마지막 위치만 따라간다.
@@ -1376,6 +1427,7 @@ function updateTrayMenu() {
       label: '설정',
       click: () => openSettingsWindow('last')
     },
+    { label: '사용량 통계', click: () => openStatsWindow() },
     { label: '정보·업데이트', click: () => openAboutWindow() },
     { type: 'separator' },
     {
@@ -1634,7 +1686,7 @@ function setupIpcHandlers() {
   ipcMain.on(IPC_CHANNELS.TIP_HIDE, () => hideTip())
   ipcMain.on(IPC_CHANNELS.WINDOW_CONTROL, (event, action: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || (win !== settingsWindow && win !== aboutWindow)) return
+    if (!win || (win !== settingsWindow && win !== aboutWindow && win !== statsWindow)) return
     if (action === 'minimize') win.minimize()
     else if (action === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize() }
     else if (action === 'close') win.close()
@@ -1685,6 +1737,8 @@ function setupIpcHandlers() {
     return { ok: true, message: '설정을 불러왔어요.' }
   })
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
+  ipcMain.handle(IPC_CHANNELS.OPEN_STATS, (_event, id: unknown) => openStatsWindow(typeof id === 'string' ? id : undefined))
+  ipcMain.handle(IPC_CHANNELS.GET_DAILY, () => history?.daily() ?? {})
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => { app.quit() })
   // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
   // 웹 페이지 접속 암호: 정하면 해시만 저장하고, null이면 없앤다. 바뀌면 열려 있던 페이지는 다시 암호를 묻는다.
@@ -1761,6 +1815,23 @@ function setupIpcHandlers() {
   })
   ipcMain.handle(IPC_CHANNELS.SET_FOCUS, (_event, id: unknown) => setFocus(typeof id === 'string' ? id : null))
   ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))
+  // 제목줄 메뉴(☰)·카드 기준(▾): 화면 안에 그리면 작은 창에서 잘리므로 Windows 기본 메뉴로 띄우고 고른 항목만 돌려준다.
+  ipcMain.handle(IPC_CHANNELS.POPUP_MENU, (event, items: unknown, at: { x?: unknown; y?: unknown } | undefined) => new Promise<string | null>(resolve => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !Array.isArray(items) || items.length > 40) { resolve(null); return }
+    let chosen: string | null = null
+    const template = items.map((it): Electron.MenuItemConstructorOptions => it === '-' || !it || typeof it !== 'object'
+      ? { type: 'separator' }
+      : {
+          label: String(it.label).slice(0, 80),
+          ...(typeof it.on === 'boolean' ? { type: 'radio' as const, checked: it.on } : {}),
+          ...(typeof it.accel === 'string' ? { accelerator: it.accel, registerAccelerator: false } : {}),
+          click: () => { chosen = String(it.key) },
+        })
+    // 화면 좌표(CSS 픽셀)를 창 좌표로: 스케일(확대 비율)을 곱한다.
+    const z = event.sender.getZoomFactor(), x = Math.round(Number(at?.x) * z), y = Math.round(Number(at?.y) * z)
+    Menu.buildFromTemplate(template).popup({ window: win, ...(Number.isFinite(x) && Number.isFinite(y) ? { x, y } : {}), callback: () => setImmediate(() => resolve(chosen)) })
+  }))
   // Ctrl+두 번 클릭은 CLI, Shift+두 번 클릭은 데스크톱 앱. 못 찾으면 false.
   ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_TOOL, async (_event, kind: unknown, id: unknown) => {
     const acc = accountStore.getAccounts().find(a => a.id === String(id))
@@ -1782,7 +1853,8 @@ app.whenReady().then(() => {
   quotaManager = new QuotaManager(accountStore, isPreview ? undefined : path.join(app.getPath('userData'), 'last-usage.json'))
 
   // 미리보기는 합성 기록으로 그래프를 보여 주고 파일에 쓰지 않는다.
-  history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages(Date.now(), previewSpread())) : undefined)
+  history = new UsageHistory(path.join(app.getPath('userData'), 'usage-history.json'), isPreview ? previewHistory(previewUsages(Date.now(), previewSpread())) : undefined,
+    isPreview ? previewDaily(previewUsages(Date.now(), previewSpread()).map(u => u.id)) : undefined)
   const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
   const appIcon = [path.join(__dirname, '../public', iconFile), path.join(app.getAppPath(), 'public', iconFile), path.join(process.resourcesPath, 'public', iconFile)].find(p => fs.existsSync(p))
   // 알림을 누르면 위젯을 다시 보여 준다(숨겨 둔 경우 포함).

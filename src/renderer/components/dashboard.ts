@@ -348,25 +348,11 @@ export function updatePill(state: AppState) {
   return `<button class="update-pill" data-update-install data-tip="새 버전 ${escapeText(u.version || '')} 설치하고 다시 시작" aria-label="새 버전 ${escapeText(u.version || '')} 설치하고 다시 시작">업데이트</button>`
 }
 
-let menuEl: HTMLElement | null = null
-function closeMenu() { menuEl?.remove(); menuEl = null }
-function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string; hint?: string; on?: boolean; run: () => void } | '-'>) {
-  closeMenu()
-  const dash = host.querySelector<HTMLElement>('.dashboard')!
-  menuEl = document.createElement('div')
-  menuEl.className = 'menu'
-  menuEl.setAttribute('role', 'menu')
-  menuEl.innerHTML = items.map(it => it === '-' ? '<div class="sep"></div>' : `<button role="menuitemradio" aria-checked="${!!it.on}" data-key="${it.key}"><span class="check">${it.on ? icon('check') : ''}</span>${it.label}${it.hint ? `<small>${it.hint}</small>` : ''}</button>`).join('')
-  dash.appendChild(menuEl)
-  const r = anchor.getBoundingClientRect(), d = dash.getBoundingClientRect()
-  menuEl.style.left = `${Math.max(6, Math.min(d.width - menuEl.offsetWidth - 6, r.left - d.left))}px`
-  menuEl.style.top = `${Math.min(d.height - menuEl.offsetHeight - 6, r.bottom - d.top + 4)}px`
-  menuEl.onclick = e => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-key]'); if (!b) return
-    const it = items.find(i => i !== '-' && i.key === b.dataset.key) as { run: () => void } | undefined
-    closeMenu(); it?.run()
-  }
-  menuEl.querySelector<HTMLElement>('[aria-checked="true"],button')?.focus({ preventScroll: true })
+/** 단추 아래에 메뉴를 띄운다. Windows 기본 메뉴라서 창이 작아도 창 밖까지 펼쳐진다. */
+function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string; accel?: string; on?: boolean; run: () => void } | '-'>) {
+  const r = anchor.getBoundingClientRect()
+  void window.api.popupMenu(items.map(it => it === '-' ? '-' : { key: it.key, label: it.label, on: it.on, accel: it.accel }), { x: Math.round(r.left), y: Math.round(r.bottom + 2) })
+    .then(key => { const it = items.find(i => i !== '-' && i.key === key); if (it && it !== '-') it.run() })
 }
 
 /** CLI·앱 열기(못 찾으면 안내). */
@@ -400,8 +386,9 @@ function bindDelegated(container: HTMLElement) {
     if (view) {
       e.stopPropagation()
       const current = designOf(lastState.config)
-      openMenu(view, [...DESIGNS.map(([key, label, hint], i) => ({ key, label, hint: `${hint} · Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
+      openMenu(view, [...DESIGNS.map(([key, label], i) => ({ key, label, accel: `Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
         { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
+        { key: 'stats', label: '사용량 통계', run: () => { void window.api.openStats() } },
         { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
         { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
         '-',
@@ -421,12 +408,10 @@ function bindDelegated(container: HTMLElement) {
     if (t.closest('[data-update-install]')) { void window.api.installUpdate(); return }
     const pg = t.closest<HTMLElement>('[data-page]')
     if (pg) { pageIndex = (pageIndex + Number(pg.dataset.page) + pageCount) % pageCount; layoutCards(); return }
-    if (menuEl && !t.closest('.menu')) closeMenu()
   })
-  container.addEventListener('keydown', e => { if (e.key === 'Escape' && menuEl) { e.stopPropagation(); closeMenu() } }, true)
-  // Esc: 위젯은 집중 모드를 끄고, 팝업은 닫는다(열린 메뉴가 있으면 메뉴만 닫힘).
+  // Esc: 창은 집중 모드를 끄고, 위젯은 닫는다(열린 메뉴는 Windows가 먼저 닫는다).
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape' || menuEl) return
+    if (e.key !== 'Escape') return
     if (popup) { void window.api.unlockPopup(); void window.api.hidePopup() }
     else if (lastState?.focus) void window.api.setFocus(null)
   })

@@ -15,10 +15,10 @@ import { DISPLAY_KEYS, displayOf, displaySummary, setDisplay, setDisplayAll, typ
  * 설정 창: 왼쪽 미리보기(실제 위젯과 같은 렌더러·배치), 오른쪽 조절 항목.
  * 슬라이더는 끄는 동안 미리보기에만, 놓으면 저장해 위젯에도 반영. 드물게 쓰는 항목은 탭마다 '고급' 접기에 둔다.
  */
-type Tab = 'design' | 'display' | 'services' | 'alerts' | 'history' | 'general'
-const TABS: Array<[Tab, string]> = [['design', '디자인'], ['display', '표시'], ['services', '서비스'], ['alerts', '알림'], ['history', '기록'], ['general', '일반']]
+type Tab = 'design' | 'display' | 'services' | 'alerts' | 'general'
+const TABS: Array<[Tab, string]> = [['design', '디자인'], ['display', '표시'], ['services', '서비스'], ['alerts', '알림'], ['general', '일반']]
 // 예전 탭 이름으로 열어도 옮겨 간 곳으로 간다.
-const TAB_ALIAS: Record<string, Tab> = { accounts: 'services', convenience: 'general', api: 'general' }
+const TAB_ALIAS: Record<string, Tab> = { accounts: 'services', convenience: 'general', api: 'general', history: 'design' }
 const lastTab = () => { try { return localStorage.getItem('settings.tab') } catch { return null } }
 const toTab = (v?: string | null): Tab | null => { if (v === 'last') v = lastTab() || 'design'; return v ? (TABS.some(t => t[0] === v) ? v as Tab : TAB_ALIAS[v] || null) : null }
 type SizeKey = 'current' | 'flat' | 'small' | 'tall' | 'large'
@@ -111,9 +111,8 @@ export function renderSettings(next: AppState, force = false) {
     <div class="toast" role="status" aria-live="polite"></div>
   </div>`)
   const body = root.querySelector<HTMLElement>('[data-body]')!
-  const html = tab === 'design' ? designTab(config()) : tab === 'display' ? displayTab(config()) : tab === 'alerts' ? alertsTab(state) : tab === 'history' ? historyTab() : tab === 'general' ? generalTab(state) : servicesTab(state)
+  const html = tab === 'design' ? designTab(config()) : tab === 'display' ? displayTab(config()) : tab === 'alerts' ? alertsTab(state) : tab === 'general' ? generalTab(state) : servicesTab(state)
   updateMarkup(body, `<div class="s-tab-${tab}">${html}</div>`)
-  if (tab === 'history') void drawHistory()
   if (tab === 'services' && detected === null && !detecting) void detectApps()
   body.scrollTop = scroll
   bindEvents()
@@ -387,46 +386,6 @@ function alertsTab(s: AppState) {
     + '</div>'
 }
 
-let histId = ''
-let histRange: 'day' | 'week' = 'day'
-function historyServices() {
-  const usages = usePreviewSample() ? previewUsages(Date.now(), previewSpread()) : state.usages
-  return usages.filter(u => ['ready', 'stale'].includes(u.status))
-}
-function historyTab() {
-  const list = historyServices()
-  if (!list.some(u => u.id === histId)) histId = list[0]?.id || ''
-  if (!list.length) return section('사용 기록', hint('아직 기록이 없어요. 사용량을 조회할 때마다 이 PC에 쌓이고 30일 동안 보관해요.'))
-  return section('서비스', `<div class="chip-row">${list.map(u => `<button class="chip-btn" data-hist="${escapeText(u.id)}" aria-pressed="${u.id === histId}">${renderAiIcon(u.provider, u.name, state.config.iconStyle, 16)}${escapeText(u.name)}</button>`).join('')}</div>`)
-    + section('기간', `<div class="segmented" role="group" aria-label="기간"><button data-hrange="day" aria-pressed="${histRange === 'day'}">최근 24시간</button><button data-hrange="week" aria-pressed="${histRange === 'week'}">최근 7일</button></div>`)
-    + `<section class="editor-section"><div class="hist-chart" data-hist-chart data-keep>${hint('불러오는 중…')}</div>${hint(`남은 양(%)의 흐름이에요. 사용량을 조회할 때마다 이 PC에만 기록하고 30일 동안 보관해요.${usePreviewSample() ? ' 지금은 예시 기록이에요.' : ''}`)}</section>`
-}
-let histSeq = 0
-async function drawHistory() {
-  const box = root.querySelector<HTMLElement>('[data-hist-chart]'); if (!box || !histId) return
-  const seq = ++histSeq
-  const now = Date.now(), span = histRange === 'day' ? 86400e3 : 7 * 86400e3, from = now - span
-  const u = historyServices().find(x => x.id === histId)!
-  let pts: HistoryPoint[]
-  try { pts = usePreviewSample() ? downsample(sampleHistory()[histId] || [], from, now, 200) : await window.api.getHistory(histId, from, now, 200) }
-  catch { if (seq === histSeq) box.innerHTML = hint('기록을 불러오지 못했어요.'); return }
-  if (seq !== histSeq || !box.isConnected) return
-  if (pts.length < 2) { box.innerHTML = hint('이 기간에는 기록이 아직 충분하지 않아요.'); return }
-  const W = 300, H = 140, L = 26, B = 18
-  const px = (t: number) => L + (t - from) / span * (W - L - 4), py = (v: number) => 4 + (1 - v / 100) * (H - B - 4)
-  const line = (idx: 1 | 2) => { const ps = pts.filter(p => p[idx] !== null); return ps.length < 2 ? '' : ps.map((p, i) => `${i ? 'L' : 'M'}${px(p[0]).toFixed(1)} ${py(p[idx]!).toFixed(1)}`).join('') }
-  const brand = hex(u.brandColor), l5 = line(1), lw = line(2)
-  const ticks: Array<[number, string]> = histRange === 'day' ? [[from, '24시간 전'], [from + span / 2, '12시간 전'], [now, '지금']] : [[from, '7일 전'], [from + span * 4 / 7, '3일 전'], [now, '지금']]
-  const lows = (idx: 1 | 2) => { const v = pts.map(p => p[idx]).filter((n): n is number => n !== null); return v.length ? Math.min(...v) : null }
-  const weekColor = `color-mix(in srgb,${brand} 55%,var(--muted))`
-  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="hist-svg" role="img" aria-label="${escapeText(u.name)} 남은 양 추이">`
-    + [0, 50, 100].map(v => `<line x1="${L}" x2="${W - 4}" y1="${py(v)}" y2="${py(v)}" stroke="var(--line)"/><text x="${L - 4}" y="${py(v) + 3}" text-anchor="end" font-size="8" fill="var(--dim)">${v}</text>`).join('')
-    + ticks.map(([t, label], i) => `<text x="${px(t)}" y="${H - 4}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}" font-size="8" fill="var(--dim)">${label}</text>`).join('')
-    + (lw ? `<path d="${lw}" fill="none" stroke="${weekColor}" stroke-width="1.6" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>` : '')
-    + (l5 ? `<path d="${l5}" fill="none" stroke="${brand}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>` : '')
-    + `</svg><div class="hist-legend">${l5 ? `<span><i style="background:${brand}"></i>${u.primaryKind === 'monthly' ? '월간' : '5시간'} · 최저 ${lows(1)}%</span>` : ''}${lw ? `<span><i class="dash" style="border-color:${weekColor}"></i>주간 · 최저 ${lows(2)}%</span>` : ''}</div>`
-}
-
 const SHORTCUT_DEFAULTS = { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' }
 type ShortcutKey = keyof typeof SHORTCUT_DEFAULTS
 /** 웹 페이지로 보기: 켜기, 다른 기기 접속, 포트, 접속 암호, 접속 주소. 페이지에서는 보기만 할 수 있다. */
@@ -678,9 +637,6 @@ function bindEvents() {
   })
   onClickOf('[data-open-guide]', () => run(window.api.openGuide().then(ok => { if (!ok) notify('사용 설명서를 찾지 못했어요.') }), '사용 설명서를 열지 못했어요.'))
 
-  // 기록
-  body.querySelectorAll<HTMLElement>('[data-hist]').forEach(el => el.onclick = () => { histId = el.dataset.hist!; renderSettings(state, true) })
-  body.querySelectorAll<HTMLElement>('[data-hrange]').forEach(el => el.onclick = () => { histRange = el.dataset.hrange as 'day' | 'week'; renderSettings(state, true) })
 
   // 알림
   body.querySelectorAll<HTMLInputElement>('[data-mute]').forEach(el => el.onchange = () => {

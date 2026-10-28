@@ -74,7 +74,8 @@ function updatePanel(s: AppState) {
   // 새 버전: 버전 변화와 새 버전에서 바뀌는 점
   let news = ''
   if (newVer) {
-    const items = sections(u.notes || '').flatMap(x => x.items)
+    // Releases 설명 뒤에 붙는 '## 설치 방법'(과 그 아래 절)은 바뀌는 점이 아니므로 뺀다.
+    const items = sections((u.notes || '').split(/^##\s+설치 방법/m)[0]).flatMap(x => x.items)
     const shown = showAllNew ? items : items.slice(0, 6)
     news = `<div class="up-version"><span class="v-old">${escapeText(s.version || '')}</span><span class="v-arrow">→</span><span class="v-new">${escapeText(newVer)}</span></div>
       <div class="up-news"><div class="up-news-head">${escapeText(newVer)}에서 바뀌는 점</div>${items.length

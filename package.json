@@ -1,6 +1,6 @@
 {
   "name": "ai-usage-taskbar-widget",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Windows·Linux desktop and taskbar widget showing remaining AI usage limits for Claude, Codex, Antigravity and Grok",
   "main": "dist-electron/main.js",
   "type": "module",

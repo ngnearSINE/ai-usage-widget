@@ -5,6 +5,7 @@ import { applyAppearance, renderDashboard, renderDockedUsage, setPopupSurface, s
 import { installWebApi } from './web-api.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
 import { renderAbout } from './components/about-view.js'
+import { renderStats, focusStats } from './components/stats-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
 import { lowestLeft, serviceModel } from '../common/usage-model.js'
 
@@ -69,7 +70,7 @@ if (viewType === 'popup') {
   document.body.classList.add('is-web-view', 'is-dashboard-view')
   setWebSurface(true)
   installWebApi()
-} else if (viewType === 'settings' || viewType === 'about') {
+} else if (viewType === 'settings' || viewType === 'about' || viewType === 'stats') {
   document.body.classList.add('is-settings-view')
 } else {
   document.body.classList.add('is-widget-view')
@@ -333,6 +334,12 @@ async function init() {
 
   const state = await window.api.getState()
 
+  if (viewType === 'stats') {
+    void renderStats(appEl, state, urlParams.get('id') || undefined)
+    window.api.onStateChange(next => { void renderStats(appEl, next) })
+    window.api.onStatsFocus(focusStats)
+    return
+  }
   if (viewType === 'about') {
     renderAbout(appEl, state)
     window.api.onStateChange((nextState) => renderAbout(appEl, nextState))

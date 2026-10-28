@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
-import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
 
 export const api = {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.GET_STATE),
@@ -23,13 +23,18 @@ export const api = {
   hidePopup: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.HIDE_POPUP),
   unlockPopup: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.UNLOCK_POPUP),
   resizeWidget: (width: number, height: number): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.RESIZE_WIDGET, width, height),
-  openSettings: (tab?: 'design' | 'display' | 'services' | 'alerts' | 'history' | 'convenience' | 'accounts' | 'general' | 'api' | 'last'): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SETTINGS, tab),
+  openSettings: (tab?: 'design' | 'display' | 'services' | 'alerts' | 'convenience' | 'accounts' | 'general' | 'api' | 'last'): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SETTINGS, tab),
   windowControl: (action: 'minimize' | 'maximize' | 'close'): void => ipcRenderer.send(IPC_CHANNELS.WINDOW_CONTROL, action),
   showTip: (text: string, rect: { x: number; y: number; width: number; height: number }): void => ipcRenderer.send(IPC_CHANNELS.TIP_SHOW, text, rect),
   hideTip: (): void => ipcRenderer.send(IPC_CHANNELS.TIP_HIDE),
   testNotification: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.TEST_NOTIFICATION),
   setTrayImage: (dataUrl: string | null, tooltip: string): void => ipcRenderer.send(IPC_CHANNELS.SET_TRAY_IMAGE, dataUrl, tooltip),
   getHistory: (id: string, from: number, to: number, max: number): Promise<Array<[number, number | null, number | null]>> => ipcRenderer.invoke(IPC_CHANNELS.GET_HISTORY, id, from, to, max),
+  onStatsFocus: (callback: (id: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, id: string) => callback(id)
+    ipcRenderer.on(IPC_CHANNELS.OPEN_STATS, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.OPEN_STATS, handler)
+  },
   onSettingsTab: (callback: (tab: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, tab: string) => callback(tab)
     ipcRenderer.on(IPC_CHANNELS.SETTINGS_TAB, handler)
@@ -38,10 +43,13 @@ export const api = {
   checkUpdate: (): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
   installUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
   showCardMenu: (id: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.CARD_MENU, id),
+  popupMenu: (items: MenuItemSpec[], at: { x: number; y: number }): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.POPUP_MENU, items, at),
   exportSettings: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke(IPC_CHANNELS.EXPORT_SETTINGS),
   importSettings: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_SETTINGS),
   quitApp: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.QUIT_APP),
   openAbout: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_ABOUT),
+  openStats: (id?: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_STATS, id),
+  getDaily: (): Promise<Record<string, Record<string, number>>> => ipcRenderer.invoke(IPC_CHANNELS.GET_DAILY),
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   setWebPassword: (password: string | null): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.SET_WEB_PASSWORD, password),
   openWeb: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_WEB),
