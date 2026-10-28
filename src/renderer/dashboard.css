@@ -402,7 +402,23 @@ body.is-settings-view #app { display:block; height:100vh; }
 .chip-row { display:flex; flex-wrap:wrap; gap:6px; }
 .dashboard .chip-btn { display:inline-flex; align-items:center; gap:6px; padding:5px 10px 5px 7px; border:1px solid var(--line); border-radius:6px; font-size:11px; color:var(--muted); }
 .dashboard .chip-btn[aria-pressed="true"] { border-color:var(--accent); color:var(--ink); background:color-mix(in srgb,var(--accent) 8%,transparent); }
-.hist-svg { display:block; width:100%; height:auto; }
+
+/* ---------- 사용량 통계 창 ---------- */
+.dashboard.stats-root { border:0; border-radius:0; height:100vh; background:rgba(var(--surface),var(--panel-alpha)); font-size:12px; container-type:normal; }
+.stats-root .s-winbtns { margin-left:auto; }
+.stats-bar { display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+.stats-bar .segmented { width:auto; }
+.stats-root .segmented button { white-space:nowrap; padding:0 14px; }
+.stats-unit { font-size:11px; color:var(--muted); }
+.stats-body { flex:1; min-height:0; overflow:auto; padding:14px 18px 18px; display:flex; flex-direction:column; gap:12px; }
+.st-card { border:1px solid var(--line); border-radius:8px; background:var(--card-bg); padding:12px 14px 8px; }
+.st-card.is-focus { border-color:var(--accent); }
+.st-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+.st-head > b { font-size:13px; font-weight:600; }
+.st-sum { margin-left:auto; font-size:11px; color:var(--muted); }
+.st-sum b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
+.st-svg { display:block; width:100%; height:auto; }
+.st-range { width:auto; align-self:flex-start; }
 .hist-legend { display:flex; gap:16px; margin-top:8px; font-size:11px; color:var(--muted); }
 .hist-legend i { display:inline-block; width:14px; height:2px; margin-right:6px; vertical-align:3px; }
 .hist-legend i.dash { height:0; border-top:2px dashed; }

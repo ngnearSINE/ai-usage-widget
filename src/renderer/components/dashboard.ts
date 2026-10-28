@@ -402,6 +402,7 @@ function bindDelegated(container: HTMLElement) {
       const current = designOf(lastState.config)
       openMenu(view, [...DESIGNS.map(([key, label, hint], i) => ({ key, label, hint: `${hint} · Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
         { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
+        { key: 'stats', label: '사용량 통계', run: () => { void window.api.openStats() } },
         { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
         { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
         '-',

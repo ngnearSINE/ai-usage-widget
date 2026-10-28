@@ -21,6 +21,8 @@ export const IPC_CHANNELS = {
   PICK_FOLDER: 'app:pick-folder',
   ADD_HOME_ACCOUNT: 'account:add-home',
   OPEN_ABOUT: 'app:open-about',
+  OPEN_STATS: 'app:open-stats',
+  GET_DAILY: 'app:get-daily',
   QUIT_APP: 'app:quit',
   OPEN_EXTERNAL: 'app:open-external',
   SET_WEB_PASSWORD: 'web:set-password',
