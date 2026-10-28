@@ -62,6 +62,8 @@ function setFocus(id: string | null) {
   const next = id && accountStore.getAccounts().some(a => a.id === id) ? (focusId === id ? null : id) : null
   if (next === focusId) return
   focusId = next
+  // 앱을 다시 켜도 집중 모드가 이어지게 저장한다.
+  accountStore.saveConfig({ ...accountStore.getConfig(), focusId: next ?? undefined })
   broadcastState()
   if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds()
   else if (!next) growToFitCards()
@@ -1376,6 +1378,11 @@ function applyLinuxAutoLaunch(enable: boolean) {
   fs.writeFileSync(file, ['[Desktop Entry]', 'Type=Application', 'Name=AI Usage Widget', `Exec="${exec.replace(/"/g, '\\"')}" --hidden`, 'X-GNOME-Autostart-enabled=true', 'NoDisplay=false', ''].join('\n'))
 }
 
+/** Windows 시작 프로그램에 등록할 명령. Electron은 경로를 따옴표 없이 그대로 쓰므로(Electron 34, CVE-2026-34768) 직접 감싼다.
+ *  감싸지 않으면 경로의 공백('AI Usage Widget.exe')에서 끊겨 로그인할 때 앱이 시작되지 않았다.
+ *  등록 여부를 읽을 때도 같은 값으로 비교해야 한다(Electron은 등록값과 이 명령이 정확히 같은지 본다). */
+const windowsLoginItem = () => ({ path: `"${process.execPath}"`, args: ['--hidden'] })
+
 function applyAutoLaunch(enable: boolean) {
   if (isPreview) return
   if (process.platform === 'linux') {
@@ -1395,11 +1402,7 @@ function applyAutoLaunch(enable: boolean) {
       return
     }
 
-    app.setLoginItemSettings({
-      openAtLogin: enable,
-      path: process.execPath,
-      args: ['--hidden']
-    })
+    app.setLoginItemSettings({ openAtLogin: enable, ...windowsLoginItem() })
     updateTrayMenu()
   } catch (err) {
     console.warn('[Main] Failed to setLoginItemSettings:', err)
@@ -1411,7 +1414,7 @@ function updateTrayMenu() {
   const config = accountStore.getConfig()
   const isAutoStart = process.platform === 'linux' ? fs.existsSync(linuxAutostartFile())
     : app.isPackaged
-    ? (app.getLoginItemSettings().openAtLogin ?? config.openAtLogin ?? true)
+    ? (app.getLoginItemSettings(windowsLoginItem()).openAtLogin ?? config.openAtLogin ?? true)
     : (config.openAtLogin ?? false)
 
   const contextMenu = Menu.buildFromTemplate([
@@ -1859,6 +1862,9 @@ function setupIpcHandlers() {
 
 app.whenReady().then(() => {
   accountStore = new AccountStore()
+  // 지난번에 집중 모드로 보던 카드가 아직 있으면 이어서 그 카드만 보여 준다.
+  const savedFocus = accountStore.getConfig().focusId
+  focusId = savedFocus && accountStore.getAccounts().some(a => a.id === savedFocus) ? savedFocus : null
   quotaManager = new QuotaManager(accountStore, isPreview ? undefined : path.join(app.getPath('userData'), 'last-usage.json'))
 
   // 미리보기는 합성 기록으로 그래프를 보여 주고 파일에 쓰지 않는다.

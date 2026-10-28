@@ -107,6 +107,7 @@ export interface WidgetConfig {
   doubleClickToOpenPopup?: boolean // true면 위젯 더블클릭으로만 상세 팝업 열기 (기본 false)
   uiVersion?: number
   windowBounds?: { x: number; y: number; width: number; height: number }
+  focusId?: string // 집중 모드로 보던 카드(계정 id). 앱을 다시 켜도 이어서 본다
   appearance?: 'dark' | 'light' | 'system'
   barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
   motion?: 'off' | 'subtle' | 'expressive'
