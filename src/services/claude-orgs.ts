@@ -68,7 +68,7 @@ export function cliExpiredOrg(): { orgUuid: string; hours: number } | null {
 }
 export const cliExpiredMessage = (hours: number) => cliNeedsRelogin()
   ? 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 터미널에서 claude를 실행해 다시 로그인해 주세요'
-  : `Claude Code CLI 토큰이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 위젯이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)`
+  : `Claude Code CLI 토큰이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)`
 
 /** CLI 로그인 파일은 있는데 토큰이 만료된 상태(어느 조직인지 아직 모름). */
 export function cliTokenExpired(): boolean {

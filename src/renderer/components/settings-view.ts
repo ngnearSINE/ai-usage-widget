@@ -171,7 +171,7 @@ function renderPreview() {
   const cap = root.querySelector<HTMLElement>('[data-caption]')
   // 창 크기는 이 스케일에서의 실제 픽셀. 화면 비율 = 미리보기 크기 ÷ 실제 크기.
   const shownPct = Math.round(k / rel * 100)
-  if (cap) cap.textContent = `${Math.round(W * zoom)}×${Math.round(H * zoom)}${size === 'current' ? ' (지금 위젯 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${shownPct < 100 ? ` · ${shownPct}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
+  if (cap) cap.textContent = `${Math.round(W * zoom)}×${Math.round(H * zoom)}${size === 'current' ? ' (지금 창 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${shownPct < 100 ? ` · ${shownPct}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
 }
 
 /* ---------- 공통 조각 ---------- */
@@ -234,11 +234,11 @@ const advanced = (id: string, inner: string, label = '고급') => `<details clas
 
 /* ---------- 탭 내용 ---------- */
 function designTab(c: WidgetConfig) {
-  return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '위젯 제목줄의 보기 버튼으로도 바꿔요')
+  return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '창·위젯 제목줄의 메뉴(☰)로도 바꿔요')
     + section('테마', segment('appearance', c.appearance || 'dark', [['light', '라이트'], ['dark', '다크'], ['system', '시스템']], '테마') + hint('시스템은 Windows의 밝은·어두운 모드를 따라가요.'))
     + section('배경', `${state.acrylicSupported === false ? '' : toggle('useAcrylic', '아크릴(흐림)', '창 뒤를 흐리게 비춰요. 끄면 흐림 없이 그대로 비쳐요.', c.useAcrylic !== false)}`
       + slider('opacity', '불투명도', 0, 100, c.opacity ?? 70, '%')
-      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`)
+      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 창·위젯·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`)
       + `<div class="field"><span>배경 색</span>${bgSwatches(c)}</div>`
       + hint('고르지 않으면 테마(라이트·다크)에 맞춰 바뀌어요. 색을 고르면 배경은 그 색 그대로, 글씨색만 테마를 따라요.'))
     + section('막대 색', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 먼저예요')
@@ -265,7 +265,7 @@ function displayTab(c: WidgetConfig) {
         <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div></section>`
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
-      + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
+      + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('창 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
 }
 
 /** 서비스×항목 표. 맨 윗줄 '모든 서비스'는 일괄 변경(값이 섞이면 '일부'). 카드 우클릭 메뉴에서도 바꿀 수 있다. */
@@ -315,14 +315,14 @@ function servicesTab(s: AppState) {
     const sub = [status, a.orgUuid && u?.tier ? escapeText(u.tier) : ''].filter(Boolean).join(' · ')
     const scopedNames = u?.scopedQuotas?.map(x => x.label) || u?.scopedHidden || []
     const vis = visibilityOf(a)
-    const visNote = vis === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요' : vis === 'window' ? '작업 표시줄에 붙였을 때는 빼요' : '어디에도 안 보여요(조회는 계속해요)'
+    const visNote = vis === 'all' ? '창·위젯·작업 표시줄 독 모두에 보여요' : vis === 'window' ? '작업 표시줄 독에서만 빼요' : '어디에도 안 보여요(조회는 계속해요)'
     // 펼친 서비스: 표시 / 바로 열기 / 순서·관리 세 묶음
     const detail = open ? `<div class="svc-detail" id="svc-detail-${id}">
         <div class="sd-group">
           <div class="sd-title">표시</div>
           <label class="sd-row"><span class="sd-label"><b>이름</b></span><input type="text" class="text-input sd-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
           <div class="sd-row stack"><span class="sd-label"><b>평소 색</b><small>여유가 있을 때 그래프에 쓰는 색</small></span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div></div>
-          <div class="sd-row stack"><span class="sd-label"><b>보일 곳</b><small>${visNote}</small></span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${vis === v}" title="${d}">${t}</button>`).join('')}</div></div>
+          <div class="sd-row stack"><span class="sd-label"><b>보일 곳</b><small>${visNote}</small></span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '창·위젯·작업 표시줄 독 모두에 보여요'], ['window', '창·위젯만', '작업 표시줄 독에서만 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${vis === v}" title="${d}">${t}</button>`).join('')}</div></div>
           ${scopedNames.length ? `<label class="sd-row"><span class="sd-label"><b>${escapeText(scopedNames.join('·'))} 한도</b><small>모델 전용 주간 한도도 카드에</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
         </div>
         <div class="sd-group">
@@ -355,8 +355,8 @@ function servicesTab(s: AppState) {
       <div class="svc-actions"><button class="primary-button" data-home-save>추가</button><button class="ghost-button" data-home-cancel>취소</button></div>
     </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}다른 로그인 폴더의 계정 추가 (Codex·Grok)</button>`
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
-    + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
-    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 위젯에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
+    + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 창이나 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
+    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 화면에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
     + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
     + advanced('services', `<button class="secondary-button danger" data-reset-defaults>기본 서비스 목록으로 되돌리기</button>${hint('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.')}`)
 }
@@ -373,7 +373,7 @@ function alertsTab(s: AppState) {
       ? `<label class="alert-check"><input type="checkbox" data-mute="${escapeText(a.id)}:${k}" ${muted.has(`${a.id}:${k}`) ? '' : 'checked'} ${on ? '' : 'disabled'}><span>${label}</span></label>` : '<span class="alert-check none">—</span>').join('')}</div>`
   }).join('')
   return section('Windows 알림', toggle('notifyEnabled', '알림 받기', '아래 상황이 되면 Windows 알림으로 알려 줘요.', on)
-      + `<button class="secondary-button" data-test-notify>${icon('bell')}테스트 알림 보내기</button>${hint('알림이 안 보이면 Windows 설정의 알림이나 방해 금지 모드를 확인하세요. 알림을 누르면 위젯이 나타나요.')}`)
+      + `<button class="secondary-button" data-test-notify>${icon('bell')}테스트 알림 보내기</button>${hint('알림이 안 보이면 Windows 설정의 알림이나 방해 금지 모드를 확인하세요. 알림을 누르면 창(작업 표시줄에 붙였으면 작업 표시줄 독)이 나타나요.')}`)
     + `<div class="${on ? '' : 'is-disabled'}">`
     + section('알릴 때', toggle('notifyLow', '남은 양이 적을 때', `남은 양이 주의 ${warn}%·위험 ${crit}%에 처음 닿을 때 한 번씩 (기준은 표시 탭에서 바꿔요)`, c.notifyLow !== false)
       + toggle('notifyPace', '리셋 전에 바닥날 것 같을 때', '지금 속도가 이어지면 리셋보다 한참 먼저 소진될 때', c.notifyPace !== false)
@@ -437,14 +437,14 @@ function generalTab(s: AppState) {
   return section('시작과 갱신', toggle('openAtLogin', 'Windows를 켤 때 함께 시작', '', c.openAtLogin !== false)
       + `<div class="field"><span>사용량 확인 간격</span><div class="segmented" role="group" aria-label="사용량 확인 간격">${INTERVALS.map(([v, t]) => `<button data-interval="${v}" aria-pressed="${interval === v}">${t}</button>`).join('')}</div></div>`
       + hint('간격이 짧으면 숫자가 빨리 바뀌지만 서비스의 조회 제한에 걸릴 수 있어요. Claude는 간격과 관계없이 2분에 한 번만 물어봐요.'))
-    + section('트레이', toggle('trayShowNumber', '트레이 아이콘에 남은 % 표시', '가장 빠듯한 서비스의 남은 양을 보여 주고, 주의·위험이면 색이 바뀌어요. 위젯을 숨겨도 볼 수 있어요.', c.trayShowNumber !== false))
-    + section('클릭 통과', toggle('clickThrough', '위젯 클릭 통과 잠금', '위젯을 눌러도 뒤의 창이 눌려요. 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 푸세요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)', !!c.clickThrough))
-    + section('단축키', `<div class="sc-list">${row('toggle', '위젯 보이기·숨기기')}${row('lock', '클릭 통과 잠금·풀기')}${row('cycle', '다음 디자인')}</div>
+    + section('트레이', toggle('trayShowNumber', '트레이 아이콘에 남은 % 표시', '가장 빠듯한 서비스의 남은 양을 보여 주고, 주의·위험이면 색이 바뀌어요. 창을 숨겨도 볼 수 있어요.', c.trayShowNumber !== false))
+    + section('클릭 통과', toggle('clickThrough', '창 클릭 통과 잠금', '창을 눌러도 그 뒤의 프로그램이 눌려요. 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 푸세요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)', !!c.clickThrough))
+    + section('단축키', `<div class="sc-list">${row('toggle', '창·작업 표시줄 독 보이기·숨기기')}${row('lock', '클릭 통과 잠금·풀기')}${row('cycle', '다음 디자인')}</div>
       ${hint('칸을 누르고 새 조합(Ctrl·Alt·Shift + 글자)을 누르세요. Esc는 취소, Backspace는 끄기예요.')}
       ${errors.length ? hint(`등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.`, 'warn-text') : ''}`)
     + advanced('general', section('모니터 구성별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
         + `${hint(`저장된 구성 ${saved}개`)}${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
-      + (s.dockSupported === false ? '' : section('작업 표시줄에 붙였을 때', hint('한 번 누르면 상세 보기, 두 번 누르면 그 카드만 보는 집중 모드가 켜지고 꺼져요.')
+      + (s.dockSupported === false ? '' : section('작업 표시줄 독', hint('한 번 누르면 위젯이 열리고, 두 번 누르면 그 카드만 보는 집중 모드가 켜지고 꺼져요.')
         + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
         + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
         + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.')))

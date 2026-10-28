@@ -344,7 +344,7 @@ function registerShortcuts() {
   shortcutErrors = []
   const s = accountStore.getConfig().shortcuts || {}
   const actions: Array<[string | undefined, string, () => void]> = [
-    [s.toggle, '위젯 보이기/숨기기', () => { void toggleWidgetVisibility() }],
+    [s.toggle, '창·작업 표시줄 독 보이기/숨기기', () => { void toggleWidgetVisibility() }],
     [s.lock, '클릭 통과 잠금', () => setClickThrough(!accountStore.getConfig().clickThrough)],
     [s.cycle, '디자인 순환', cycleDesign],
   ]
@@ -1794,7 +1794,7 @@ app.whenReady().then(() => {
   updater = new Updater({
     preview: isPreview,
     onChange: () => { broadcastState(); updateTrayMenu() },
-    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : `${accountStore.getConfig().updateHour ?? 3}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.`, () => openAboutWindow()),
+    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '창·위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : `${accountStore.getConfig().updateHour ?? 3}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.`, () => openAboutWindow()),
   })
   updater.schedule(accountStore.getConfig().autoUpdate !== false, accountStore.getConfig().updateHour ?? 3)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {
