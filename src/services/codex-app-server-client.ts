@@ -320,7 +320,6 @@ class CodexAppServerConn {
     const secondaryLimit = rateLimits.secondary
 
     const primaryWindowMins = Number(primaryLimit?.windowDurationMins) || 0
-    const secondaryWindowMins = Number(secondaryLimit?.windowDurationMins) || 0
 
     // 5시간 세션 쿼터 없이 1주일(주간) 쿼터만 오는 경우. 요금제 이름이 아니라 실제 창 길이로 판단한다
     // (Pro라도 5시간 창이 오면 보여 준다).

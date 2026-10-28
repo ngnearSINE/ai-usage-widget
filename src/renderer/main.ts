@@ -1,7 +1,7 @@
 import { renderAiIcon } from './components/ai-icons.js'
 import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { applyAppearance, renderDashboard, renderDockedUsage, openDesign, setPopupSurface } from './components/dashboard.js'
+import { applyAppearance, renderDashboard, renderDockedUsage, setPopupSurface } from './components/dashboard.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
 import { renderAbout } from './components/about-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
@@ -70,7 +70,6 @@ if (viewType === 'popup') {
   document.body.classList.add('is-widget-view')
 }
 
-let currentState: AppState | null = null
 let lastWidgetHtml = ''
 let lastSentWidth = 0
 let lastSentHeight = 0
@@ -100,7 +99,6 @@ function renderUnavailable(u: AccountUsage, config: WidgetConfig): string {
 function renderWidget(state: AppState) {
   if (dockPreview) state={...state,config:{...state.config,placementMode:'docked'}}
   else updateTrayIcon(state)
-  currentState = state
   applyAppearance(state.config)
   const floating = state.config.placementMode !== 'docked'
   document.body.classList.toggle('is-dashboard-view', floating)
@@ -169,7 +167,6 @@ function renderWidget(state: AppState) {
 }
 
 function renderPopup(state: AppState, animate = false) {
-  currentState = state
   renderDashboard(appEl, state, animate)
   if (!animate) return
   // 열릴 때마다 아래에서 올라오는 등장 효과
@@ -279,7 +276,6 @@ if (!(window as any).api) {
     endInteraction: async () => {},
     moveInteraction: () => {},
     hideWidget: async () => {},
-    onOpenDesign: () => {},
     removeAccount: async (id: string) => {
       mockState.accounts = mockState.accounts.filter(a => a.id !== id)
       listeners.forEach((fn) => fn(mockState))
@@ -305,10 +301,7 @@ if (!(window as any).api) {
       listeners.forEach((fn) => fn(mockState))
       return mockState
     },
-    showPopup: () => console.log('[MockAPI] showPopup'),
     hidePopup: () => console.log('[MockAPI] hidePopup'),
-    togglePopup: () => console.log('[MockAPI] togglePopup'),
-    lockPopup: () => console.log('[MockAPI] lockPopup'),
     unlockPopup: () => console.log('[MockAPI] unlockPopup'),
     resizeWidget: (w: number, h: number) => console.log(`[MockAPI] resizeWidget: ${w}x${h}`),
     openSettings: () => console.log('[MockAPI] openSettings'),
@@ -317,8 +310,6 @@ if (!(window as any).api) {
       { id: 'local-claude-code', name: 'Claude Code', provider: 'claude', running: true, installed: true, brandColor: '#D97757' },
       { id: 'local-codex', name: 'Codex CLI', provider: 'codex', running: false, installed: true, brandColor: '#6366F1' }
     ],
-    scheduleHidePopup: () => {},
-    cancelHidePopup: () => {},
     popupReady: () => {},
     onPopupOpened: () => {},
     onStateChange: (fn: (s: AppState) => void) => {
@@ -336,7 +327,6 @@ async function init() {
   }
 
   const state = await window.api.getState()
-  window.api.onOpenDesign?.(openDesign)
 
   if (viewType === 'about') {
     renderAbout(appEl, state)
@@ -356,7 +346,6 @@ async function init() {
     })
     // 메인이 팝업을 투명하게 띄운 상태: 등장 애니메이션 첫 프레임이 화면에 반영된 뒤 불투명 전환 요청
     window.api.onPopupOpened((nextState) => {
-      currentState = nextState
       renderPopup(nextState, true)
       requestAnimationFrame(() => requestAnimationFrame(() => window.api.popupReady()))
     })

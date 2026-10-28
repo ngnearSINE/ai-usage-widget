@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { OrcaLocalClient } from './orca-local-client.js'

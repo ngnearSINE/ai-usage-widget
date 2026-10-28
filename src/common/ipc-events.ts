@@ -33,11 +33,7 @@ export const IPC_CHANNELS = {
   END_INTERACTION: 'window:end-interaction',
   MOVE_INTERACTION: 'window:move-interaction',
   HIDE_WIDGET: 'window:hide-widget',
-  OPEN_DESIGN: 'window:open-design',
-  SHOW_POPUP: 'window:show-popup',
   HIDE_POPUP: 'window:hide-popup',
-  TOGGLE_POPUP: 'window:toggle-popup',
-  LOCK_POPUP: 'window:lock-popup',
   UNLOCK_POPUP: 'window:unlock-popup',
   RESIZE_WIDGET: 'window:resize-widget',
   STATE_CHANGED: 'state:changed',
@@ -46,11 +42,8 @@ export const IPC_CHANNELS = {
   TEST_NOTIFICATION: 'app:test-notification',
   GET_HISTORY: 'app:get-history',
   SET_TRAY_IMAGE: 'tray:set-image',
-  OPEN_SERVICE_PAGE: 'app:open-service-page',
   WINDOW_CONTROL: 'window:control',
   DETECT_LOCAL_APPS: 'app:detect-local-apps',
-  SCHEDULE_HIDE_POPUP: 'window:schedule-hide-popup',
-  CANCEL_HIDE_POPUP: 'window:cancel-hide-popup',
   POPUP_OPENED: 'popup:opened',
   POPUP_READY: 'window:popup-ready'
 } as const

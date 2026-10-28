@@ -1599,21 +1599,8 @@ function setupIpcHandlers() {
     hidePopup(true)
   })
 
-  ipcMain.handle(IPC_CHANNELS.SHOW_POPUP, async () => {
-    await showPopup(false, false)
-  })
-
   ipcMain.handle(IPC_CHANNELS.HIDE_POPUP, () => {
     hidePopup(true)
-  })
-
-  ipcMain.handle(IPC_CHANNELS.TOGGLE_POPUP, async () => {
-    await togglePopup()
-  })
-
-  ipcMain.handle(IPC_CHANNELS.LOCK_POPUP, () => {
-    isPopupLocked = true
-    cancelHidePopup()
   })
 
   ipcMain.handle(IPC_CHANNELS.UNLOCK_POPUP, () => {
@@ -1641,12 +1628,6 @@ function setupIpcHandlers() {
     if (action === 'minimize') win.minimize()
     else if (action === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize() }
     else if (action === 'close') win.close()
-  })
-  ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_PAGE, async (_event, accountId: string) => {
-    const url = servicePageUrl(String(accountId))
-    if (!url) return false
-    await shell.openExternal(url)
-    return true
   })
   // 위젯 화면이 그린 트레이 아이콘(가장 빠듯한 남은 %). null이면 기본 아이콘으로 되돌린다.
   ipcMain.on(IPC_CHANNELS.SET_TRAY_IMAGE, (event, dataUrl: string | null, tooltip: string) => {
@@ -1767,14 +1748,6 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.DETECT_LOCAL_APPS, async () => {
     return await LocalAppDetector.detectAll()
-  })
-
-  ipcMain.handle(IPC_CHANNELS.SCHEDULE_HIDE_POPUP, (_event, delayMs?: number) => {
-    scheduleHidePopup(delayMs || 400)
-  })
-
-  ipcMain.handle(IPC_CHANNELS.CANCEL_HIDE_POPUP, () => {
-    cancelHidePopup()
   })
 
   ipcMain.handle(IPC_CHANNELS.POPUP_READY, () => {

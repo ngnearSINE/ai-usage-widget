@@ -1,5 +1,5 @@
 import { screen } from 'electron'
-import type { PositionAlignment, WidgetConfig } from '../common/types.js'
+import type { WidgetConfig } from '../common/types.js'
 
 export interface TaskbarBounds {
   taskbarY: number

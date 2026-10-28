@@ -6,8 +6,6 @@ import path from 'node:path'
  * OS마다 다른 경로. Windows는 %APPDATA%·*.exe, Linux는 XDG 설정 폴더(~/.config)·확장자 없는 실행 파일.
  * 바탕화면에서 띄운 앱은 셸의 PATH를 다 물려받지 못할 수 있어, Linux에서는 흔한 사용자 설치 위치를 더 찾아본다.
  */
-export const isWindows = process.platform === 'win32'
-
 /** 앱 설정 폴더: Windows %APPDATA%, Linux $XDG_CONFIG_HOME 또는 ~/.config */
 export function appDataDir(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string {
   if (platform === 'win32') return env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')

@@ -122,7 +122,6 @@ export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {
 }
 
 /** 트레이·다른 창에서 '디자인 설정'을 열 때. 설정은 별도 설정 창에서 한다. */
-export function openDesign() { void window.api.openSettings('design') }
 
 /* ---------- 본체 ---------- */
 const designOf = (config: WidgetConfig): DesignId => (DESIGNS.some(d => d[0] === config.design) ? config.design : 'rich') as DesignId
