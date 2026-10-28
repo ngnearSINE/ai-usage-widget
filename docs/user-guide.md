@@ -60,6 +60,7 @@ Windows와 다른 점:
 - **Claude 데스크톱 앱 계정**은 GNOME 키링에 저장된 암호로 읽습니다. 로그인해 키링이 열려 있어야 하고 `python3`가 필요합니다(Ubuntu 데스크톱 기본 설치).
 - **Windows를 켤 때 함께 시작**은 Ubuntu에서 '로그인할 때 함께 시작'으로 동작합니다(`~/.config/autostart`).
 - 설정·기록은 `~/.config/ai-usage-taskbar-widget/`에 저장합니다.
+- AppImage는 자동 업데이트가 파일을 새 버전으로 바꾸므로 내 폴더 안(예: `~/Applications`)에 두세요. 앱 목록 바로가기를 만드는 방법은 README의 설치 안내에 있습니다.
 
 ## 3. 처음 실행했을 때
 
@@ -296,3 +297,4 @@ Windows Terminal과 같은 방식입니다. **불투명도**가 100%면 단색, 
 - **직접 업데이트**: [Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 새 설치 파일을 내려받아 실행하면 기존 설치를 덮어씁니다. 설정과 기록은 유지됩니다. 휴대용(zip)은 이 방법으로만 업데이트됩니다.
 - **제거**: Windows 설정 → 앱 → 설치된 앱 → **AI Usage Widget** → 제거. 설정·기록 파일(`%APPDATA%\ai-usage-taskbar-widget\`)은 남으니, 깨끗이 지우려면 그 폴더도 지우세요.
 - 휴대용(zip)은 압축을 푼 폴더를 지우면 됩니다.
+- **Ubuntu 제거**: deb는 `sudo apt remove ai-usage-taskbar-widget`, AppImage는 파일을 지웁니다(로그인할 때 함께 시작을 켰다면 `~/.config/autostart/ai-usage-widget.desktop`도). 설정·기록은 `~/.config/ai-usage-taskbar-widget/`에 남습니다.

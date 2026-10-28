@@ -37,7 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Releases 설명을 CHANGELOG.md의 이번 버전 절로 채우기
+      - name: Releases 설명을 CHANGELOG.md의 이번 버전 절과 설치 방법으로 채우기
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
@@ -49,7 +49,9 @@ jobs:
           if ($start -lt 0) { Write-Warning "CHANGELOG.md에 '## $v' 절이 없습니다."; exit 0 }
           $body = @()
           for ($i = $start + 1; $i -lt $lines.Count -and -not $lines[$i].StartsWith('## '); $i++) { $body += $lines[$i] }
-          ($body -join "`n").Trim() | Set-Content notes.md -Encoding utf8
+          # 설치 방법(docs/release-install.md)을 뒤에 붙이고, 파일 이름의 {version}을 이번 버전으로 바꾼다.
+          $install = if (Test-Path docs/release-install.md) { (Get-Content docs/release-install.md -Raw -Encoding utf8).Replace('{version}', $v).Trim() } else { '' }
+          ((($body -join "`n").Trim() + "`n`n" + $install).Trim()) | Set-Content notes.md -Encoding utf8
           gh release edit '${{ github.ref_name }}' --notes-file notes.md
 
   # Windows 작업이 Releases를 만든 뒤에 올린다(동시에 올리면 릴리스가 둘 생길 수 있다).

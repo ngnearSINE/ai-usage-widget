@@ -55,26 +55,62 @@ Windows 설치판과 Ubuntu AppImage는 **자동으로 업데이트**됩니다. 
 
 ### Ubuntu (x64·arm64)
 
-Releases에서 PC에 맞는 파일을 고릅니다(`uname -m`이 `x86_64`면 x64, `aarch64`면 arm64).
+[Releases](https://github.com/ngnearSINE/ai-usage-widget/releases/latest)에서 PC에 맞는 파일을 하나 고릅니다. 터미널에서 `uname -m`을 실행해 `x86_64`면 x64, `aarch64`면 arm64입니다.
 
-- **AppImage(권장, 자동 업데이트)**: `AI-Usage-Widget-x.y.z-linux-x86_64.AppImage`(ARM은 `-linux-arm64.AppImage`)를 내려받아 실행 권한을 주고 실행합니다.
+| 종류 | x64 | arm64 |
+|---|---|---|
+| **AppImage**(권장, 자동 업데이트) | `AI-Usage-Widget-x.y.z-linux-x86_64.AppImage` | `AI-Usage-Widget-x.y.z-linux-arm64.AppImage` |
+| **deb**(apt 설치, 자동 업데이트 없음) | `AI-Usage-Widget-x.y.z-linux-amd64.deb` | `AI-Usage-Widget-x.y.z-linux-arm64.deb` |
 
-  ```bash
-  chmod +x AI-Usage-Widget-*-linux-*.AppImage && ./AI-Usage-Widget-*-linux-*.AppImage
-  ```
+#### AppImage
 
-  AppImage는 `libfuse2`가 필요합니다. Ubuntu 24.04에서 실행되지 않으면 `sudo apt install libfuse2t64`(22.04는 `libfuse2`)를 설치하세요.
-- **deb(apt 설치)**: `AI-Usage-Widget-x.y.z-linux-amd64.deb`(ARM은 `-linux-arm64.deb`)를 내려받아 설치합니다. 자동 업데이트는 되지 않으니 새 버전 deb을 받아 다시 설치합니다.
+1. 내 폴더 안에 둡니다(예: `~/Applications`). 자동 업데이트가 이 파일을 새 버전으로 바꾸므로 쓰기 권한이 있는 곳이어야 합니다.
+2. 실행 권한을 주고 실행합니다.
 
-  ```bash
-  sudo apt install ./AI-Usage-Widget-*-linux-*.deb
-  ```
+   ```bash
+   mkdir -p ~/Applications && mv ~/Downloads/AI-Usage-Widget-*-linux-*.AppImage ~/Applications/
+   chmod +x ~/Applications/AI-Usage-Widget-*-linux-*.AppImage
+   ~/Applications/AI-Usage-Widget-*-linux-*.AppImage
+   ```
 
-Ubuntu에서 다른 점:
+3. 실행되지 않고 FUSE 관련 오류가 나면 `libfuse2`를 설치합니다(Ubuntu 24.04는 `libfuse2t64`, 22.04는 `libfuse2`).
+
+   ```bash
+   sudo apt install libfuse2t64
+   ```
+
+4. 앱 목록에 띄우고 싶으면 바로가기를 만듭니다(파일 이름은 받은 것으로 바꾸세요). 로그인할 때 자동으로 켜려면 앱의 설정 → 일반 → **로그인할 때 함께 시작**을 켭니다.
+
+   ```bash
+   cat > ~/.local/share/applications/ai-usage-widget.desktop <<'EOF'
+   [Desktop Entry]
+   Type=Application
+   Name=AI 사용량 위젯
+   Exec=/home/사용자이름/Applications/AI-Usage-Widget-x.y.z-linux-x86_64.AppImage
+   Categories=Utility;
+   EOF
+   ```
+
+#### deb
+
+설치하면 앱 목록에 **AI 사용량 위젯**이 생기고, 터미널에서는 `ai-usage-widget`으로 실행합니다. 새 버전은 새 deb를 받아 같은 명령으로 설치합니다.
+
+```bash
+sudo apt install ./AI-Usage-Widget-*-linux-*.deb
+```
+
+#### 제거
+
+- deb: `sudo apt remove ai-usage-taskbar-widget`
+- AppImage: 파일을 지웁니다. 로그인할 때 함께 시작을 켰다면 `~/.config/autostart/ai-usage-widget.desktop`, 바로가기를 만들었다면 `~/.local/share/applications/ai-usage-widget.desktop`도 지웁니다.
+- 설정·기록까지 지우려면 `~/.config/ai-usage-taskbar-widget/`를 지웁니다.
+
+#### Ubuntu에서 다른 점
+
 - **작업 표시줄 독과 위젯은 없습니다**(Windows 작업 표시줄 전용). 창과 트레이로 씁니다. 아크릴 배경도 Windows 전용이라 불투명도만 조절합니다.
 - **Claude 데스크톱 앱 계정**은 GNOME 키링에 저장된 암호로 읽습니다. 로그인해 키링이 열려 있어야 하고 `python3`가 필요합니다(Ubuntu 데스크톱 기본 설치).
 - 트레이 아이콘은 Ubuntu 기본 AppIndicator 확장으로 보입니다. 다른 데스크톱 환경에서는 트레이가 보이지 않을 수 있습니다.
-- 실제로 시험한 환경은 Ubuntu 24.04(x64, GNOME Xorg)입니다. arm64는 패키지 빌드만 확인했습니다.
+- 시험한 환경: Ubuntu 24.04 x64(GNOME Xorg)에서 실행, arm64에서 설치·실행. 1.5.2까지는 Ubuntu에서 창을 끌어 옮기지 못했고 1.5.3에서 고쳤습니다.
 
 ## 개인정보
 
