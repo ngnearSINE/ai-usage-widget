@@ -1228,6 +1228,8 @@ function hidePopup(force = false) {
   isPopupLocked = false
   cancelHidePopup()
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+    // 카드 위에 마우스를 둔 채 닫으면(Esc·닫기) 렌더러가 마우스가 떠난 것을 알 수 없어 설명 창이 남는다.
+    hideTip()
     popupWindow.hide()
   }
 }
@@ -1592,6 +1594,7 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.END_INTERACTION, (_event, point?: {x:number;y:number}) => endInteraction?.(point))
   ipcMain.handle(IPC_CHANNELS.HIDE_WIDGET, () => {
     widgetManuallyHidden = true
+    hideTip()
     widgetWindow?.hide()
     hidePopup(true)
   })
