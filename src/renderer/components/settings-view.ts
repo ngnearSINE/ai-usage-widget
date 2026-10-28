@@ -48,6 +48,13 @@ const customDraft = { name: '', p5: '100', pw: '100', color: '#8cbbff' }
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
 const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#a99bff'
+/** 배경 색 고르기: '고르지 않음'(테마 바탕), 어두운 색 4·밝은 색 2, 직접 고르기. 체크 표시는 바탕 밝기에 맞춰 흰색·검정. */
+const BG_COLORS = ['#1b1d27', '#16233a', '#1f2b24', '#2b1f2e', '#f3eee4', '#e9f0f8']
+function bgSwatches(c: WidgetConfig) {
+  const now = /^#[\da-f]{6}$/i.test(c.backgroundColor || '') ? c.backgroundColor!.toLowerCase() : ''
+  const ink = (col: string) => { const n = parseInt(col.slice(1), 16); return (n >> 16) * .299 + (n >> 8 & 255) * .587 + (n & 255) * .114 > 150 ? '#1d1e24' : '#fff' }
+  return `<div class="color-swatches"><button class="swatch-auto" data-config="backgroundColor" data-value="" aria-pressed="${!now}">${!now ? icon('check') : ''}고르지 않음</button>${BG_COLORS.map(col => `<button style="--swatch:${col};color:${ink(col)}" data-config="backgroundColor" data-value="${col}" aria-label="배경 색 ${col}" aria-pressed="${now === col}">${now === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${now || '#1b1d27'}" aria-label="배경 색 직접 고르기" data-bg-color></label></div>`
+}
 const config = () => draft || state.config
 
 export function initSettings(container: HTMLElement, initial: AppState, initialTab?: string) {
@@ -231,7 +238,9 @@ function designTab(c: WidgetConfig) {
     + section('테마', segment('appearance', c.appearance || 'dark', [['light', '라이트'], ['dark', '다크'], ['system', '시스템']], '테마') + hint('시스템은 Windows의 밝은·어두운 모드를 따라가요.'))
     + section('배경', `${state.acrylicSupported === false ? '' : toggle('useAcrylic', '아크릴(흐림)', '창 뒤를 흐리게 비춰요. 끄면 흐림 없이 그대로 비쳐요.', c.useAcrylic !== false)}`
       + slider('opacity', '불투명도', 0, 100, c.opacity ?? 70, '%')
-      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`))
+      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`)
+      + `<div class="field"><span>배경 색</span>${bgSwatches(c)}</div>`
+      + hint('고르지 않으면 테마(라이트·다크)에 맞춰 바뀌어요. 색을 고르면 배경은 그 색 그대로, 글씨색만 테마를 따라요.'))
     + section('막대 색', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 먼저예요')
     + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
     + section('서비스 아이콘', segment('iconStyle', c.iconStyle === 'monochrome' ? 'monochrome' : 'color', [['color', '브랜드 색'], ['monochrome', '단색']], '서비스 아이콘'))
@@ -607,6 +616,8 @@ function bindEvents() {
   bindScaleSlider(body)
   const colorInput = body.querySelector<HTMLInputElement>('[data-color]')
   if (colorInput) colorInput.onchange = () => { void update({ accentColor: colorInput.value }) }
+  const bgInput = body.querySelector<HTMLInputElement>('[data-bg-color]')
+  if (bgInput) bgInput.onchange = () => { void update({ backgroundColor: bgInput.value }) }
   body.querySelectorAll<HTMLElement>('[data-action="dock"]').forEach(el => el.onclick = () => { void update({ placementMode: 'docked' }) })
 
   // 단축키
