@@ -391,6 +391,9 @@ export class TaskbarDocker {
 
   /** 마우스 버튼을 놓을 때까지 포인터 좌표(DIP)를 보낸다. 반환값의 stop()은 이후 좌표를 무시한다. */
   public static watchPointer(onMove: (p: { x: number; y: number }) => void, onEnd: (p?: { x: number; y: number }) => void): { stop(): void } | null {
+    // Windows 전용 보조 프로그램이다. 다른 OS에서는 렌더러가 보내는 좌표·놓음만으로 끌기를 하므로 아무것도 하지 않는다
+    // (예전에는 여기서 바로 onEnd를 불러, Ubuntu에서 창을 잡자마자 끌기가 끝나 버렸다).
+    if (process.platform !== 'win32') return null
     if (!fs.existsSync(this.getDockerPath())) { onEnd(); return null }
     let ended = false
     const finish = (p?: { x: number; y: number }) => { if (!ended) { ended = true; onEnd(p) } }

@@ -917,7 +917,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
       const display = screen.getDisplayNearestPoint(origin)
       const rect = r || { x: origin.x - 100, y: 0, width: currentWidgetWidth, height: 0 }
       slide = { grabDx: origin.x - rect.x, display, top: display.bounds.y + display.bounds.height - getTaskbarInfo(display).taskbarHeight, width: rect.width, offset: rect.x - display.bounds.x }
-    } else if (kind === 'move') showDockPreview(false, origin, true, ghostWidth)
+    } else if (kind === 'move' && dockSupported) showDockPreview(false, origin, true, ghostWidth)
 
     const slideTo = (offset: number) => {
       // 도킹은 수 ms~수십 ms 걸리므로 하나씩, 마지막 위치만 따라간다.
