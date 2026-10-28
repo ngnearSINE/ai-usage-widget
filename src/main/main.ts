@@ -436,7 +436,8 @@ function openAboutWindow() {
   }, currentSurfaceKind())
   keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
-  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.once('ready-to-show', () => { syncDialogTopmost(); win.show(); applyWindowShape(win, 'native') })
+  win.on('focus', syncDialogTopmost)
   win.on('closed', () => { if (aboutWindow === win) aboutWindow = null })
   if (process.env.VITE_DEV_SERVER_URL) void win.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=about`)
   else void win.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'about' } })
@@ -462,7 +463,8 @@ function openStatsWindow(id?: string) {
   }, currentSurfaceKind())
   keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
-  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.once('ready-to-show', () => { syncDialogTopmost(); win.show(); applyWindowShape(win, 'native') })
+  win.on('focus', syncDialogTopmost)
   win.on('resize', () => { if (!win.isDestroyed()) applyWindowShape(win, win.isMaximized() ? 0 : 'native') })
   win.on('closed', () => { if (statsWindow === win) statsWindow = null })
   const query = { view: 'stats', ...(id ? { id } : {}) }
@@ -490,7 +492,8 @@ function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Recta
   }, currentSurfaceKind())
   keepZoom(win)
   win.on('page-title-updated', event => event.preventDefault())
-  win.once('ready-to-show', () => { win.show(); applyWindowShape(win, 'native') })
+  win.once('ready-to-show', () => { syncDialogTopmost(); win.show(); applyWindowShape(win, 'native') })
+  win.on('focus', syncDialogTopmost)
   win.on('closed', () => { if (settingsWindow === win) settingsWindow = null })
   if (process.env.VITE_DEV_SERVER_URL) void settingsWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}?view=settings&tab=${tab}`)
   else void settingsWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'settings', tab } })
@@ -571,6 +574,7 @@ function rebuildSurfaces() {
 }
 
 function applyWindowTopmost(config: WidgetConfig) {
+  syncDialogTopmost()
   if (!widgetWindow || widgetWindow.isDestroyed()) return
 
   if (config.placementMode === 'floating') {
@@ -586,6 +590,19 @@ function applyWindowTopmost(config: WidgetConfig) {
     // [중요 원칙]: 작업표시줄 child HWND 도킹 모드에서는 setAlwaysOnTop 및 staytop을 일절 사용하지 않음
     TaskbarDocker.stopStayTop()
     widgetWindow.setAlwaysOnTop(false)
+  }
+}
+
+/**
+ * 핀(항상 위)을 켠 창은 '항상 위' 층에 있어서, 보통 창인 설정·정보·통계 창은 겹치면 늘 그 뒤로 숨는다.
+ * 핀이 켜져 있으면 이 창들도 같은 층(floating)에 올려, 나중에 띄우거나 누른 창이 위에 오게 한다.
+ */
+function syncDialogTopmost() {
+  const c = accountStore.getConfig(), pinned = c.placementMode === 'floating' && c.alwaysOnTop !== false
+  for (const w of [settingsWindow, aboutWindow, statsWindow]) {
+    if (!w || w.isDestroyed()) continue
+    w.setAlwaysOnTop(pinned, 'floating')
+    if (pinned && w.isFocused()) w.moveTop()
   }
 }
 
