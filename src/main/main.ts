@@ -26,6 +26,7 @@ import { UsageHistory } from './history-store.js'
 import { previewHistory } from '../common/history.js'
 import { DESIGNS } from '../common/usage-model.js'
 import { SurfaceWindow, surfaceKind } from './surface-window.js'
+import { WebServer, DEFAULT_WEB_PORT, hashPassword } from './web-server.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -79,6 +80,7 @@ function growToFitCards() {
   rememberLayout()
 }
 let history: UsageHistory | null = null
+let web: WebServer | null = null
 let shortcutErrors: string[] = []
 
 const gotTheLock = app.requestSingleInstanceLock()
@@ -147,7 +149,7 @@ function getAppState(): AppState {
     acrylicSupported,
     dockSupported,
     launchers,
-    config: accountStore.getConfig(),
+    config: (({ webPasswordHash: _h, ...c }) => c)(accountStore.getConfig()),
     accounts,
     usages,
     isRefreshing: !isPreview && quotaManager.refreshing,
@@ -157,12 +159,20 @@ function getAppState(): AppState {
     version: app.getVersion(),
     guideAvailable: guideKnown ??= !!guidePath(),
     update: updater?.state,
-    focus: focusId && usages.some(u => u.id === focusId) ? focusId : undefined
+    focus: focusId && usages.some(u => u.id === focusId) ? focusId : undefined,
+    web: web ? { ...web.status, hasPassword: !!accountStore.getConfig().webPasswordHash } : undefined
   }
+}
+
+/** 웹 페이지로 보기: 설정대로 서버를 켜고 끈다. */
+function applyWeb() {
+  const c = accountStore.getConfig()
+  web?.apply({ enabled: c.webEnabled === true, remote: c.webRemote === true, port: c.webPort ?? DEFAULT_WEB_PORT, passwordHash: c.webPasswordHash })
 }
 
 function broadcastState() {
   const state = getAppState()
+  web?.push()
   if (widgetWindow && !widgetWindow.isDestroyed()) {
     widgetWindow.webContents.send(IPC_CHANNELS.STATE_CHANGED, state)
   }
@@ -1454,6 +1464,7 @@ function setupIpcHandlers() {
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
     if (patch.shortcuts !== undefined) { registerShortcuts(); updateTrayMenu() }
+    if (patch.webEnabled !== undefined || patch.webRemote !== undefined || patch.webPort !== undefined) applyWeb()
     // [불변 원칙]: 팝업창은 최초 등장 시점에만 위젯 위치 기준으로 좌표를 설정합니다.
     // 사용자가 팝업창을 열고 조작(슬라이더 등)하는 동안에는 팝업 위치가 이동하면 안 되므로
     // 설정 변경(UPDATE_CONFIG) 시 positionPopupWindow()를 절대 호출하지 않습니다.
@@ -1646,7 +1657,7 @@ function setupIpcHandlers() {
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const r = await dialog.showSaveDialog(win!, { title: '설정 내보내기', defaultPath: `ai-usage-settings-${stamp}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
     if (r.canceled || !r.filePath) return { ok: false }
-    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, ...config } = accountStore.getConfig()
+    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, webPasswordHash: _p, ...config } = accountStore.getConfig()
     fs.writeFileSync(r.filePath, JSON.stringify({ app: 'ai-usage-widget', version: app.getVersion(), exportedAt: new Date().toISOString(), config, accounts: accountStore.getAccounts() }, null, 2), 'utf-8')
     return { ok: true, message: '설정을 파일로 내보냈어요.' }
   })
@@ -1676,6 +1687,18 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => { app.quit() })
   // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
+  // 웹 페이지 접속 암호: 정하면 해시만 저장하고, null이면 없앤다. 바뀌면 열려 있던 페이지는 다시 암호를 묻는다.
+  ipcMain.handle(IPC_CHANNELS.SET_WEB_PASSWORD, (_event, password: unknown) => {
+    if (password !== null && (typeof password !== 'string' || password.length < 4 || password.length > 128)) return false
+    const { webPasswordHash: _old, ...rest } = accountStore.getConfig()
+    accountStore.saveConfig(password === null ? rest : { ...rest, webPasswordHash: hashPassword(password) })
+    applyWeb()
+    broadcastState()
+    return true
+  })
+  ipcMain.handle(IPC_CHANNELS.OPEN_WEB, async () => {
+    if (web?.status.running) await shell.openExternal(`http://localhost:${accountStore.getConfig().webPort ?? DEFAULT_WEB_PORT}/`)
+  })
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
     if (typeof url !== 'string' || !/^https:\/\/github\.com\/(ngnearSINE\/ai-usage-widget|sallyHADEV\/ai-usage-taskbar-widget)(\/[\w./-]*)?$/.test(url)) return false
     await shell.openExternal(url); return true
@@ -1796,6 +1819,8 @@ app.whenReady().then(() => {
   createWidgetWindow()
   createPopupWindow()
   applySurface()
+  web = new WebServer(path.join(__dirname, '../dist'), getAppState, broadcastState)
+  applyWeb()
   createTray()
   registerShortcuts()
   if (!isPreview) applyAutoLaunch(accountStore.getConfig().openAtLogin ?? true)
@@ -1840,7 +1865,7 @@ app.on('window-all-closed', () => {
   // 트레이에 상주하므로 창이 닫혀도 앱 종료 방지
 })
 
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => { globalShortcut.unregisterAll(); web?.stop() })
 
 // 작업표시줄에 붙은 채로 끝내면 먼저 떼어 낸다. 예전에는 동기 실행으로 떼어 냈는데, 보조 프로그램이 이 창에 보내는
 // 메시지를 창 스레드가 막혀 받지 못해 종료가 수 초 멈췄다(실측 약 6초). 비동기로 떼어 내고 길어도 1.5초 뒤에는 끝낸다.

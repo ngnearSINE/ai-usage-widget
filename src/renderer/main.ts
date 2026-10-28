@@ -1,7 +1,8 @@
 import { renderAiIcon } from './components/ai-icons.js'
 import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { applyAppearance, renderDashboard, renderDockedUsage, setPopupSurface } from './components/dashboard.js'
+import { applyAppearance, renderDashboard, renderDockedUsage, setPopupSurface, setWebSurface } from './components/dashboard.js'
+import { installWebApi } from './web-api.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
 import { renderAbout } from './components/about-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
@@ -64,6 +65,10 @@ const appEl = document.getElementById('app')!
 if (viewType === 'popup') {
   document.body.classList.add('is-popup-view', 'is-dashboard-view')
   setPopupSurface(true)
+} else if (viewType === 'web') {
+  document.body.classList.add('is-web-view', 'is-dashboard-view')
+  setWebSurface(true)
+  installWebApi()
 } else if (viewType === 'settings' || viewType === 'about') {
   document.body.classList.add('is-settings-view')
 } else {
@@ -339,6 +344,11 @@ async function init() {
     return
   }
 
+  if (viewType === 'web') {
+    renderDashboard(appEl, state)
+    window.api.onStateChange(next => renderDashboard(appEl, next))
+    return
+  }
   if (viewType === 'popup') {
     renderPopup(state)
     window.api.onStateChange((nextState) => {

@@ -23,6 +23,8 @@ export const IPC_CHANNELS = {
   OPEN_ABOUT: 'app:open-about',
   QUIT_APP: 'app:quit',
   OPEN_EXTERNAL: 'app:open-external',
+  SET_WEB_PASSWORD: 'web:set-password',
+  OPEN_WEB: 'web:open',
   EXPORT_SETTINGS: 'app:export-settings',
   IMPORT_SETTINGS: 'app:import-settings',
   UPDATE_CHECK: 'app:update-check',

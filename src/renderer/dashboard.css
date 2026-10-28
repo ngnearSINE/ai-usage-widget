@@ -575,6 +575,20 @@ body.is-dock-preview.dock-enter #app { animation:dock-enter .18s cubic-bezier(.2
 
 /* ---------- 작업 표시줄 상세 팝업: 위젯과 같은 화면, 열릴 때 아래에서 올라온다 ---------- */
 .dashboard.popup-enter { animation:popupSlideUp .25s cubic-bezier(.16,1,.3,1) both; }
+
+/* ---------- 웹 페이지(브라우저)로 보기: 같은 화면을 화면 가득, 단색 바탕으로 ---------- */
+body.is-web-view { margin:0; height:100vh; height:100dvh; overflow:hidden; background:rgb(var(--surface)); }
+body.is-web-view #app { height:100%; }
+body.is-web-view .dashboard { border:0; border-radius:0; background:rgb(var(--surface)); }
+body.is-web-view [data-src] { pointer-events:none; }
+
+/* 설정 · 웹 페이지로 보기 */
+.web-urls { display:flex; flex-direction:column; gap:4px; margin:8px 0; }
+.web-urls code { font:11.5px/1.4 Consolas,"Cascadia Mono",monospace; color:var(--ink); background:var(--soft); border:1px solid var(--line); border-radius:5px; padding:4px 8px; user-select:text; }
+.web-pw { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.web-pw b { font-size:11.5px; color:var(--good); margin-right:2px; }
+.web-pw .text-input { flex:1; min-width:120px; }
+.web-pw .secondary-button, .web-pw .ghost-button { width:auto; flex:0 0 auto; margin:0; }
 :root[data-motion="off"] .dashboard.popup-enter { animation:none; }
 
 .settings-root .sc-row { grid-template-columns:minmax(0,1fr) 116px 28px auto; }

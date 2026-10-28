@@ -429,6 +429,24 @@ async function drawHistory() {
 
 const SHORTCUT_DEFAULTS = { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' }
 type ShortcutKey = keyof typeof SHORTCUT_DEFAULTS
+/** 웹 페이지로 보기: 켜기, 다른 기기 접속, 포트, 접속 암호, 접속 주소. 페이지에서는 보기만 할 수 있다. */
+function webSection(s: AppState) {
+  const c = s.config, w = s.web
+  if (!c.webEnabled) return section('웹 페이지로 보기', toggle('webEnabled', '웹 페이지 열기', '브라우저로 사용량을 볼 수 있어요. 페이지에서는 보기만 할 수 있어요.', false))
+  const status = !w ? '' : w.error ? hint(escapeText(w.error), 'warn-text')
+    : w.running ? `<div class="web-urls">${w.urls.map(u => `<code>${escapeText(u)}</code>`).join('')}</div><button class="secondary-button" data-web-open>${icon('arrow')}브라우저로 열기</button>`
+    : hint('여는 중이에요…')
+  const pw = w?.hasPassword
+    ? `<div class="field"><span>접속 암호</span><div class="web-pw"><b>설정됨</b><input type="password" class="text-input" data-web-pw placeholder="새 암호(4자 이상)" autocomplete="new-password"><button class="secondary-button" data-web-pw-save>바꾸기</button><button class="ghost-button" data-web-pw-clear>암호 없애기</button></div></div>`
+    : `<div class="field"><span>접속 암호</span><div class="web-pw"><input type="password" class="text-input" data-web-pw placeholder="암호(4자 이상)" autocomplete="new-password"><button class="secondary-button" data-web-pw-save>정하기</button></div></div>`
+  return section('웹 페이지로 보기', toggle('webEnabled', '웹 페이지 열기', '브라우저로 사용량을 볼 수 있어요. 페이지에서는 보기만 할 수 있어요.', true)
+    + toggle('webRemote', '다른 기기에서도 보기', '같은 네트워크(와이파이 등)의 휴대폰·다른 PC에서 접속해요. 처음 켤 때 Windows 방화벽 허용 창이 뜰 수 있어요.', c.webRemote === true)
+    + `<label class="field"><span>포트</span><input type="number" class="text-input short" data-web-port min="1024" max="65535" step="1" value="${c.webPort ?? 47100}"></label>`
+    + pw
+    + hint(w?.hasPassword ? '페이지를 열면 먼저 암호를 물어요.' : c.webRemote ? '암호가 없으면 같은 네트워크의 누구나 주소만 알면 볼 수 있어요. 암호를 정해 두는 게 좋아요.' : '암호를 정하면 페이지를 열 때 먼저 물어봐요.', !w?.hasPassword && c.webRemote ? 'warn-text' : '')
+    + status)
+}
+
 function generalTab(s: AppState) {
   const c = s.config, sc = { ...SHORTCUT_DEFAULTS, ...c.shortcuts }, errors = s.shortcutErrors || []
   const saved = Object.keys(c.layoutsByMonitor || {}).length
@@ -442,6 +460,7 @@ function generalTab(s: AppState) {
     + section('단축키', `<div class="sc-list">${row('toggle', '창·작업 표시줄 독 보이기·숨기기')}${row('lock', '클릭 통과 잠금·풀기')}${row('cycle', '다음 디자인')}</div>
       ${hint('칸을 누르고 새 조합(Ctrl·Alt·Shift + 글자)을 누르세요. Esc는 취소, Backspace는 끄기예요.')}
       ${errors.length ? hint(`등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.`, 'warn-text') : ''}`)
+    + webSection(s)
     + advanced('general', section('모니터 구성별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
         + `${hint(`저장된 구성 ${saved}개`)}${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
       + (s.dockSupported === false ? '' : section('작업 표시줄 독', hint('한 번 누르면 위젯이 열리고, 두 번 누르면 그 카드만 보는 집중 모드가 켜지고 꺼져요.')
@@ -636,6 +655,18 @@ function bindEvents() {
   body.querySelectorAll<HTMLElement>('[data-sc-default]').forEach(el => el.onclick = () => { const k = el.dataset.scDefault as ShortcutKey; void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [k]: SHORTCUT_DEFAULTS[k] } }) })
   onClickOf('[data-clear-layouts]', () => { void update({ layoutsByMonitor: {} }) })
 
+  // 웹 페이지: 포트는 입력을 마칠 때 저장, 암호는 메인이 해시로만 저장한다.
+  const port = body.querySelector<HTMLInputElement>('[data-web-port]')
+  if (port) port.onchange = () => { const v = parseInt(port.value, 10); if (v >= 1024 && v <= 65535) void update({ webPort: v }); else { notify('포트는 1024~65535 사이로 넣어 주세요.'); port.value = String(state.config.webPort ?? 47100) } }
+  const savePw = async () => {
+    const v = body.querySelector<HTMLInputElement>('[data-web-pw]')?.value || ''
+    if (v.length < 4) { notify('암호는 4자 이상으로 정해 주세요.'); return }
+    notify(await window.api.setWebPassword(v) ? '접속 암호를 정했어요.' : '암호를 저장하지 못했어요.')
+  }
+  onClickOf('[data-web-pw-save]', () => { void savePw() })
+  body.querySelector<HTMLInputElement>('[data-web-pw]')?.addEventListener('keydown', e => { if (e.key === 'Enter') void savePw() })
+  onClickOf('[data-web-pw-clear]', () => { void window.api.setWebPassword(null).then(() => notify('접속 암호를 없앴어요.')) })
+  onClickOf('[data-web-open]', () => { void window.api.openWeb() })
   onClickOf('[data-open-about]', () => { void window.api.openAbout() })
   onClickOf('[data-update-check]', () => run(window.api.checkUpdate(), '업데이트를 확인하지 못했어요.'))
   onClickOf('[data-update-install]', () => run(window.api.installUpdate(), '업데이트를 설치하지 못했어요.'))
