@@ -1,8 +1,8 @@
-import { renderPopupView } from './components/popup-view.js'
 import { renderAiIcon } from './components/ai-icons.js'
 import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { applyAppearance, renderDashboard, renderDockedUsage, openDesign } from './components/dashboard.js'
+import { applyAppearance, renderDashboard, renderDockedUsage, setPopupSurface, setWebSurface } from './components/dashboard.js'
+import { installWebApi } from './web-api.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
 import { renderAbout } from './components/about-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
@@ -20,7 +20,7 @@ function updateTrayIcon(state: AppState) {
     return
   }
   const value = lowestLeft(tight.m), warn = c.warnPercent ?? 20, crit = Math.min(warn, c.critPercent ?? 10)
-  const bg = value <= crit ? '#ff6b73' : value <= warn ? '#f0b65a' : (/^#[\da-f]{6}$/i.test(c.accentColor || '') ? c.accentColor! : '#a99bff')
+  const bg = value <= crit ? '#ff6b73' : value <= warn ? '#f0b65a' : (/^#[\da-f]{6}$/i.test(c.accentColor || '') ? c.accentColor! : '#8cbbff')
   const key = `${value}|${bg}|${tooltip}`
   if (key === lastTrayKey) return
   lastTrayKey = key
@@ -63,14 +63,18 @@ if (dockPreview) {
 const appEl = document.getElementById('app')!
 
 if (viewType === 'popup') {
-  document.body.classList.add('is-popup-view')
+  document.body.classList.add('is-popup-view', 'is-dashboard-view')
+  setPopupSurface(true)
+} else if (viewType === 'web') {
+  document.body.classList.add('is-web-view', 'is-dashboard-view')
+  setWebSurface(true)
+  installWebApi()
 } else if (viewType === 'settings' || viewType === 'about') {
   document.body.classList.add('is-settings-view')
 } else {
   document.body.classList.add('is-widget-view')
 }
 
-let currentState: AppState | null = null
 let lastWidgetHtml = ''
 let lastSentWidth = 0
 let lastSentHeight = 0
@@ -100,7 +104,6 @@ function renderUnavailable(u: AccountUsage, config: WidgetConfig): string {
 function renderWidget(state: AppState) {
   if (dockPreview) state={...state,config:{...state.config,placementMode:'docked'}}
   else updateTrayIcon(state)
-  currentState = state
   applyAppearance(state.config)
   const floating = state.config.placementMode !== 'docked'
   document.body.classList.toggle('is-dashboard-view', floating)
@@ -168,10 +171,12 @@ function renderWidget(state: AppState) {
   }
 }
 
-function renderPopup(state: AppState) {
-  currentState = state
-  applyAppearance(state.config)
-  renderPopupView(appEl, state)
+function renderPopup(state: AppState, animate = false) {
+  renderDashboard(appEl, state, animate)
+  if (!animate) return
+  // 열릴 때마다 아래에서 올라오는 등장 효과
+  const root = appEl.querySelector<HTMLElement>('.dashboard')
+  root?.classList.remove('popup-enter'); void root?.offsetWidth; root?.classList.add('popup-enter')
 }
 
 // 브라우저 직접 접근 및 E2E 테스트 지원을 위한 Mock API
@@ -189,7 +194,7 @@ if (!(window as any).api) {
       showWeeklyLimit: true,
       colorByUsage: true,
       showCardBackground: false,
-      placementMode: 'floating', uiVersion: 2, appearance: 'dark', barStyle: 'silk', accentColor: '#a99bff', motion: 'subtle', hideDisconnected: true
+      placementMode: 'floating', uiVersion: 2, appearance: 'dark', barStyle: 'silk', accentColor: '#8cbbff', motion: 'subtle', hideDisconnected: true
     },
     accounts: [
       { id: 'local-antigravity', name: 'Google Antigravity', provider: 'antigravity', enabled: true },
@@ -276,7 +281,6 @@ if (!(window as any).api) {
     endInteraction: async () => {},
     moveInteraction: () => {},
     hideWidget: async () => {},
-    onOpenDesign: () => {},
     removeAccount: async (id: string) => {
       mockState.accounts = mockState.accounts.filter(a => a.id !== id)
       listeners.forEach((fn) => fn(mockState))
@@ -302,10 +306,7 @@ if (!(window as any).api) {
       listeners.forEach((fn) => fn(mockState))
       return mockState
     },
-    showPopup: () => console.log('[MockAPI] showPopup'),
     hidePopup: () => console.log('[MockAPI] hidePopup'),
-    togglePopup: () => console.log('[MockAPI] togglePopup'),
-    lockPopup: () => console.log('[MockAPI] lockPopup'),
     unlockPopup: () => console.log('[MockAPI] unlockPopup'),
     resizeWidget: (w: number, h: number) => console.log(`[MockAPI] resizeWidget: ${w}x${h}`),
     openSettings: () => console.log('[MockAPI] openSettings'),
@@ -314,8 +315,6 @@ if (!(window as any).api) {
       { id: 'local-claude-code', name: 'Claude Code', provider: 'claude', running: true, installed: true, brandColor: '#D97757' },
       { id: 'local-codex', name: 'Codex CLI', provider: 'codex', running: false, installed: true, brandColor: '#6366F1' }
     ],
-    scheduleHidePopup: () => {},
-    cancelHidePopup: () => {},
     popupReady: () => {},
     onPopupOpened: () => {},
     onStateChange: (fn: (s: AppState) => void) => {
@@ -330,16 +329,9 @@ async function init() {
   // 아니라 개별 모듈을 네트워크로 받아오는 방식이라 이 왕복이 느려질 수 있는데,
   // 그 사이에 창은 이미 떠 있어서 클릭해도 반응이 없는 것처럼 보이는 문제를 줄인다.
   if (viewType === 'popup') {
-    // ESC 키 입력 시 팝업 닫기
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        window.api.hidePopup()
-      }
-    })
   }
 
   const state = await window.api.getState()
-  window.api.onOpenDesign?.(openDesign)
 
   if (viewType === 'about') {
     renderAbout(appEl, state)
@@ -352,6 +344,11 @@ async function init() {
     return
   }
 
+  if (viewType === 'web') {
+    renderDashboard(appEl, state)
+    window.api.onStateChange(next => renderDashboard(appEl, next))
+    return
+  }
   if (viewType === 'popup') {
     renderPopup(state)
     window.api.onStateChange((nextState) => {
@@ -359,8 +356,7 @@ async function init() {
     })
     // 메인이 팝업을 투명하게 띄운 상태: 등장 애니메이션 첫 프레임이 화면에 반영된 뒤 불투명 전환 요청
     window.api.onPopupOpened((nextState) => {
-      currentState = nextState
-      renderPopupView(appEl, nextState, true)
+      renderPopup(nextState, true)
       requestAnimationFrame(() => requestAnimationFrame(() => window.api.popupReady()))
     })
   } else {

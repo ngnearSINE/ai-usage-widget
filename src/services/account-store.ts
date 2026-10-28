@@ -5,7 +5,6 @@ import type { AccountConfig, WidgetConfig } from '../common/types.js'
 import type { DetectedApp } from './local-app-detector.js'
 import { GrokCliClient } from './grok-cli-client.js'
 import { mergeClaudeAccounts } from './claude-account-migration.js'
-import { DEFAULT_API_ENDPOINT } from './usage-push.js'
 import { moveAccountBefore } from '../common/widget-layout.js'
 import { syncClaudeOrgAccounts, type ClaudeOrgSeen } from '../common/claude-org-sync.js'
 
@@ -24,14 +23,11 @@ const DEFAULT_CONFIG: WidgetConfig = {
   alwaysOnTop: true,
   openAtLogin: true,
   doubleClickToOpenPopup: false,
-  apiPushEnabled: false,
-  apiEndpoint: DEFAULT_API_ENDPOINT,
-  apiScreen: 1,
-  uiVersion: 4,
+  uiVersion: 5,
   appearance: 'dark',
   barStyle: 'silk',
   motion: 'subtle',
-  accentColor: '#a99bff',
+  accentColor: '#8cbbff',
   fontScale: 100,
   cardGap: 6,
   hideDisconnected: true,
@@ -55,7 +51,10 @@ const DEFAULT_CONFIG: WidgetConfig = {
   clickThrough: false,
   shortcuts: { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' },
   rememberPerMonitor: true,
-  layoutsByMonitor: {}
+  layoutsByMonitor: {},
+  webEnabled: false,
+  webRemote: false,
+  webPort: 47100
 }
 
 // 쿼터 수치는 전부 실시간 조회로 채운다. 프리셋 숫자를 넣어두면 조회 실패 시 그게 정상값처럼 표시된다.
@@ -151,6 +150,10 @@ export class AccountStore {
           config.useAcrylic = effect === 'acrylic'
           // 예전 아크릴 틴트는 불투명도에 0.72를 곱해 칠했으므로 보이는 정도가 같게 옮긴다.
           config.opacity = effect === 'solid' ? 100 : effect === 'acrylic' ? Math.round(alpha * .72) : alpha
+        }
+        // 기본 강조색이 보라(#a99bff) → 파랑(#8cbbff)으로 바뀌었다(uiVersion 5). 예전 기본값 그대로면 새 기본값으로 옮긴다.
+        if (!saved.uiVersion || saved.uiVersion < 5) {
+          if (saved.accentColor === undefined || String(saved.accentColor).toLowerCase() === '#a99bff') config.accentColor = DEFAULT_CONFIG.accentColor
         }
         delete (config as any).backgroundEffect
         delete (config as any).alphaPercent

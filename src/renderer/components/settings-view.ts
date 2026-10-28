@@ -47,7 +47,14 @@ const homeDraft = { provider: 'codex' as 'codex' | 'xai', dir: '', name: '' }
 const customDraft = { name: '', p5: '100', pw: '100', color: '#8cbbff' }
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
-const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#a99bff'
+const hex = (v?: string) => /^#[\da-f]{6}$/i.test(v || '') ? v! : '#8cbbff'
+/** 배경 색 고르기: '고르지 않음'(테마 바탕), 어두운 색 4·밝은 색 2, 직접 고르기. 체크 표시는 바탕 밝기에 맞춰 흰색·검정. */
+const BG_COLORS = ['#1b1d27', '#16233a', '#1f2b24', '#2b1f2e', '#f3eee4', '#e9f0f8']
+function bgSwatches(c: WidgetConfig) {
+  const now = /^#[\da-f]{6}$/i.test(c.backgroundColor || '') ? c.backgroundColor!.toLowerCase() : ''
+  const ink = (col: string) => { const n = parseInt(col.slice(1), 16); return (n >> 16) * .299 + (n >> 8 & 255) * .587 + (n & 255) * .114 > 150 ? '#1d1e24' : '#fff' }
+  return `<div class="color-swatches"><button class="swatch-auto" data-config="backgroundColor" data-value="" aria-pressed="${!now}">${!now ? icon('check') : ''}고르지 않음</button>${BG_COLORS.map(col => `<button style="--swatch:${col};color:${ink(col)}" data-config="backgroundColor" data-value="${col}" aria-label="배경 색 ${col}" aria-pressed="${now === col}">${now === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${now || '#1b1d27'}" aria-label="배경 색 직접 고르기" data-bg-color></label></div>`
+}
 const config = () => draft || state.config
 
 export function initSettings(container: HTMLElement, initial: AppState, initialTab?: string) {
@@ -164,7 +171,7 @@ function renderPreview() {
   const cap = root.querySelector<HTMLElement>('[data-caption]')
   // 창 크기는 이 스케일에서의 실제 픽셀. 화면 비율 = 미리보기 크기 ÷ 실제 크기.
   const shownPct = Math.round(k / rel * 100)
-  if (cap) cap.textContent = `${Math.round(W * zoom)}×${Math.round(H * zoom)}${size === 'current' ? ' (지금 위젯 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${shownPct < 100 ? ` · ${shownPct}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
+  if (cap) cap.textContent = `${Math.round(W * zoom)}×${Math.round(H * zoom)}${size === 'current' ? ' (지금 창 크기)' : ''}${zoom !== 1 ? ` · 스케일 ${Math.round(zoom * 100)}%` : ''}${shownPct < 100 ? ` · ${shownPct}%로 축소해 표시` : ''}${note}${usePreviewSample() ? ' · 예시 데이터' : ''}`
 }
 
 /* ---------- 공통 조각 ---------- */
@@ -227,13 +234,15 @@ const advanced = (id: string, inner: string, label = '고급') => `<details clas
 
 /* ---------- 탭 내용 ---------- */
 function designTab(c: WidgetConfig) {
-  return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '위젯 제목줄의 보기 버튼으로도 바꿔요')
+  return section('디자인', `<div class="design-grid">${DESIGNS.map(([id, name, desc]) => `<button class="design-choice" data-config="design" data-value="${id}" aria-pressed="${(c.design || 'rich') === id}"><b>${name}</b><small>${desc}</small></button>`).join('')}</div>`, '창·위젯 제목줄의 메뉴(☰)로도 바꿔요')
     + section('테마', segment('appearance', c.appearance || 'dark', [['light', '라이트'], ['dark', '다크'], ['system', '시스템']], '테마') + hint('시스템은 Windows의 밝은·어두운 모드를 따라가요.'))
     + section('배경', `${state.acrylicSupported === false ? '' : toggle('useAcrylic', '아크릴(흐림)', '창 뒤를 흐리게 비춰요. 끄면 흐림 없이 그대로 비쳐요.', c.useAcrylic !== false)}`
       + slider('opacity', '불투명도', 0, 100, c.opacity ?? 70, '%')
-      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 위젯·팝업·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`))
+      + hint(`100%면 단색이고, 낮출수록 뒤가 비쳐요. 창·위젯·설정 창에 함께 적용돼요.${state.acrylicSupported === false ? ' 이 Windows에서는 아크릴을 쓸 수 없어 흐림 없이 비쳐요.' : ''}`)
+      + `<div class="field"><span>배경 색</span>${bgSwatches(c)}</div>`
+      + hint('고르지 않으면 테마(라이트·다크)에 맞춰 바뀌어요. 색을 고르면 배경은 그 색 그대로, 글씨색만 테마를 따라요.'))
     + section('막대 색', `<div class="preset-grid">${presets.map(([id, name, desc]) => `<button class="preset ${(c.barStyle || 'silk') === id ? 'selected' : ''}" data-config="barStyle" data-value="${id}" data-preview="${id}" aria-pressed="${(c.barStyle || 'silk') === id}"><span class="preset-sample"><i></i><i></i></span><span class="preset-name">${name}${(c.barStyle || 'silk') === id ? icon('check') : ''}</span><small>${desc}</small></button>`).join('')}</div>`, '경고색이 있을 때는 경고색이 먼저예요')
-    + section('강조색', `<div class="color-swatches">${['#a99bff', '#79c7b2', '#8cbbff', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
+    + section('강조색', `<div class="color-swatches">${['#8cbbff', '#a99bff', '#79c7b2', '#f1ae8c', '#f29dc1', '#e3cf83'].map(col => `<button style="--swatch:${col}" data-config="accentColor" data-value="${col}" aria-label="강조색 ${col}" aria-pressed="${c.accentColor === col}">${c.accentColor === col ? icon('check') : ''}</button>`).join('')}<label class="custom-color" title="직접 고르기"><input type="color" value="${hex(c.accentColor)}" aria-label="강조색 직접 고르기" data-color></label></div>`)
     + section('서비스 아이콘', segment('iconStyle', c.iconStyle === 'monochrome' ? 'monochrome' : 'color', [['color', '브랜드 색'], ['monochrome', '단색']], '서비스 아이콘'))
     + section('크기와 간격', slider('fontScale', '스케일', 80, 150, c.fontScale || 100, '%') + slider('cardGap', '카드 사이 간격', 4, 16, c.cardGap ?? 6, 'px'))
     + section('움직임', segment('motion', c.motion || 'subtle', [['off', '없음'], ['subtle', '은은하게'], ['expressive', '생동감 있게']], '움직임') + hint('Windows의 애니메이션 효과 끄기 설정도 함께 따라요.'))
@@ -256,7 +265,7 @@ function displayTab(c: WidgetConfig) {
         <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div></section>`
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
-      + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('위젯 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
+      + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('창 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
 }
 
 /** 서비스×항목 표. 맨 윗줄 '모든 서비스'는 일괄 변경(값이 섞이면 '일부'). 카드 우클릭 메뉴에서도 바꿀 수 있다. */
@@ -306,14 +315,14 @@ function servicesTab(s: AppState) {
     const sub = [status, a.orgUuid && u?.tier ? escapeText(u.tier) : ''].filter(Boolean).join(' · ')
     const scopedNames = u?.scopedQuotas?.map(x => x.label) || u?.scopedHidden || []
     const vis = visibilityOf(a)
-    const visNote = vis === 'all' ? '위젯 창과 작업 표시줄 모두에 보여요' : vis === 'window' ? '작업 표시줄에 붙였을 때는 빼요' : '어디에도 안 보여요(조회는 계속해요)'
+    const visNote = vis === 'all' ? '창·위젯·작업 표시줄 독 모두에 보여요' : vis === 'window' ? '작업 표시줄 독에서만 빼요' : '어디에도 안 보여요(조회는 계속해요)'
     // 펼친 서비스: 표시 / 바로 열기 / 순서·관리 세 묶음
     const detail = open ? `<div class="svc-detail" id="svc-detail-${id}">
         <div class="sd-group">
           <div class="sd-title">표시</div>
           <label class="sd-row"><span class="sd-label"><b>이름</b></span><input type="text" class="text-input sd-input" data-name-input="${id}" value="${name}" maxlength="60" aria-label="${name} 이름"></label>
           <div class="sd-row stack"><span class="sd-label"><b>평소 색</b><small>여유가 있을 때 그래프에 쓰는 색</small></span><div class="color-choice">${segmentRaw(barChoice(a), [['brand', '서비스 색'], ['green', '초록'], ['custom', '직접']], `data-barcolor`, id, `${name} 평소 색`)}<label class="color-dot ${barChoice(a) === 'custom' ? '' : 'muted'}" title="색 고르기" style="--swatch:${barSwatch(a, u?.brandColor)}"><input type="color" data-barcolor-pick="${id}" value="${barSwatch(a, u?.brandColor)}" aria-label="${name} 평소 색 직접 고르기"></label></div></div>
-          <div class="sd-row stack"><span class="sd-label"><b>보일 곳</b><small>${visNote}</small></span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '위젯 창과 작업 표시줄 모두에 보여요'], ['window', '위젯 창만', '작업 표시줄에 붙였을 때는 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${vis === v}" title="${d}">${t}</button>`).join('')}</div></div>
+          <div class="sd-row stack"><span class="sd-label"><b>보일 곳</b><small>${visNote}</small></span><div class="segmented" role="group" aria-label="${name} 보일 곳">${[['all', '모두', '창·위젯·작업 표시줄 독 모두에 보여요'], ['window', '창·위젯만', '작업 표시줄 독에서만 빼요'], ['none', '숨김', '어디에도 보이지 않아요(조회는 계속해요)']].filter(([v]) => v !== 'window' || s.dockSupported !== false).map(([v, t, d]) => `<button data-visibility="${v}" data-id="${id}" aria-pressed="${vis === v}" title="${d}">${t}</button>`).join('')}</div></div>
           ${scopedNames.length ? `<label class="sd-row"><span class="sd-label"><b>${escapeText(scopedNames.join('·'))} 한도</b><small>모델 전용 주간 한도도 카드에</small></span><input class="switch" type="checkbox" data-scoped="${id}" ${a.showScoped === false ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label>` : ''}
         </div>
         <div class="sd-group">
@@ -346,8 +355,8 @@ function servicesTab(s: AppState) {
       <div class="svc-actions"><button class="primary-button" data-home-save>추가</button><button class="ghost-button" data-home-cancel>취소</button></div>
     </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}다른 로그인 폴더의 계정 추가 (Codex·Grok)</button>`
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
-    + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
-    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 위젯에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
+    + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 창이나 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
+    + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 화면에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
     + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
     + advanced('services', `<button class="secondary-button danger" data-reset-defaults>기본 서비스 목록으로 되돌리기</button>${hint('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.')}`)
 }
@@ -364,7 +373,7 @@ function alertsTab(s: AppState) {
       ? `<label class="alert-check"><input type="checkbox" data-mute="${escapeText(a.id)}:${k}" ${muted.has(`${a.id}:${k}`) ? '' : 'checked'} ${on ? '' : 'disabled'}><span>${label}</span></label>` : '<span class="alert-check none">—</span>').join('')}</div>`
   }).join('')
   return section('Windows 알림', toggle('notifyEnabled', '알림 받기', '아래 상황이 되면 Windows 알림으로 알려 줘요.', on)
-      + `<button class="secondary-button" data-test-notify>${icon('bell')}테스트 알림 보내기</button>${hint('알림이 안 보이면 Windows 설정의 알림이나 방해 금지 모드를 확인하세요. 알림을 누르면 위젯이 나타나요.')}`)
+      + `<button class="secondary-button" data-test-notify>${icon('bell')}테스트 알림 보내기</button>${hint('알림이 안 보이면 Windows 설정의 알림이나 방해 금지 모드를 확인하세요. 알림을 누르면 창(작업 표시줄에 붙였으면 작업 표시줄 독)이 나타나요.')}`)
     + `<div class="${on ? '' : 'is-disabled'}">`
     + section('알릴 때', toggle('notifyLow', '남은 양이 적을 때', `남은 양이 주의 ${warn}%·위험 ${crit}%에 처음 닿을 때 한 번씩 (기준은 표시 탭에서 바꿔요)`, c.notifyLow !== false)
       + toggle('notifyPace', '리셋 전에 바닥날 것 같을 때', '지금 속도가 이어지면 리셋보다 한참 먼저 소진될 때', c.notifyPace !== false)
@@ -420,6 +429,24 @@ async function drawHistory() {
 
 const SHORTCUT_DEFAULTS = { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' }
 type ShortcutKey = keyof typeof SHORTCUT_DEFAULTS
+/** 웹 페이지로 보기: 켜기, 다른 기기 접속, 포트, 접속 암호, 접속 주소. 페이지에서는 보기만 할 수 있다. */
+function webSection(s: AppState) {
+  const c = s.config, w = s.web
+  if (!c.webEnabled) return section('웹 페이지로 보기', toggle('webEnabled', '웹 페이지 열기', '브라우저로 사용량을 볼 수 있어요. 페이지에서는 보기만 할 수 있어요.', false))
+  const status = !w ? '' : w.error ? hint(escapeText(w.error), 'warn-text')
+    : w.running ? `<div class="web-urls">${w.urls.map(u => `<code>${escapeText(u)}</code>`).join('')}</div><button class="secondary-button" data-web-open>${icon('arrow')}브라우저로 열기</button>`
+    : hint('여는 중이에요…')
+  const pw = w?.hasPassword
+    ? `<div class="field"><span>접속 암호</span><div class="web-pw"><b>설정됨</b><input type="password" class="text-input" data-web-pw placeholder="새 암호(4자 이상)" autocomplete="new-password"><button class="secondary-button" data-web-pw-save>바꾸기</button><button class="ghost-button" data-web-pw-clear>암호 없애기</button></div></div>`
+    : `<div class="field"><span>접속 암호</span><div class="web-pw"><input type="password" class="text-input" data-web-pw placeholder="암호(4자 이상)" autocomplete="new-password"><button class="secondary-button" data-web-pw-save>정하기</button></div></div>`
+  return section('웹 페이지로 보기', toggle('webEnabled', '웹 페이지 열기', '브라우저로 사용량을 볼 수 있어요. 페이지에서는 보기만 할 수 있어요.', true)
+    + toggle('webRemote', '다른 기기에서도 보기', '같은 네트워크(와이파이 등)의 휴대폰·다른 PC에서 접속해요. 처음 켤 때 Windows 방화벽 허용 창이 뜰 수 있어요.', c.webRemote === true)
+    + `<label class="field"><span>포트</span><input type="number" class="text-input short" data-web-port min="1024" max="65535" step="1" value="${c.webPort ?? 47100}"></label>`
+    + pw
+    + hint(w?.hasPassword ? '페이지를 열면 먼저 암호를 물어요.' : c.webRemote ? '암호가 없으면 같은 네트워크의 누구나 주소만 알면 볼 수 있어요. 암호를 정해 두는 게 좋아요.' : '암호를 정하면 페이지를 열 때 먼저 물어봐요.', !w?.hasPassword && c.webRemote ? 'warn-text' : '')
+    + status)
+}
+
 function generalTab(s: AppState) {
   const c = s.config, sc = { ...SHORTCUT_DEFAULTS, ...c.shortcuts }, errors = s.shortcutErrors || []
   const saved = Object.keys(c.layoutsByMonitor || {}).length
@@ -428,21 +455,19 @@ function generalTab(s: AppState) {
   return section('시작과 갱신', toggle('openAtLogin', 'Windows를 켤 때 함께 시작', '', c.openAtLogin !== false)
       + `<div class="field"><span>사용량 확인 간격</span><div class="segmented" role="group" aria-label="사용량 확인 간격">${INTERVALS.map(([v, t]) => `<button data-interval="${v}" aria-pressed="${interval === v}">${t}</button>`).join('')}</div></div>`
       + hint('간격이 짧으면 숫자가 빨리 바뀌지만 서비스의 조회 제한에 걸릴 수 있어요. Claude는 간격과 관계없이 2분에 한 번만 물어봐요.'))
-    + section('트레이', toggle('trayShowNumber', '트레이 아이콘에 남은 % 표시', '가장 빠듯한 서비스의 남은 양을 보여 주고, 주의·위험이면 색이 바뀌어요. 위젯을 숨겨도 볼 수 있어요.', c.trayShowNumber !== false))
-    + section('클릭 통과', toggle('clickThrough', '위젯 클릭 통과 잠금', '위젯을 눌러도 뒤의 창이 눌려요. 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 푸세요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)', !!c.clickThrough))
-    + section('단축키', `<div class="sc-list">${row('toggle', '위젯 보이기·숨기기')}${row('lock', '클릭 통과 잠금·풀기')}${row('cycle', '다음 디자인')}</div>
+    + section('트레이', toggle('trayShowNumber', '트레이 아이콘에 남은 % 표시', '가장 빠듯한 서비스의 남은 양을 보여 주고, 주의·위험이면 색이 바뀌어요. 창을 숨겨도 볼 수 있어요.', c.trayShowNumber !== false))
+    + section('클릭 통과', toggle('clickThrough', '창 클릭 통과 잠금', '창을 눌러도 그 뒤의 프로그램이 눌려요. 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 푸세요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)', !!c.clickThrough))
+    + section('단축키', `<div class="sc-list">${row('toggle', '창·작업 표시줄 독 보이기·숨기기')}${row('lock', '클릭 통과 잠금·풀기')}${row('cycle', '다음 디자인')}</div>
       ${hint('칸을 누르고 새 조합(Ctrl·Alt·Shift + 글자)을 누르세요. Esc는 취소, Backspace는 끄기예요.')}
       ${errors.length ? hint(`등록하지 못한 단축키: ${escapeText(errors.join(', '))} — 다른 앱이 쓰고 있을 수 있어요. 다른 조합으로 바꿔 주세요.`, 'warn-text') : ''}`)
+    + webSection(s)
     + advanced('general', section('모니터 구성별 배치', toggle('rememberPerMonitor', '모니터 구성마다 기억', '모니터를 연결하거나 뺄 때, 그 구성에서 쓰던 위치·크기·디자인으로 돌아가요.', c.rememberPerMonitor !== false)
         + `${hint(`저장된 구성 ${saved}개`)}${saved ? '<button class="secondary-button" data-clear-layouts>저장된 구성 모두 지우기</button>' : ''}`)
-      + (s.dockSupported === false ? '' : section('작업 표시줄에 붙였을 때', hint('한 번 누르면 상세 보기, 두 번 누르면 그 카드만 보는 집중 모드가 켜지고 꺼져요.')
+      + (s.dockSupported === false ? '' : section('작업 표시줄 독', hint('한 번 누르면 위젯이 열리고, 두 번 누르면 그 카드만 보는 집중 모드가 켜지고 꺼져요.')
         + toggle('showCardBackground', '서비스 칸 배경', '끄면 작업 표시줄과 한 몸처럼 투명해 보여요.', c.showCardBackground !== false)
         + slider('verticalOffsetPx', '세로 위치 미세 조정', -20, 20, c.verticalOffsetPx ?? 0, 'px')
         + hint('좌우 위치는 작업 표시줄 안에서 끌어 옮겨요.')))
-      + section('설정 백업', `<div class="svc-actions"><button class="ghost-button" data-backup="export">${icon('arrow')}파일로 내보내기</button><button class="ghost-button" data-backup="import">${icon('plus')}파일에서 불러오기</button></div>${hint('화면·알림 설정과 카드 목록을 파일 하나로 저장해요. 로그인 정보는 담지 않아요. 다른 PC로 옮기거나 다시 설치할 때 쓰세요.')}`)
-      + section('외부 디스플레이로 보내기', toggle('apiPushEnabled', '사용량 보내기', '확인할 때마다 아래 주소로 사용량을 HTTP POST로 보내요(책상 위 작은 화면 등).', !!c.apiPushEnabled)
-        + `<label class="field"><span>받을 주소</span><input type="url" class="text-input" data-api-endpoint value="${escapeText(c.apiEndpoint || 'http://localhost:8080/api/usage')}" spellcheck="false"></label>
-        <label class="field"><span>화면 번호</span><input type="number" class="text-input short" data-api-screen min="1" step="1" value="${c.apiScreen ?? 1}"></label>`), '고급 설정')
+      + section('설정 백업', `<div class="svc-actions"><button class="ghost-button" data-backup="export">${icon('arrow')}파일로 내보내기</button><button class="ghost-button" data-backup="import">${icon('plus')}파일에서 불러오기</button></div>${hint('화면·알림 설정과 카드 목록을 파일 하나로 저장해요. 로그인 정보는 담지 않아요. 다른 PC로 옮기거나 다시 설치할 때 쓰세요.')}`), '고급 설정')
     + section('정보', `<p class="about">AI 사용량 위젯${s.version ? ` <b>${escapeText(s.version)}</b>` : ''}<span class="update-line ${updateTone(s)}">${updateText(s)}</span></p>`
       + (s.update && s.update.status !== 'unsupported' || s.preview ? `<label class="field"><span>자동 업데이트 설치 시각</span>${updateHourSelect(s)}</label>${hint('새 버전은 미리 받아 두고 이 시각(PC 시계 기준)에 설치하고 다시 시작해요. PC가 꺼져 있거나 잠자기였으면 2시간 안에 켜질 때 설치하고, 아니면 다음 날로 미뤄요.')}` : '')
       + `<button class="secondary-button" data-open-about>${icon('refresh')}정보·업데이트 열기</button>`
@@ -607,6 +632,8 @@ function bindEvents() {
   bindScaleSlider(body)
   const colorInput = body.querySelector<HTMLInputElement>('[data-color]')
   if (colorInput) colorInput.onchange = () => { void update({ accentColor: colorInput.value }) }
+  const bgInput = body.querySelector<HTMLInputElement>('[data-bg-color]')
+  if (bgInput) bgInput.onchange = () => { void update({ backgroundColor: bgInput.value }) }
   body.querySelectorAll<HTMLElement>('[data-action="dock"]').forEach(el => el.onclick = () => { void update({ placementMode: 'docked' }) })
 
   // 단축키
@@ -628,11 +655,18 @@ function bindEvents() {
   body.querySelectorAll<HTMLElement>('[data-sc-default]').forEach(el => el.onclick = () => { const k = el.dataset.scDefault as ShortcutKey; void update({ shortcuts: { ...SHORTCUT_DEFAULTS, ...config().shortcuts, [k]: SHORTCUT_DEFAULTS[k] } }) })
   onClickOf('[data-clear-layouts]', () => { void update({ layoutsByMonitor: {} }) })
 
-  // 외부 디스플레이: 입력을 마칠 때(Enter·포커스 이동)만 저장한다.
-  const ep = body.querySelector<HTMLInputElement>('[data-api-endpoint]')
-  if (ep) ep.onchange = () => { const v = ep.value.trim(); if (/^https?:\/\/\S+$/i.test(v)) void update({ apiEndpoint: v }); else { notify('http:// 또는 https://로 시작하는 주소를 넣어 주세요.'); ep.value = state.config.apiEndpoint || 'http://localhost:8080/api/usage' } }
-  const scr = body.querySelector<HTMLInputElement>('[data-api-screen]')
-  if (scr) scr.onchange = () => { const v = parseInt(scr.value, 10); if (v >= 1) void update({ apiScreen: v }); else scr.value = String(state.config.apiScreen ?? 1) }
+  // 웹 페이지: 포트는 입력을 마칠 때 저장, 암호는 메인이 해시로만 저장한다.
+  const port = body.querySelector<HTMLInputElement>('[data-web-port]')
+  if (port) port.onchange = () => { const v = parseInt(port.value, 10); if (v >= 1024 && v <= 65535) void update({ webPort: v }); else { notify('포트는 1024~65535 사이로 넣어 주세요.'); port.value = String(state.config.webPort ?? 47100) } }
+  const savePw = async () => {
+    const v = body.querySelector<HTMLInputElement>('[data-web-pw]')?.value || ''
+    if (v.length < 4) { notify('암호는 4자 이상으로 정해 주세요.'); return }
+    notify(await window.api.setWebPassword(v) ? '접속 암호를 정했어요.' : '암호를 저장하지 못했어요.')
+  }
+  onClickOf('[data-web-pw-save]', () => { void savePw() })
+  body.querySelector<HTMLInputElement>('[data-web-pw]')?.addEventListener('keydown', e => { if (e.key === 'Enter') void savePw() })
+  onClickOf('[data-web-pw-clear]', () => { void window.api.setWebPassword(null).then(() => notify('접속 암호를 없앴어요.')) })
+  onClickOf('[data-web-open]', () => { void window.api.openWeb() })
   onClickOf('[data-open-about]', () => { void window.api.openAbout() })
   onClickOf('[data-update-check]', () => run(window.api.checkUpdate(), '업데이트를 확인하지 못했어요.'))
   onClickOf('[data-update-install]', () => run(window.api.installUpdate(), '업데이트를 설치하지 못했어요.'))

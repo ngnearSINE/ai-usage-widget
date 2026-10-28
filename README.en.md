@@ -52,12 +52,6 @@ A lightweight desktop widget for Windows (x64·arm64) and Ubuntu (x64·arm64; wi
 8. **Launch at Windows startup (Auto-Launch)**:
    - Toggle launch-at-startup with one click from the tray menu or the widget's settings tab.
 
-9. **Usage API push & external display**:
-   - Enable push in the **API** tab of the settings and set an endpoint URL (default `http://localhost:8080/api/usage`) and a screen number; usage data is sent via HTTP POST on every quota refresh.
-   - Ships with custom firmware for the GeekMagic SmallTV (ESP8266), so you can show session/weekly usage and reset countdowns on a small desk display. See [`firmware/README.md`](firmware/README.md) for installation (Korean).
-
-   ![GeekMagic SmallTV external display](img/02-smalltv.webp)
-
 ---
 
 ## Installation

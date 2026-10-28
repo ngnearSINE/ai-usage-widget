@@ -25,20 +25,3 @@ export function formatCountdown(targetDateOrMs: string | number | undefined): st
   }
   return `${minutes}m`
 }
-
-export function parseUsageColor(percentUsed: number, colorByUsage: boolean, defaultBrandColor: string): string {
-  if (!colorByUsage) {
-    return defaultBrandColor
-  }
-  // 사용량 임계값 기반 색상
-  // 0~60%: 안전 (에메랄드/그린/민트)
-  // 60~85%: 주의 (오렌지/옐로우)
-  // 85~100%: 위험 (핫핑크/네온 레드)
-  if (percentUsed >= 85) {
-    return '#F43F5E' // rose-500
-  }
-  if (percentUsed >= 60) {
-    return '#F97316' // orange-500
-  }
-  return '#10B981' // emerald-500
-}

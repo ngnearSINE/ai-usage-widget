@@ -105,15 +105,17 @@ export interface WidgetConfig {
   showCardBackground?: boolean // 배경 카드 박스 표시 여부 (false 시 완전 투명/작업표시줄 일체화)
   openAtLogin?: boolean // 윈도우 시작 시 자동 실행
   doubleClickToOpenPopup?: boolean // true면 위젯 더블클릭으로만 상세 팝업 열기 (기본 false)
-  apiPushEnabled?: boolean // 쿼터 갱신 시 사용량을 apiEndpoint 로 POST (기본 false)
-  apiEndpoint?: string // 기본 http://localhost:8080/api/usage
-  apiScreen?: number // 페이로드의 screen 번호 (기본 1)
   uiVersion?: number
   windowBounds?: { x: number; y: number; width: number; height: number }
   appearance?: 'dark' | 'light' | 'system'
   barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
   motion?: 'off' | 'subtle' | 'expressive'
   accentColor?: string
+  backgroundColor?: string // 창 배경 색(#rrggbb). 없으면 테마 바탕, 있으면 바탕은 이 색이고 글씨·선은 테마를 따른다
+  webEnabled?: boolean // 웹 페이지로 보기(기본 끔)
+  webRemote?: boolean // 같은 네트워크의 다른 기기에서도 접속(끄면 이 PC만)
+  webPort?: number // 웹 페이지 포트(기본 47100)
+  webPasswordHash?: string // 접속 암호(scrypt 'salt:hash'). 화면·웹으로 보내지 않고 메인만 쓴다
   fontScale?: number // 스케일: 위젯·팝업·설정·정보 창 전체 확대·축소(%, 기본 100)
   cardGap?: number
   hideDisconnected?: boolean
@@ -155,6 +157,9 @@ export interface UpdateState {
   notes?: string // 새 버전에서 바뀌는 점(릴리스 설명, 마크다운 목록)
 }
 
+/** 웹 페이지 서버 상태: 열렸는지, 접속 주소, 열지 못한 이유 */
+export interface WebStatus { running: boolean; urls: string[]; error?: string }
+
 export interface AppState {
   preview?: boolean
   focus?: string // 집중 모드로 보고 있는 계정(일시적, 저장하지 않음)
@@ -171,4 +176,5 @@ export interface AppState {
   lastRefreshedAt: string
   history?: Record<string, HistoryPoint[]> // 최근 24시간(카드 추이선용, 줄여서 보냄)
   shortcutErrors?: string[] // 등록하지 못한 단축키(다른 앱이 사용 중 등)
+  web?: WebStatus & { hasPassword: boolean } // 웹 페이지로 보기 상태(설정 화면 표시용)
 }

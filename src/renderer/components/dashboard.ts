@@ -40,7 +40,7 @@ const paths: Record<string, string> = {
 }
 export const icon = (name: string) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.grid}</svg>`
 export const escapeText = (value: string) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
-const color = (value?: string) => /^#[\da-f]{6}$/i.test(value || '') ? value! : '#a99bff'
+const color = (value?: string) => /^#[\da-f]{6}$/i.test(value || '') ? value! : '#8cbbff'
 const clamp = (n: number) => Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
 let busy = false
@@ -81,6 +81,14 @@ export function applyAppearance(config: WidgetConfig) {
   document.documentElement.style.setProperty('--heat-soft-pct', `${(Math.max(0, spread - 30) / 70 * 35).toFixed(1)}%`)
   document.documentElement.style.setProperty('--accent', color(config.accentColor))
   document.documentElement.style.setProperty('--panel-alpha', String(number(config.opacity, 0, 100, 70) / 100))
+  // 배경 색: 고르지 않으면 테마 바탕(라이트·다크에 따라 바뀜). 고르면 바탕은 그 색 그대로, 글씨·선 색만 테마를 따른다.
+  const bg = /^#[\da-f]{6}$/i.test(config.backgroundColor || '') ? config.backgroundColor! : '', root = document.documentElement.style
+  if (bg) {
+    const n = parseInt(bg.slice(1), 16)
+    root.setProperty('--surface', `${n >> 16}, ${n >> 8 & 255}, ${n & 255}`)
+    root.setProperty('--surface-raised', `color-mix(in srgb, ${bg} 94%, var(--ink))`)
+    root.setProperty('--surface-hover', `color-mix(in srgb, ${bg} 86%, var(--ink))`)
+  } else for (const k of ['--surface', '--surface-raised', '--surface-hover']) root.removeProperty(k)
   document.documentElement.style.setProperty('--font-scale', '1') // 스케일은 창 전체 확대·축소로(메인 프로세스)
   document.documentElement.style.setProperty('--card-gap', `${number(config.cardGap, 4, 16, 6)}px`)
   if (!mediaQuery) {
@@ -114,7 +122,6 @@ export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {
 }
 
 /** 트레이·다른 창에서 '디자인 설정'을 열 때. 설정은 별도 설정 창에서 한다. */
-export function openDesign() { void window.api.openSettings('design') }
 
 /* ---------- 본체 ---------- */
 const designOf = (config: WidgetConfig): DesignId => (DESIGNS.some(d => d[0] === config.design) ? config.design : 'rich') as DesignId
@@ -216,25 +223,36 @@ function startCardReorder(card: HTMLElement, down: PointerEvent) {
   host.addEventListener('pointercancel', cancel)
 }
 
+/** 위젯 창과 작업 표시줄 상세 팝업이 같은 화면을 쓴다. 다른 점은 팝업은 Esc로 닫히고 오른쪽 위 단추가 닫기라는 것뿐. */
+let popup = false
+export function setPopupSurface(on: boolean) { popup = on }
+/** 웹 페이지(브라우저)로 볼 때: 같은 화면이지만 보기만 한다(제목줄 단추·창 끌기·카드 끌기·메뉴·단축키 없음). */
+let web = false
+export function setWebSurface(on: boolean) { web = on }
+
 export function renderDashboard(container: HTMLElement, state: AppState, force = false) {
   host = container
   lastState = state
   applyAppearance(state.config)
   if (!force && (busy || dragId)) return
   const design = designOf(state.config)
-  updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
-    <div class="header-hot" aria-hidden="true"></div>
-    <header class="dashboard-header"><div class="window-handle" data-window-drag title="${state.dockSupported === false ? '끌어서 창 이동' : '끌어서 창 이동 · 아래로 끌면 도킹'}"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+  const header = web
+    ? `<header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+      <span class="header-clock num" data-clock aria-hidden="true"></span></header>`
+    : `<header class="dashboard-header"><div class="window-handle" data-window-drag title="${popup || state.dockSupported === false ? '끌어서 창 이동' : '끌어서 창 이동 · 아래로 끌면 도킹'}"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
       <span class="header-clock num" data-clock aria-hidden="true"></span>
       ${updatePill(state)}
       <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? '항상 위 켜짐 · 눌러서 끄기' : '항상 위 꺼짐 · 눌러서 켜기'}" aria-label="항상 위에 표시">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
       <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
       <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool" data-view-menu aria-haspopup="menu" title="메뉴 · 지금 디자인: ${DESIGNS.find(d => d[0] === design)![1]}" aria-label="메뉴">${icon('menu')}</button>
-      <button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button></header>
+      ${popup ? `<button class="tool window-hide" data-action="close" title="닫기 (Esc)" aria-label="닫기">${icon('close')}</button>` : `<button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button>`}</header>`
+  updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
+    <div class="header-hot" aria-hidden="true"></div>
+    ${header}
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
     <div class="toast" role="status" aria-live="polite"></div>
-    ${['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(edge => `<div class="resize-handle resize-${edge}" data-resize="${edge}" aria-hidden="true"></div>`).join('')}
+    ${web ? '' : ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(edge => `<div class="resize-handle resize-${edge}" data-resize="${edge}" aria-hidden="true"></div>`).join('')}
   </div>`)
   bindEvents(container, state)
   layoutObserver?.disconnect()
@@ -284,10 +302,10 @@ function layoutCards() {
   const status = host.querySelector<HTMLElement>('[data-status]')
   const lock = state.config.clickThrough ? `<span class="lock-badge" title="클릭 통과 잠금 중">${icon('lock')}잠김${state.config.shortcuts?.lock ? ` · ${escapeText(state.config.shortcuts.lock)}로 풀기` : ''}</span> · ` : ''
   const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
-  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (Esc · 카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
+  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (${popup ? '' : 'Esc · '}카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
-    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? '<span data-pv-fallback hidden> · 미리보기</span>' : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? '<span data-pv-fallback hidden> · 미리보기</span>' : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? web ? ` · ${hidden}개 숨김` : ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
   tickClock(true)
 }
 
@@ -377,6 +395,7 @@ function bindDelegated(container: HTMLElement) {
   setInterval(() => tickClock(), 1000)
   container.addEventListener('click', e => {
     const t = e.target as HTMLElement
+    if (web && !t.closest('[data-page]')) return
     const view = t.closest<HTMLElement>('[data-view-menu]')
     if (view) {
       e.stopPropagation()
@@ -405,9 +424,15 @@ function bindDelegated(container: HTMLElement) {
     if (menuEl && !t.closest('.menu')) closeMenu()
   })
   container.addEventListener('keydown', e => { if (e.key === 'Escape' && menuEl) { e.stopPropagation(); closeMenu() } }, true)
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menuEl && lastState?.focus) void window.api.setFocus(null) })
+  // Esc: 위젯은 집중 모드를 끄고, 팝업은 닫는다(열린 메뉴가 있으면 메뉴만 닫힘).
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || menuEl) return
+    if (popup) { void window.api.unlockPopup(); void window.api.hidePopup() }
+    else if (lastState?.focus) void window.api.setFocus(null)
+  })
   // 카드를 두 번 누르면 그 서비스의 사용량 페이지를 연다(한 번 누르기는 끌어서 순서 바꾸기와 겹치지 않게 비워 둔다).
   container.addEventListener('dblclick', async e => {
+    if (web) return
     const t = e.target as HTMLElement, card = t.closest<HTMLElement>('[data-card]')
     if (!card || t.closest('button')) return
     // Ctrl+두 번 클릭: CLI, Shift+두 번 클릭: 데스크톱 앱, 그냥 두 번 클릭: 집중 모드
@@ -416,6 +441,7 @@ function bindDelegated(container: HTMLElement) {
   })
   // 카드를 끌어 순서를 바꾼다(버튼 위에서 시작한 끌기와 오른쪽 단추는 제외).
   container.addEventListener('pointerdown', e => {
+    if (web) return
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
     if (!card || e.button !== 0 || (e.target as HTMLElement).closest('button') || card.closest('.pv-win')) return
     // 보이는 카드가 한 장이면(집중 모드 포함) 바꿀 순서가 없으니 제목줄처럼 창 전체를 옮긴다.
@@ -424,6 +450,7 @@ function bindDelegated(container: HTMLElement) {
   })
   // 카드 우클릭: 그 서비스의 메뉴(메인 프로세스의 기본 메뉴라 작은 위젯에서도 잘리지 않는다)
   container.addEventListener('contextmenu', e => {
+    if (web) return
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
     if (!card) return
     e.preventDefault()
@@ -431,7 +458,7 @@ function bindDelegated(container: HTMLElement) {
   })
   // 숫자키 1~5로 크기, Ctrl+1~6으로 디자인 바꾸기(글자 입력 중이 아닐 때)
   document.addEventListener('keydown', e => {
-    if ((e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.shiftKey || e.repeat) return
+    if (web || (e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.shiftKey || e.repeat) return
     const m = /^Digit([1-9])$/.exec(e.code)
     if (!m) return
     const n = Number(m[1])
@@ -449,6 +476,7 @@ function bindEvents(container: HTMLElement, state: AppState) {
     switch (el.dataset.action) {
       case 'refresh': try { await window.api.refreshQuota() } catch { notify('새로고침에 실패했어요.') }; break
       case 'hide': await window.api.hideWidget(); break
+      case 'close': void window.api.unlockPopup(); await window.api.hidePopup(); break
       case 'pin': { const on = lastState.config.alwaysOnTop === false; await update({ alwaysOnTop: on }); notify(on ? '항상 위에 표시해요.' : '다른 창 뒤로 갈 수 있어요.'); break }
     }
   })

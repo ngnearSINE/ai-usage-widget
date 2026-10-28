@@ -121,7 +121,6 @@ export function worstWindow(m: ServiceModel) {
 
 /* ---------- 크기 판정 ---------- */
 export type RichTier = 'xs' | 's' | 'm' | 'mw' | 'ml' | 'l' | 'lw' | 'tall'
-export const TIER_NAME: Record<RichTier | 'xs2', string> = { xs: '한 줄', xs2: '두 줄', s: '간결', m: '보통', mw: '보통·넓게', ml: '풍부·간결', l: '풍부', lw: '풍부(요약 왼쪽)', tall: '세로' }
 const TIER_RANK: Record<string, number> = { xs: 1, xs2: 1.8, s: 2, tall: 2.5, m: 3, mw: 4, ml: 4, l: 4.5, lw: 5 }
 // 각 단계 내용이 기본 크기에서 차지하는 높이(px). 남는 높이를 여백으로 본다.
 export const TIER_NEED: Record<string, number> = { xs: 24, xs2: 36, s: 58, m: 86, mw: 86, ml: 166, l: 212, lw: 124, tall: 170 }

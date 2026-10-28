@@ -7,5 +7,7 @@ export const surfaceOpacity = (config: Pick<WidgetConfig, 'opacity'>) => Math.ma
 
 export function surfaceKind(config: Pick<WidgetConfig, 'opacity' | 'useAcrylic'>, acrylicSupported: boolean): SurfaceKind {
   if (!acrylicSupported) return 'layered'
-  return config.useAcrylic === false && surfaceOpacity(config) < 100 ? 'layered' : 'backdrop'
+  // 아크릴을 끄면 불투명도와 상관없이 layered. 불투명도에 따라 종류가 바뀌면 슬라이더를 끄는 동안
+  // 흐림이 비치다가 창을 다시 만들며 깜빡이므로, 종류는 아크릴 켬/끔으로만 바뀌게 한다.
+  return config.useAcrylic === false ? 'layered' : 'backdrop'
 }

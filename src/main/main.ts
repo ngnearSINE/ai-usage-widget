@@ -7,7 +7,6 @@ import { IPC_CHANNELS } from '../common/ipc-events.js'
 import type { AccountConfig, AppState, WidgetConfig } from '../common/types.js'
 import { AccountStore } from '../services/account-store.js'
 import { QuotaManager } from '../services/quota-manager.js'
-import { pushUsage } from '../services/usage-push.js'
 import { calculatePopupPosition, calculateWidgetPosition, getTaskbarInfo } from './taskbar-position.js'
 import { LocalAppDetector } from '../services/local-app-detector.js'
 import { TaskbarDocker } from './taskbar-docker.js'
@@ -27,6 +26,7 @@ import { UsageHistory } from './history-store.js'
 import { previewHistory } from '../common/history.js'
 import { DESIGNS } from '../common/usage-model.js'
 import { SurfaceWindow, surfaceKind } from './surface-window.js'
+import { WebServer, DEFAULT_WEB_PORT, hashPassword } from './web-server.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -80,6 +80,7 @@ function growToFitCards() {
   rememberLayout()
 }
 let history: UsageHistory | null = null
+let web: WebServer | null = null
 let shortcutErrors: string[] = []
 
 const gotTheLock = app.requestSingleInstanceLock()
@@ -148,7 +149,7 @@ function getAppState(): AppState {
     acrylicSupported,
     dockSupported,
     launchers,
-    config: accountStore.getConfig(),
+    config: (({ webPasswordHash: _h, ...c }) => c)(accountStore.getConfig()),
     accounts,
     usages,
     isRefreshing: !isPreview && quotaManager.refreshing,
@@ -158,12 +159,20 @@ function getAppState(): AppState {
     version: app.getVersion(),
     guideAvailable: guideKnown ??= !!guidePath(),
     update: updater?.state,
-    focus: focusId && usages.some(u => u.id === focusId) ? focusId : undefined
+    focus: focusId && usages.some(u => u.id === focusId) ? focusId : undefined,
+    web: web ? { ...web.status, hasPassword: !!accountStore.getConfig().webPasswordHash } : undefined
   }
+}
+
+/** 웹 페이지로 보기: 설정대로 서버를 켜고 끈다. */
+function applyWeb() {
+  const c = accountStore.getConfig()
+  web?.apply({ enabled: c.webEnabled === true, remote: c.webRemote === true, port: c.webPort ?? DEFAULT_WEB_PORT, passwordHash: c.webPasswordHash })
 }
 
 function broadcastState() {
   const state = getAppState()
+  web?.push()
   if (widgetWindow && !widgetWindow.isDestroyed()) {
     widgetWindow.webContents.send(IPC_CHANNELS.STATE_CHANGED, state)
   }
@@ -344,7 +353,7 @@ function registerShortcuts() {
   shortcutErrors = []
   const s = accountStore.getConfig().shortcuts || {}
   const actions: Array<[string | undefined, string, () => void]> = [
-    [s.toggle, '위젯 보이기/숨기기', () => { void toggleWidgetVisibility() }],
+    [s.toggle, '창·작업 표시줄 독 보이기/숨기기', () => { void toggleWidgetVisibility() }],
     [s.lock, '클릭 통과 잠금', () => setClickThrough(!accountStore.getConfig().clickThrough)],
     [s.cycle, '디자인 순환', cycleDesign],
   ]
@@ -1062,7 +1071,47 @@ function savePopupBounds(b: Electron.Rectangle) {
   clearTimeout(popupSaveTimer)
   popupSaveTimer = setTimeout(() => accountStore.saveConfig({ ...accountStore.getConfig(), popupBounds: { x: b.x, y: b.y, width: b.width, height: b.height } }), 300)
 }
-let popupResize: { edge: string; start: Electron.Rectangle; origin: Electron.Point } | null = null
+
+/** 팝업 창 옮기기·크기 바꾸기. 위젯 창과 같은 제스처(렌더러가 좌표를 보냄)이고, 작업표시줄 도킹만 없다. */
+function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}) {
+  if (interacting || !popupWindow || popupWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
+  interacting = true
+  const win = popupWindow
+  cancelHidePopup()
+  hideTip()
+  const origin = pointerOrigin && Number.isFinite(pointerOrigin.x) && Number.isFinite(pointerOrigin.y)
+    ? { x: Math.round(pointerOrigin.x), y: Math.round(pointerOrigin.y) } : screen.getCursorScreenPoint()
+  const shown = getAppState(), cardCount = shown.focus ? 1 : Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
+  const start = win.getBounds()
+  let last = origin
+  const update = (p: { x: number; y: number }) => {
+    if (win.isDestroyed()) return
+    last = p
+    const dx = p.x - origin.x, dy = p.y - origin.y
+    if (kind === 'move') { win.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false); return }
+    const edge = kind.slice(7)
+    let { x, y, width, height } = start
+    if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
+    if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
+    const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
+    if (edge.includes('s')) height = Math.max(minH, start.height + dy)
+    if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
+    if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+  }
+  interactionMove = update
+  endInteraction = async (p?: { x: number; y: number }) => {
+    if (!interacting) return
+    if (p) update(p)
+    interacting = false
+    endInteraction = null
+    interactionMove = null
+    if (win.isDestroyed()) return
+    const bounds = fitWindow(win.getBounds(), screen.getDisplayNearestPoint(last).workArea)
+    win.setBounds(bounds)
+    savePopupBounds(bounds)
+  }
+}
 
 function createPopupWindow() {
   const config = accountStore.getConfig()
@@ -1188,6 +1237,8 @@ function hidePopup(force = false) {
   isPopupLocked = false
   cancelHidePopup()
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+    // 카드 위에 마우스를 둔 채 닫으면(Esc·닫기) 렌더러가 마우스가 떠난 것을 알 수 없어 설명 창이 남는다.
+    hideTip()
     popupWindow.hide()
   }
 }
@@ -1413,6 +1464,7 @@ function setupIpcHandlers() {
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
     if (patch.shortcuts !== undefined) { registerShortcuts(); updateTrayMenu() }
+    if (patch.webEnabled !== undefined || patch.webRemote !== undefined || patch.webPort !== undefined) applyWeb()
     // [불변 원칙]: 팝업창은 최초 등장 시점에만 위젯 위치 기준으로 좌표를 설정합니다.
     // 사용자가 팝업창을 열고 조작(슬라이더 등)하는 동안에는 팝업 위치가 이동하면 안 되므로
     // 설정 변경(UPDATE_CONFIG) 시 positionPopupWindow()를 절대 호출하지 않습니다.
@@ -1539,7 +1591,8 @@ function setupIpcHandlers() {
     broadcastState()
     return getAppState()
   })
-  ipcMain.handle(IPC_CHANNELS.BEGIN_INTERACTION, (_event, kind: string, origin?: {x:number;y:number}) => beginWindowInteraction(kind, origin, true))
+  ipcMain.handle(IPC_CHANNELS.BEGIN_INTERACTION, (event, kind: string, origin?: {x:number;y:number}) =>
+    popupWindow && !popupWindow.isDestroyed() && event.sender === popupWindow.webContents ? beginPopupInteraction(kind, origin) : beginWindowInteraction(kind, origin, true))
   // 밀린 좌표는 마지막 것만 적용한다(창 이동 호출이 수 ms 걸려 큐가 쌓이는 것을 막음).
   let pendingMove: {x:number;y:number} | null = null
   ipcMain.on(IPC_CHANNELS.MOVE_INTERACTION, (_event, p?: {x:number;y:number}) => {
@@ -1551,25 +1604,13 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.END_INTERACTION, (_event, point?: {x:number;y:number}) => endInteraction?.(point))
   ipcMain.handle(IPC_CHANNELS.HIDE_WIDGET, () => {
     widgetManuallyHidden = true
+    hideTip()
     widgetWindow?.hide()
     hidePopup(true)
   })
 
-  ipcMain.handle(IPC_CHANNELS.SHOW_POPUP, async () => {
-    await showPopup(false, false)
-  })
-
   ipcMain.handle(IPC_CHANNELS.HIDE_POPUP, () => {
     hidePopup(true)
-  })
-
-  ipcMain.handle(IPC_CHANNELS.TOGGLE_POPUP, async () => {
-    await togglePopup()
-  })
-
-  ipcMain.handle(IPC_CHANNELS.LOCK_POPUP, () => {
-    isPopupLocked = true
-    cancelHidePopup()
   })
 
   ipcMain.handle(IPC_CHANNELS.UNLOCK_POPUP, () => {
@@ -1598,12 +1639,6 @@ function setupIpcHandlers() {
     else if (action === 'maximize') { if (win.isMaximized()) win.unmaximize(); else win.maximize() }
     else if (action === 'close') win.close()
   })
-  ipcMain.handle(IPC_CHANNELS.OPEN_SERVICE_PAGE, async (_event, accountId: string) => {
-    const url = servicePageUrl(String(accountId))
-    if (!url) return false
-    await shell.openExternal(url)
-    return true
-  })
   // 위젯 화면이 그린 트레이 아이콘(가장 빠듯한 남은 %). null이면 기본 아이콘으로 되돌린다.
   ipcMain.on(IPC_CHANNELS.SET_TRAY_IMAGE, (event, dataUrl: string | null, tooltip: string) => {
     if (!tray || tray.isDestroyed() || event.sender !== widgetWindow?.webContents) return
@@ -1622,7 +1657,7 @@ function setupIpcHandlers() {
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const r = await dialog.showSaveDialog(win!, { title: '설정 내보내기', defaultPath: `ai-usage-settings-${stamp}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
     if (r.canceled || !r.filePath) return { ok: false }
-    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, ...config } = accountStore.getConfig()
+    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, webPasswordHash: _p, ...config } = accountStore.getConfig()
     fs.writeFileSync(r.filePath, JSON.stringify({ app: 'ai-usage-widget', version: app.getVersion(), exportedAt: new Date().toISOString(), config, accounts: accountStore.getAccounts() }, null, 2), 'utf-8')
     return { ok: true, message: '설정을 파일로 내보냈어요.' }
   })
@@ -1652,6 +1687,18 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => { app.quit() })
   // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
+  // 웹 페이지 접속 암호: 정하면 해시만 저장하고, null이면 없앤다. 바뀌면 열려 있던 페이지는 다시 암호를 묻는다.
+  ipcMain.handle(IPC_CHANNELS.SET_WEB_PASSWORD, (_event, password: unknown) => {
+    if (password !== null && (typeof password !== 'string' || password.length < 4 || password.length > 128)) return false
+    const { webPasswordHash: _old, ...rest } = accountStore.getConfig()
+    accountStore.saveConfig(password === null ? rest : { ...rest, webPasswordHash: hashPassword(password) })
+    applyWeb()
+    broadcastState()
+    return true
+  })
+  ipcMain.handle(IPC_CHANNELS.OPEN_WEB, async () => {
+    if (web?.status.running) await shell.openExternal(`http://localhost:${accountStore.getConfig().webPort ?? DEFAULT_WEB_PORT}/`)
+  })
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
     if (typeof url !== 'string' || !/^https:\/\/github\.com\/(ngnearSINE\/ai-usage-widget|sallyHADEV\/ai-usage-taskbar-widget)(\/[\w./-]*)?$/.test(url)) return false
     await shell.openExternal(url); return true
@@ -1712,21 +1759,6 @@ function setupIpcHandlers() {
     }
     return null
   })
-  // 팝업 크기 조절: 화면 안 손잡이를 끄는 동안 커서 좌표로 창 크기를 바꾼다.
-  ipcMain.on(IPC_CHANNELS.POPUP_RESIZE, (event, phase: string, edge?: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win !== popupWindow) return
-    if (phase === 'start' && typeof edge === 'string' && /^(n|s|e|w|ne|nw|se|sw)$/.test(edge)) { popupResize = { edge, start: win.getBounds(), origin: screen.getCursorScreenPoint() }; return }
-    if (!popupResize) return
-    const p = screen.getCursorScreenPoint(), dx = p.x - popupResize.origin.x, dy = p.y - popupResize.origin.y, s = popupResize.start, e = popupResize.edge
-    let { x, y, width, height } = s
-    if (e.includes('e')) width = Math.max(280, s.width + dx)
-    if (e.includes('w')) { width = Math.max(280, s.width - dx); x = s.x + s.width - width }
-    if (e.includes('s')) height = Math.max(200, s.height + dy)
-    if (e.includes('n')) { height = Math.max(200, s.height - dy); y = s.y + s.height - height }
-    win.setBounds({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
-    if (phase === 'end') { popupResize = null; savePopupBounds(win.getBounds()) }
-  })
   ipcMain.handle(IPC_CHANNELS.SET_FOCUS, (_event, id: unknown) => setFocus(typeof id === 'string' ? id : null))
   ipcMain.handle(IPC_CHANNELS.CARD_MENU, (event, id: string) => showCardMenu(event.sender, String(id)))
   // Ctrl+두 번 클릭은 CLI, Shift+두 번 클릭은 데스크톱 앱. 못 찾으면 false.
@@ -1738,14 +1770,6 @@ function setupIpcHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.DETECT_LOCAL_APPS, async () => {
     return await LocalAppDetector.detectAll()
-  })
-
-  ipcMain.handle(IPC_CHANNELS.SCHEDULE_HIDE_POPUP, (_event, delayMs?: number) => {
-    scheduleHidePopup(delayMs || 400)
-  })
-
-  ipcMain.handle(IPC_CHANNELS.CANCEL_HIDE_POPUP, () => {
-    cancelHidePopup()
   })
 
   ipcMain.handle(IPC_CHANNELS.POPUP_READY, () => {
@@ -1765,7 +1789,7 @@ app.whenReady().then(() => {
   updater = new Updater({
     preview: isPreview,
     onChange: () => { broadcastState(); updateTrayMenu() },
-    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : `${accountStore.getConfig().updateHour ?? 3}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.`, () => openAboutWindow()),
+    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '창·위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : `${accountStore.getConfig().updateHour ?? 3}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.`, () => openAboutWindow()),
   })
   updater.schedule(accountStore.getConfig().autoUpdate !== false, accountStore.getConfig().updateHour ?? 3)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {
@@ -1777,7 +1801,6 @@ app.whenReady().then(() => {
   quotaManager.addProgressListener(() => broadcastState())
   quotaManager.addListener((usages) => {
     broadcastState()
-    void pushUsage(usages, accountStore.getConfig())
     // 미리보기는 합성 데이터라 실제 알림을 만들지 않는다(테스트 알림은 가능).
     if (!isPreview) {
       history?.record(usages)
@@ -1796,6 +1819,8 @@ app.whenReady().then(() => {
   createWidgetWindow()
   createPopupWindow()
   applySurface()
+  web = new WebServer(path.join(__dirname, '../dist'), getAppState, broadcastState)
+  applyWeb()
   createTray()
   registerShortcuts()
   if (!isPreview) applyAutoLaunch(accountStore.getConfig().openAtLogin ?? true)
@@ -1840,7 +1865,7 @@ app.on('window-all-closed', () => {
   // 트레이에 상주하므로 창이 닫혀도 앱 종료 방지
 })
 
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => { globalShortcut.unregisterAll(); web?.stop() })
 
 // 작업표시줄에 붙은 채로 끝내면 먼저 떼어 낸다. 예전에는 동기 실행으로 떼어 냈는데, 보조 프로그램이 이 창에 보내는
 // 메시지를 창 스레드가 막혀 받지 못해 종료가 수 초 멈췄다(실측 약 6초). 비동기로 떼어 내고 길어도 1.5초 뒤에는 끝낸다.
