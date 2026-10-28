@@ -1782,17 +1782,18 @@ function setupIpcHandlers() {
     const r = await dialog.showOpenDialog(win!, { title: typeof title === 'string' && title ? title.slice(0, 80) : '로그인 폴더 고르기', properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : r.filePaths[0] || null
   })
-  // 두 번째 계정: Codex·Grok CLI의 다른 로그인 폴더. 그 폴더에 로그인 파일이 있어야 추가한다.
+  // 두 번째 계정: Codex·Grok·Claude Code CLI의 다른 로그인 폴더. 그 폴더에 로그인 파일이 있어야 추가한다.
   ipcMain.handle(IPC_CHANNELS.ADD_HOME_ACCOUNT, (_event, provider: unknown, homeDir: unknown, name: unknown) => {
-    if (provider !== 'codex' && provider !== 'xai') return { ok: false, message: '지원하지 않는 서비스예요.' }
+    if (provider !== 'codex' && provider !== 'xai' && provider !== 'claude') return { ok: false, message: '지원하지 않는 서비스예요.' }
     if (typeof homeDir !== 'string' || !path.isAbsolute(homeDir) || !fs.existsSync(homeDir) || !fs.statSync(homeDir).isDirectory()) return { ok: false, message: '폴더를 찾을 수 없어요.' }
-    if (!fs.existsSync(path.join(homeDir, 'auth.json'))) {
-      const cmd = provider === 'codex' ? 'codex login' : 'grok login', env = provider === 'codex' ? 'CODEX_HOME' : 'GROK_HOME'
-      return { ok: false, message: `이 폴더에 로그인 정보가 없어요. 터미널에서 ${env}를 이 폴더로 두고 ${cmd}를 먼저 해 주세요.` }
+    const svc = { codex: { file: 'auth.json', env: 'CODEX_HOME', cmd: 'codex login', title: 'Codex' }, xai: { file: 'auth.json', env: 'GROK_HOME', cmd: 'grok login', title: 'Grok' },
+      claude: { file: '.credentials.json', env: 'CLAUDE_CONFIG_DIR', cmd: 'claude 로그인', title: 'Claude' } }[provider]
+    if (!fs.existsSync(path.join(homeDir, svc.file))) {
+      return { ok: false, message: `이 폴더에 로그인 정보가 없어요. 터미널에서 ${svc.env}를 이 폴더로 두고 ${svc.cmd}을 먼저 해 주세요.` }
     }
     const same = accountStore.getAccounts().find(a => a.provider === provider && path.resolve(a.homeDir || '') === path.resolve(homeDir))
     if (same) return { ok: false, message: `이미 '${same.name}' 카드로 추가돼 있어요.` }
-    const label = typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : `${provider === 'codex' ? 'Codex' : 'Grok'} · ${path.basename(homeDir)}`
+    const label = typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : `${svc.title} · ${path.basename(homeDir)}`
     accountStore.addAccount({ id: `${provider}-home-${Date.now()}`, name: label, provider, enabled: true, homeDir })
     broadcastState()
     if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())

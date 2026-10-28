@@ -13,7 +13,7 @@ export function syncClaudeOrgAccounts(accounts: AccountConfig[], seenList: strin
   let next = [...accounts], changed = false
   if (!orgs.length) return { accounts: next, seen: [...seen], changed }
   const free = (o: ClaudeOrgSeen) => !next.some(a => a.orgUuid === o.orgUuid)
-  const legacy = next.find(a => a.provider === 'claude' && !a.orgUuid && !a.customMock)
+  const legacy = next.find(a => a.provider === 'claude' && !a.orgUuid && !a.homeDir && !a.customMock)
   // CLI 로그인은 있는데 토큰이 만료돼 어느 조직인지 모르면, 조직이 여럿일 때 예전 카드를 엉뚱한 조직에 묶지 않도록 이번에는 미룬다
   // (CLI를 다시 쓰면 토큰이 새로 고쳐져 맞는 조직에 묶인다). 그동안 예전 카드는 전처럼 CLI 경로로 보인다.
   if (legacy && cliExpired && orgs.length > 1 && !orgs.some(o => o.fromCli)) return { accounts: next, seen: [...seen], changed }

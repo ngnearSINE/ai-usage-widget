@@ -15,6 +15,8 @@ export function staleNotice(u: Pick<AccountUsage, 'provider' | 'errorMessage' | 
     return { title: '인터넷에 연결되지 않았어요', reason: '서비스에 접속하지 못했어요.', fix: '인터넷이 다시 연결되면 저절로 새 값을 받아와요.' }
   if (has(msg, '429', '요청 제한', 'rate limit', '쉬는 중'))
     return { title: '서비스가 잠깐 조회를 막았어요', reason: '짧은 시간에 너무 자주 물어봐서 잠시 쉬라고 했어요.', fix: '몇 분 뒤 저절로 다시 시도해요. 기다리면 돼요.' }
+  if (u.provider === 'claude' && has(msg, '로그인 폴더'))
+    return { title: 'Claude 로그인을 찾지 못했어요', reason: '이 카드의 로그인 폴더에 Claude Code 로그인이 없거나 끝났어요.', fix: '명령 프롬프트에서 set CLAUDE_CONFIG_DIR=그 폴더 를 입력한 뒤 claude 를 실행해 다시 로그인해 주세요.' }
   if (u.provider === 'claude' && has(msg, '로그인 기간'))
     return { title: 'Claude 로그인 기간이 끝났어요', reason: 'Claude Code에 로그인한 지 한 달쯤 지나 다시 로그인해야 해요.', fix: '터미널(명령 프롬프트)에서 claude 를 실행하고 안내대로 다시 로그인해 주세요.' }
   if (u.provider === 'claude' && has(msg, 'CLI 토큰', 'CLI 로그인', 'OAuth 토큰', 'credentials', '로그인 세션 파일'))

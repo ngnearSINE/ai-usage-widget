@@ -43,7 +43,14 @@ let detected: DetectedApp[] | null = null
 let detecting = false
 let addingCustom = false
 let addingHome = false
-const homeDraft = { provider: 'codex' as 'codex' | 'xai', dir: '', name: '' }
+type HomeProvider = 'codex' | 'xai' | 'claude'
+const homeDraft = { provider: 'codex' as HomeProvider, dir: '', name: '' }
+// 서비스마다 로그인 폴더를 정하는 환경 변수와 로그인 명령, 이름 예시
+const HOME_SERVICES: Record<HomeProvider, { title: string; env: string; login: string; example: string }> = {
+  codex: { title: 'Codex', env: 'CODEX_HOME', login: '<code>codex login</code>을 실행하면', example: 'Codex 회사' },
+  xai: { title: 'Grok', env: 'GROK_HOME', login: '<code>grok login</code>을 실행하면', example: 'Grok 두 번째' },
+  claude: { title: 'Claude', env: 'CLAUDE_CONFIG_DIR', login: '<code>claude</code>를 실행해 로그인하면', example: 'Claude 회사' },
+}
 const customDraft = { name: '', p5: '100', pw: '100', color: '#8cbbff' }
 
 const number = (n: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(n) ? Math.min(max, Math.max(min, n!)) : fallback
@@ -345,14 +352,14 @@ function servicesTab(s: AppState) {
       <div class="field-row"><label class="field"><span>5시간 남은 양(%)</span><input type="number" class="text-input" data-custom="p5" min="0" max="100" value="${escapeText(customDraft.p5)}"></label><label class="field"><span>주간 남은 양(%)</span><input type="number" class="text-input" data-custom="pw" min="0" max="100" value="${escapeText(customDraft.pw)}"></label><label class="field narrow"><span>색</span><input type="color" class="color-input" data-custom="color" value="${hex(customDraft.color)}"></label></div>
       <div class="svc-actions"><button class="primary-button" data-custom-save>추가</button><button class="ghost-button" data-custom-cancel>취소</button></div>
     </div>` : `<button class="secondary-button" data-custom-open>${icon('plus')}숫자를 직접 넣는 카드 추가</button>`
-  const env = homeDraft.provider === 'codex' ? 'CODEX_HOME' : 'GROK_HOME', cli = homeDraft.provider === 'codex' ? 'codex' : 'grok'
+  const hs = HOME_SERVICES[homeDraft.provider]
   const home = addingHome ? `<div class="custom-form">
-      <div class="field"><span>서비스</span><div class="segmented" role="group" aria-label="서비스">${([['codex', 'Codex'], ['xai', 'Grok']] as const).map(([v, t]) => `<button data-home-provider="${v}" aria-pressed="${homeDraft.provider === v}">${t}</button>`).join('')}</div></div>
+      <div class="field"><span>서비스</span><div class="segmented" role="group" aria-label="서비스">${(Object.keys(HOME_SERVICES) as HomeProvider[]).map(v => `<button data-home-provider="${v}" aria-pressed="${homeDraft.provider === v}">${HOME_SERVICES[v].title}</button>`).join('')}</div></div>
       <div class="field"><span>로그인 폴더</span><div class="field-inline"><input type="text" class="text-input" data-home-dir readonly placeholder="폴더를 고르세요" value="${escapeText(homeDraft.dir)}"><button class="ghost-button" data-home-pick>폴더 고르기</button></div></div>
-      <label class="field"><span>이름(선택)</span><input type="text" class="text-input" data-home-name maxlength="60" placeholder="예: ${homeDraft.provider === 'codex' ? 'Codex 회사' : 'Grok 두 번째'}" value="${escapeText(homeDraft.name)}"></label>
-      ${hint(`먼저 그 폴더로 로그인해 두세요. 명령 프롬프트에서 <code>set ${env}=폴더 경로</code> 다음에 <code>${cli} login</code>을 실행하면 돼요. 평소 쓰는 계정과 따로 로그인돼요.`)}
+      <label class="field"><span>이름(선택)</span><input type="text" class="text-input" data-home-name maxlength="60" placeholder="예: ${hs.example}" value="${escapeText(homeDraft.name)}"></label>
+      ${hint(`먼저 그 폴더로 로그인해 두세요. 명령 프롬프트에서 <code>set ${hs.env}=폴더 경로</code> 다음에 ${hs.login} 돼요. 평소 쓰는 계정과 따로 로그인돼요.`)}
       <div class="svc-actions"><button class="primary-button" data-home-save>추가</button><button class="ghost-button" data-home-cancel>취소</button></div>
-    </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}다른 로그인 폴더의 계정 추가 (Codex·Grok)</button>`
+    </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}다른 로그인 폴더의 계정 추가 (Codex·Grok·Claude)</button>`
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
     + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 창이나 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
     + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 화면에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
@@ -719,7 +726,7 @@ function bindEvents() {
   // 다른 로그인 폴더의 계정
   onClickOf('[data-home-open]', () => { addingHome = true; renderSettings(state, true) })
   onClickOf('[data-home-cancel]', () => { addingHome = false; renderSettings(state, true) })
-  body.querySelectorAll<HTMLElement>('[data-home-provider]').forEach(el => el.onclick = () => { homeDraft.provider = el.dataset.homeProvider as 'codex' | 'xai'; renderSettings(state, true) })
+  body.querySelectorAll<HTMLElement>('[data-home-provider]').forEach(el => el.onclick = () => { homeDraft.provider = el.dataset.homeProvider as HomeProvider; renderSettings(state, true) })
   onClickOf('[data-home-pick]', async () => { const dir = await window.api.pickFolder(); if (dir) { homeDraft.dir = dir; renderSettings(state, true) } })
   const homeName = body.querySelector<HTMLInputElement>('[data-home-name]')
   if (homeName) homeName.oninput = () => { homeDraft.name = homeName.value }
