@@ -903,6 +903,12 @@ let interactionMove: ((p: {x:number;y:number}) => void) | null = null
 /** 작업표시줄 안 끌기에서 창으로 바뀌는 높이: 작업표시줄 위쪽 경계에서 이만큼 올라가면 창이 된다. */
 const SLIDE_ESCAPE_PX = 40
 
+/** 크기는 그대로 두고 옮긴다. 배율이 100%가 아닌 화면에서 setPosition은 부를 때마다 반올림 오차로 창을 1px씩 키워
+ *  끄는 동안 창이 계속 커졌다(Electron, 실측 125%: 150번 옮기면 248×336 → 443×473). */
+function moveKeepingSize(win: BrowserWindow, x: number, y: number, size: { width: number; height: number }) {
+  win.setBounds({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height })
+}
+
 async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:number}, rendererDriven = false) {
   if (interacting || !widgetWindow || widgetWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
   interacting = true
@@ -994,7 +1000,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         slideTo(slide.offset)
         return
       }
-      win.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false)
+      moveKeepingSize(win, start.x + dx, start.y + dy, start)
       const display = screen.getDisplayNearestPoint(p)
       const target = dockSupported && isDockTarget(p, display.bounds, display.workArea)
       if (!target) leftDockArea = true
@@ -1038,7 +1044,9 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         showDockPreview(false)
       } else {
         showDockPreview(false)
-        const bounds = fitWindow(win.getBounds(), display.workArea)
+        // 옮기기만 했으면 끄는 동안 반올림으로 1~2px 흔들린 크기를 저장하지 않고 처음 크기로 돌려 둔다.
+        const now = win.getBounds()
+        const bounds = fitWindow(kind === 'move' ? { ...now, width: start.width, height: start.height } : now, display.workArea)
         win.setBounds(bounds)
         accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: bounds })
         rememberLayout()
@@ -1139,7 +1147,7 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
     if (win.isDestroyed()) return
     last = p
     const dx = p.x - origin.x, dy = p.y - origin.y
-    if (kind === 'move') { win.setPosition(Math.round(start.x + dx), Math.round(start.y + dy), false); return }
+    if (kind === 'move') { moveKeepingSize(win, start.x + dx, start.y + dy, start); return }
     const edge = kind.slice(7)
     let { x, y, width, height } = start
     if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
@@ -1158,7 +1166,8 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
     endInteraction = null
     interactionMove = null
     if (win.isDestroyed()) return
-    const bounds = fitWindow(win.getBounds(), screen.getDisplayNearestPoint(last).workArea)
+    const now = win.getBounds()
+    const bounds = fitWindow(kind === 'move' ? { ...now, width: start.width, height: start.height } : now, screen.getDisplayNearestPoint(last).workArea)
     win.setBounds(bounds)
     savePopupBounds(bounds)
   }
