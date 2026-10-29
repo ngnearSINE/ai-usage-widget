@@ -4,7 +4,7 @@ import { barColor, gradientColor, normalizeStops } from '../../common/bar-color.
 import { initCardGlow } from './card-glow.js'
 import { displayOf } from '../../common/display-options.js'
 import { visibleUsages } from '../../common/widget-layout.js'
-import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
+import { chooseLayout, DESIGNS, firstWindowLabel, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext, isOutOfDate, PENDING_TIP } from './usage-views.js'
 import { updateMarkup } from '../dom-update.js'
@@ -108,7 +108,7 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, stops: normalizeStops(config.barStops), warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
     const value = available && q ? clamp(showUsed ? q.percentUsed : q.percentLeft) : null
-    const name = i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
+    const name = i === 0 ? firstWindowLabel(u.primaryKind) : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
     const label = `${name} ${showUsed ? '사용한 양' : '남은 양'}`
     // 줄마다 기본 색(--row-base: 서비스 평소 색과 그 흐린 색)에서 경고색으로 바뀐다(CSS에서 줄별로 정함).
     const fill = available && q ? barColor(clamp(q.percentLeft), 'var(--row-base)', colorOpts) : 'var(--row-base)'
@@ -419,8 +419,8 @@ function bindDelegated(container: HTMLElement) {
     if (src) {
       e.stopPropagation()
       const id = src.dataset.src!, now = lastState.config.valueSource?.[id] || 'weekly'
-      const monthly = lastState.usages.find(u => u.id === id)?.primaryKind === 'monthly'
-      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: k === '5h' && monthly ? '월간' : SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
+      const kind = lastState.usages.find(u => u.id === id)?.primaryKind
+      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: k === '5h' ? firstWindowLabel(kind) : SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
         { key: 'all', label: '모든 카드에 같은 기준 적용', run: () => { const all: Record<string, ValueSource> = {}; for (const u of lastState.usages) all[u.id] = now; void update({ valueSource: all }) } }])
       return
     }

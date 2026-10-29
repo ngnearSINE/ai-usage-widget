@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, powerMonitor, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
 import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
@@ -17,7 +17,10 @@ import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
 import { Updater } from './updater.js'
-import { setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
+import { cliConfigDir, setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
+import { CostScanner, type CostSource } from '../services/cost-scanner.js'
+import { ModelPrices } from '../services/model-prices.js'
+import type { CostReport } from '../common/cost.js'
 import { findApp, findCli, openApp, openCli, warmLaunchers } from './service-launch.js'
 import { previewSpread, previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
@@ -25,7 +28,7 @@ import { UsageNotifier } from './notifier.js'
 import { UsageHistory } from './history-store.js'
 import { previewHistory } from '../common/history.js'
 import { previewDaily } from '../common/stats.js'
-import { DESIGNS } from '../common/usage-model.js'
+import { DESIGNS, firstWindowLabel } from '../common/usage-model.js'
 import { SurfaceWindow, surfaceKind } from './surface-window.js'
 import { WebServer, DEFAULT_WEB_PORT, hashPassword } from './web-server.js'
 
@@ -83,6 +86,22 @@ function growToFitCards() {
   rememberLayout()
 }
 let history: UsageHistory | null = null
+let costScanner: CostScanner | null = null
+let modelPrices: ModelPrices | null = null
+
+/** 비용 환산에 읽을 기록 폴더: 기본 로그인 폴더와 '다른 로그인 폴더' 계정의 폴더. */
+function costRoots(): Array<{ source: CostSource; dir: string }> {
+  const accs = accountStore.getAccounts()
+  const claude = [cliConfigDir(), ...accs.filter(a => a.provider === 'claude' && a.homeDir).map(a => a.homeDir!)]
+  const codex = [process.env.CODEX_HOME || path.join(app.getPath('home'), '.codex'), ...accs.filter(a => a.provider === 'codex' && a.homeDir).map(a => a.homeDir!)]
+  const uniq = (xs: string[]) => [...new Set(xs.map(x => path.resolve(x)))]
+  return [...uniq(claude).map(d => ({ source: 'claude' as const, dir: path.join(d, 'projects') })),
+    ...uniq(codex).flatMap(d => ['sessions', 'archived_sessions'].map(s => ({ source: 'codex' as const, dir: path.join(d, s) })))]
+}
+
+function costReport(): CostReport {
+  return { ...costScanner!.progress, prices: modelPrices!.table, pricesAt: modelPrices!.updatedAt, daily: costScanner!.totals() }
+}
 let web: WebServer | null = null
 let shortcutErrors: string[] = []
 
@@ -297,7 +316,7 @@ async function showCardMenu(sender: Electron.WebContents, id: string) {
     { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
     ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
     { type: 'separator' },
-    { label: '큰 숫자 기준', submenu: ([['weekly', '주간'], ['5h', usage?.primaryKind === 'monthly' ? '월간' : '5시간'], ['tight', '빠듯한 쪽']] as const).map(([k, label]) => ({
+    { label: '큰 숫자 기준', submenu: ([['weekly', '주간'], ['5h', firstWindowLabel(usage?.primaryKind)], ['tight', '빠듯한 쪽']] as const).map(([k, label]) => ({
       label, type: 'radio' as const, checked: src === k, click: () => save({ valueSource: { ...accountStore.getConfig().valueSource, [id]: k } }) })) },
     { label: '보여 줄 정보', submenu: DISPLAY_KEYS.map(([k, label]) => ({ label: k === 'showUsed' ? '쓴 양으로 표시' : k === 'showReset' ? '리셋까지 남은 시간' : label, type: 'checkbox' as const, checked: disp[k],
       click: (item: Electron.MenuItem) => save(setDisplay(accountStore.getConfig(), id, k, item.checked)) })) },
@@ -319,6 +338,8 @@ function servicePageUrl(accountId: string) {
   if (key.includes('claude')) return 'https://claude.ai/settings/usage'
   if (key.includes('codex') || key.includes('openai') || key.includes('gpt')) return 'https://chatgpt.com/codex/settings/usage'
   if (key.includes('xai') || key.includes('grok')) return 'https://grok.com/'
+  if (key.includes('cursor')) return 'https://cursor.com/dashboard?tab=usage'
+  if (key.includes('copilot')) return 'https://github.com/settings/copilot/features'
   return null
 }
 
@@ -1788,6 +1809,16 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
   ipcMain.handle(IPC_CHANNELS.OPEN_STATS, (_event, id: unknown) => openStatsWindow(typeof id === 'string' ? id : undefined))
   ipcMain.handle(IPC_CHANNELS.GET_DAILY, () => history?.daily() ?? {})
+  // API 요금 환산: 새로 덧붙은 기록을 읽기 시작하고(백그라운드) 지금까지의 집계를 바로 돌려준다. 통계 창이 읽는 중이면 다시 묻는다.
+  ipcMain.handle(IPC_CHANNELS.GET_COSTS, async () => {
+    costScanner ||= new CostScanner(path.join(app.getPath('userData'), 'cost-cache.json'), costRoots)
+    modelPrices ||= new ModelPrices(path.join(app.getPath('userData'), 'model-prices.json'))
+    const first = !Object.keys(modelPrices.table).length
+    const pricing = modelPrices.refresh()
+    if (first) await pricing // 처음엔 가격표를 받은 뒤에 답한다
+    void costScanner.scan()
+    return costReport()
+  })
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => { app.quit() })
   // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
   // 웹 페이지 접속 암호: 정하면 해시만 저장하고, null이면 없앤다. 바뀌면 열려 있던 페이지는 다시 암호를 묻는다.
@@ -1951,7 +1982,16 @@ app.whenReady().then(() => {
   registerShortcuts()
   if (!isPreview) applyAutoLaunch(accountStore.getConfig().openAtLogin ?? true)
 
-  if (!isPreview) quotaManager.startPolling(accountStore.getConfig().refreshIntervalSec)
+  if (!isPreview) {
+    // 적응형 조회: 화면이 잠겼거나 10분 넘게 입력이 없으면 느리게, 잠금·절전에서 돌아오면 바로 묻는다.
+    let screenLocked = false
+    quotaManager.setIdleProbe(() => screenLocked || powerMonitor.getSystemIdleTime() >= 600)
+    powerMonitor.on('lock-screen', () => { screenLocked = true })
+    powerMonitor.on('unlock-screen', () => { screenLocked = false; quotaManager.wake() })
+    // 절전에서 깨면 네트워크가 붙을 때까지 잠깐 기다렸다 묻는다.
+    powerMonitor.on('resume', () => { setTimeout(() => quotaManager.wake(), 5000) })
+    quotaManager.startPolling(accountStore.getConfig().refreshIntervalSec)
+  }
 
   startFullscreenWatch()
 

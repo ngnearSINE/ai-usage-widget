@@ -58,6 +58,21 @@ const GENERIC_AI_SVG = `
 `
 
 // 6. Grok (xAI) — 원과 사선으로 그린 단순화한 표식
+// Cursor: 정육면체 윤곽(흑백 브랜드라 글자색을 따른다)
+const CURSOR_SVG = `
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" width="16" height="16">
+  <path d="M12 2.5 20.5 7.3v9.4L12 21.5 3.5 16.7V7.3z"/>
+  <path d="M3.5 7.3 12 12l8.5-4.7M12 12v9.5"/>
+</svg>`
+
+// GitHub Copilot: 고글 얼굴
+const COPILOT_SVG = `
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+  <path d="M4 11.5c-1.2.6-2 1.6-2 3v2.2c0 1 .6 1.9 1.5 2.3C5.8 20.2 8.8 21 12 21s6.2-.8 8.5-2c.9-.4 1.5-1.3 1.5-2.3v-2.2c0-1.4-.8-2.4-2-3"/>
+  <path d="M6 9.5C6 6 8.2 4 12 4s6 2 6 5.5-1.6 4-3.6 4c-1.4 0-2.4-.7-2.4-2 0 1.3-1 2-2.4 2C7.6 13.5 6 13 6 9.5z"/>
+  <path d="M9.5 16.5v1.5M14.5 16.5v1.5"/>
+</svg>`
+
 const GROK_SVG = `
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" width="16" height="16">
   <path d="M17.5 5.2A8 8 0 1 0 19.6 15"/>
@@ -141,6 +156,16 @@ export function getAiBrand(provider: string, accountName: string = ''): AiBrandI
       bgMono: '#374151',
       colorMono: '#D1D5DB'
     }
+  }
+
+  // Cursor
+  if (normProvider === 'cursor' || normName.includes('cursor')) {
+    return { name: 'Cursor', svg: CURSOR_SVG, brandColor: '#9CA3AF', bgMono: '#374151', colorMono: '#D1D5DB' }
+  }
+
+  // GitHub Copilot
+  if (normProvider === 'copilot' || normName.includes('copilot')) {
+    return { name: 'GitHub Copilot', svg: COPILOT_SVG, brandColor: '#8B949E', bgMono: '#374151', colorMono: '#D1D5DB' }
   }
 
   // 5. Grok (xAI)

@@ -25,6 +25,14 @@ export function staleNotice(u: Pick<AccountUsage, 'provider' | 'errorMessage' | 
     return { title: 'Claude 앱 로그인을 찾지 못했어요', reason: '이 계정으로 로그인된 Claude 앱이나 Claude Code를 찾지 못했어요.', fix: 'Claude 앱을 열어 이 계정으로 한 번 전환하거나, 터미널에서 claude 를 실행해 주세요.' }
   if (u.provider === 'xai' && has(msg, '로그인', 'auth', '만료', '401'))
     return { title: 'Grok 로그인이 끝났어요', reason: 'Grok 로그인 시간이 지났어요.', fix: '터미널에서 grok 을 한 번 실행하면 다시 연결돼요.' }
+  if (u.provider === 'google' && has(msg, '개인 Google 계정'))
+    return { title: 'Gemini CLI 한도를 볼 수 없는 계정이에요', reason: 'Google이 2026년 6월 18일부터 개인 계정(AI Pro·Ultra 포함)의 Gemini CLI 사용을 끝냈어요.', fix: 'Antigravity 카드로 사용량을 확인해 주세요. 회사(Workspace)·Code Assist Standard 계정이면 그 계정으로 gemini에 다시 로그인하면 보여요.' }
+  if (u.provider === 'google' && has(msg, '로그인', '만료', '401'))
+    return { title: 'Gemini CLI 로그인이 끝났어요', reason: 'Gemini CLI 로그인을 찾지 못했거나 만료됐어요.', fix: '터미널에서 gemini 를 한 번 실행해 로그인해 주세요.' }
+  if (u.provider === 'cursor' && has(msg, '로그인', '만료', '401'))
+    return { title: 'Cursor 로그인이 끝났어요', reason: 'Cursor 앱의 로그인을 찾지 못했거나 만료됐어요.', fix: 'Cursor 앱을 열어 로그인해 주세요.' }
+  if (u.provider === 'copilot' && has(msg, '로그인', '만료', '401'))
+    return { title: 'GitHub 로그인이 필요해요', reason: 'Copilot을 확인할 GitHub 로그인을 찾지 못했거나 만료됐어요.', fix: '편집기에서 Copilot에 로그인하거나 터미널에서 gh auth login 을 해 주세요.' }
   if (u.provider === 'codex' && has(msg, '실행 파일', 'not found', '찾을 수 없'))
     return { title: 'Codex를 찾지 못했어요', reason: '이 PC에서 Codex 프로그램을 찾지 못했어요.', fix: 'Codex 앱이나 Codex CLI를 설치하고 로그인해 주세요.' }
   if (u.provider === 'codex' && has(msg, '로그인', 'auth', '401', 'login'))

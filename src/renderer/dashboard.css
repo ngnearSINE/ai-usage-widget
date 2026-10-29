@@ -415,6 +415,17 @@ body.is-settings-view #app { display:block; height:100vh; }
 .hist-legend { display:flex; gap:16px; margin-top:8px; font-size:11px; color:var(--muted); }
 .hist-legend i { display:inline-block; width:14px; height:2px; margin-right:6px; vertical-align:3px; }
 .hist-legend i.dash { height:0; border-top:2px dashed; }
+/* API 요금 환산 */
+.cost-tiles { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
+.cost-tile { border:1px solid var(--line); border-radius:8px; background:var(--card-bg); padding:10px 12px; display:flex; flex-direction:column; gap:2px; }
+.cost-tile span { font-size:11px; color:var(--muted); }
+.cost-tile b { font-size:18px; font-weight:650; font-variant-numeric:tabular-nums; }
+.cost-table { width:100%; border-collapse:collapse; margin:6px 0 4px; font-size:11px; }
+.cost-table th { text-align:left; font-weight:500; color:var(--muted); padding:4px 6px; border-bottom:1px solid var(--line); }
+.cost-table td { padding:4px 6px; border-bottom:1px solid color-mix(in srgb,var(--line) 50%,transparent); }
+.cost-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+.cost-table .dim { color:var(--dim); }
+@media (max-width:520px) { .cost-tiles { grid-template-columns:repeat(2, minmax(0,1fr)); } }
 
 /* 클릭 통과 잠금 표시 */
 .lock-badge { display:inline-flex; align-items:center; gap:3px; color:var(--accent); }

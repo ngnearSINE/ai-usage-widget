@@ -4,11 +4,13 @@ import type { AccountUsage, QuotaInfo } from './types.js'
 export const WINDOW_5H = 5 * 3600e3
 export const WINDOW_7D = 7 * 86400e3
 export const WINDOW_30D = 30 * 86400e3
-/** 한도의 실제 주기. 첫 번째 칸(key '5h')은 서비스에 따라 5시간 또는 월간이다. */
-export type WindowPeriod = '5h' | 'weekly' | 'monthly'
-export const PERIOD_LEN: Record<WindowPeriod, number> = { '5h': WINDOW_5H, weekly: WINDOW_7D, monthly: WINDOW_30D }
+/** 한도의 실제 주기. 첫 번째 칸(key '5h')은 서비스에 따라 5시간·일간·월간이다. */
+export type WindowPeriod = '5h' | 'daily' | 'weekly' | 'monthly'
+export const PERIOD_LEN: Record<WindowPeriod, number> = { '5h': WINDOW_5H, daily: 86400e3, weekly: WINDOW_7D, monthly: WINDOW_30D }
 // 짧은 이름도 한 글자로 줄이지 않는다('주' 한 글자는 잘린 글자처럼 보인다).
-const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': ['5시간', '5h'], weekly: ['주간', '주간'], monthly: ['월간', '월간'] }
+const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': ['5시간', '5h'], daily: ['일간', '일간'], weekly: ['주간', '주간'], monthly: ['월간', '월간'] }
+/** 첫 번째 칸의 이름: 5시간, 또는 그 서비스의 주기(월간·일간). */
+export const firstWindowLabel = (kind?: 'monthly' | 'daily') => kind === 'monthly' ? '월간' : kind === 'daily' ? '일간' : '5시간'
 export type DesignId = 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
 export type ValueSource = 'weekly' | '5h' | 'tight'
 export const DESIGNS: Array<[DesignId, string, string]> = [
@@ -72,7 +74,7 @@ export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now()
 
 export function serviceModel(u: AccountUsage, now = Date.now()): ServiceModel {
   // 주간 전용 계정은 기본 한도가 곧 주간 한도다.
-  const w5 = u.isWeeklyOnly ? undefined : quotaWindow(u.primaryQuota, '5h', now, u.primaryKind === 'monthly' ? 'monthly' : '5h')
+  const w5 = u.isWeeklyOnly ? undefined : quotaWindow(u.primaryQuota, '5h', now, u.primaryKind || '5h')
   const ww = u.isWeeklyOnly ? quotaWindow(u.primaryQuota, 'weekly', now) : u.weeklyQuota ? quotaWindow(u.weeklyQuota, 'weekly', now) : undefined
   const scoped = (u.scopedQuotas || []).map(s => ({ ...quotaWindow(s.quota, 'weekly', now), label: s.label, short: s.label }))
   return { id: u.id, name: u.name, provider: u.provider, brand: u.brandColor, available: ['ready', 'stale'].includes(u.status), w5, ww, scoped, bar: u.barColor }

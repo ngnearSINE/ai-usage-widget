@@ -1,7 +1,7 @@
 export type ThemeType = '1a' | '1b' | '1c' | '1d'
 export type IconStyle = 'color' | 'monochrome'
 export type PositionAlignment = 'right' | 'left'
-export type ProviderType = 'google' | 'claude' | 'mistral' | 'xai' | 'openai' | 'antigravity' | 'codex' | 'custom'
+export type ProviderType = 'google' | 'claude' | 'mistral' | 'xai' | 'openai' | 'antigravity' | 'codex' | 'cursor' | 'copilot' | 'custom'
 
 export interface QuotaInfo {
   remainingFraction: number // 0.0 ~ 1.0 (남은 비율)
@@ -40,7 +40,7 @@ export interface AccountUsage {
   primaryQuota: QuotaInfo // 5시간 또는 기본 한도
   weeklyQuota?: QuotaInfo // 주간 한도
   isWeeklyOnly?: boolean // ChatGPT Pro 등 5시간 세션 쿼터 없이 1주일 쿼터만 존재하는 계정 여부
-  primaryKind?: 'monthly' // 기본 한도가 5시간이 아니라 월간 크레딧인 계정(Grok)
+  primaryKind?: 'monthly' | 'daily' // 기본 한도가 5시간이 아닌 계정: 월간(Grok·Cursor·Copilot), 일간(Gemini CLI)
   scopedQuotas?: Array<{ label: string; quota: QuotaInfo }> // 모델 전용 주간 한도(예: Claude 팀의 Fable). 주간 한도 안의 별도 몫
   barColor?: string // 계정 설정의 평소 색을 CSS 색으로 푼 값(ownColor). 없으면 서비스 색
   scopedHidden?: string[] // 계정 설정으로 숨긴 모델 전용 한도 이름(설정 화면이 스위치를 보여 주는 데 쓴다)
