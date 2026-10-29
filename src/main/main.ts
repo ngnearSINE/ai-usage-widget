@@ -304,6 +304,7 @@ async function showCardMenu(sender: Electron.WebContents, id: string) {
     { type: 'separator' },
     { label: '앞으로 옮기기', enabled: index > 0, click: () => { accountStore.reorderAccount(id, 'up'); broadcastState() } },
     { label: '뒤로 옮기기', enabled: index < accounts.length - 1, click: () => { accountStore.reorderAccount(id, 'down'); broadcastState() } },
+    { label: '카드 위치 고정', type: 'checkbox', checked: !!cfg.lockCards, click: item => save({ lockCards: item.checked }) },
     { type: 'separator' },
     { label: '작업 표시줄에서만 숨기기', type: 'checkbox', visible: dockSupported, checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
     { label: '이 카드 숨기기', click: () => { accountStore.hideAccount(id, true); broadcastState() } },
@@ -1858,6 +1859,7 @@ function setupIpcHandlers() {
       : {
           label: String(it.label).slice(0, 80),
           ...(typeof it.on === 'boolean' ? { type: 'radio' as const, checked: it.on } : {}),
+          ...(typeof it.check === 'boolean' ? { type: 'checkbox' as const, checked: it.check } : {}),
           ...(typeof it.accel === 'string' ? { accelerator: it.accel, registerAccelerator: false } : {}),
           click: () => { chosen = String(it.key) },
         })

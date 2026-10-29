@@ -24,7 +24,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   refreshIntervalSec: num(15, 3600),
   showWeeklyLimit: bool, colorByUsage: bool, showUsedPercent: bool, alwaysOnTop: bool, showCardBackground: bool,
   openAtLogin: bool, doubleClickToOpenPopup: bool, hideDisconnected: bool, webEnabled: bool, webRemote: bool, showResetTime: bool,
-  showServiceName: bool, useAcrylic: bool, showPace: bool, sortLowFirst: bool, notifyEnabled: bool, notifyLow: bool,
+  showServiceName: bool, useAcrylic: bool, showPace: bool, sortLowFirst: bool, lockCards: bool, notifyEnabled: bool, notifyLow: bool,
   notifyPace: bool, notifyReset: bool, notifyUnused: bool, trayShowNumber: bool, clickThrough: bool, rememberPerMonitor: bool,
   placementMode: oneOf('docked', 'floating'),
   colorMode: oneOf('step', 'smooth'),

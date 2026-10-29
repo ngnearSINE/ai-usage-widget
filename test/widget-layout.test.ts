@@ -94,3 +94,9 @@ test('어림값으로 바뀌면 마지막 실측을 갱신 지연으로 유지�
   assert.equal(kept.primaryQuota.percentLeft, real.primaryQuota.percentLeft)
   assert.equal(retainedUsage(est, undefined), est, '실측이 없으면 어림값이라도 보여 준다')
 })
+
+test('카드 위치 고정은 참·거짓만 받는다', async () => {
+  const { sanitizeConfigPatch } = await import('../src/common/config-schema.js')
+  assert.deepEqual(sanitizeConfigPatch({ lockCards: true }), { lockCards: true })
+  assert.deepEqual(sanitizeConfigPatch({ lockCards: 'yes' }), {})
+})

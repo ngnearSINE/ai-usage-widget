@@ -132,6 +132,7 @@ export interface WidgetConfig {
   critPercent?: number // 남은 양이 이 값 이하이면 위험 (기본 10)
   showPace?: boolean // '예상 시간': 페이스 눈금·속도 칩·소진 예상 문구
   sortLowFirst?: boolean // 여유가 적은 서비스를 앞으로
+  lockCards?: boolean // 카드 위치 고정: 카드를 끌면 순서 대신 창을 옮긴다 (기본 끔)
   notifyEnabled?: boolean // Windows 알림 전체 (기본 켬)
   notifyLow?: boolean // 주의·위험 기준 도달 알림 (기본 켬)
   notifyPace?: boolean // 리셋 전 소진 예상 알림 (기본 켬)
@@ -159,7 +160,7 @@ export interface UpdateState {
 }
 
 /** 화면이 띄워 달라고 보내는 메뉴 항목(메인이 Windows 기본 메뉴로 그린다). on이 있으면 고르는 항목, accel은 오른쪽 안내. */
-export type MenuItemSpec = { key: string; label: string; on?: boolean; accel?: string } | '-'
+export type MenuItemSpec = { key: string; label: string; on?: boolean; check?: boolean; accel?: string } | '-' // on: 라디오(하나만 고름), check: 켜고 끄는 체크
 
 /** 웹 페이지 서버 상태: 열렸는지, 접속 주소, 열지 못한 이유 */
 export interface WebStatus { running: boolean; urls: string[]; error?: string }

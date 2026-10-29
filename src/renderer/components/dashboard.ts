@@ -349,9 +349,9 @@ export function updatePill(state: AppState) {
 }
 
 /** 단추 아래에 메뉴를 띄운다. Windows 기본 메뉴라서 창이 작아도 창 밖까지 펼쳐진다. */
-function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string; accel?: string; on?: boolean; run: () => void } | '-'>) {
+function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string; accel?: string; on?: boolean; check?: boolean; run: () => void } | '-'>) {
   const r = anchor.getBoundingClientRect()
-  void window.api.popupMenu(items.map(it => it === '-' ? '-' : { key: it.key, label: it.label, on: it.on, accel: it.accel }), { x: Math.round(r.left), y: Math.round(r.bottom + 2) })
+  void window.api.popupMenu(items.map(it => it === '-' ? '-' : { key: it.key, label: it.label, on: it.on, check: it.check, accel: it.accel }), { x: Math.round(r.left), y: Math.round(r.bottom + 2) })
     .then(key => { const it = items.find(i => i !== '-' && i.key === key); if (it && it !== '-') it.run() })
 }
 
@@ -390,6 +390,7 @@ function bindDelegated(container: HTMLElement) {
         { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
         { key: 'stats', label: '사용량 통계', run: () => { void window.api.openStats() } },
         { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
+        { key: 'lock-cards', label: '카드 위치 고정', check: !!lastState.config.lockCards, run: () => { const on = !lastState.config.lockCards; void update({ lockCards: on }); notify(on ? '카드 위치를 고정했어요. 카드를 끌면 창이 움직여요.' : '카드를 끌어 순서를 바꿀 수 있어요.') } },
         { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
         '-',
         { key: 'quit', label: '종료', run: () => { void window.api.quitApp() } }])
@@ -429,8 +430,8 @@ function bindDelegated(container: HTMLElement) {
     if (web) return
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
     if (!card || e.button !== 0 || (e.target as HTMLElement).closest('button') || card.closest('.pv-win')) return
-    // 보이는 카드가 한 장이면(집중 모드 포함) 바꿀 순서가 없으니 제목줄처럼 창 전체를 옮긴다.
-    if (lastState?.focus || container.querySelectorAll('.service-grid [data-card]').length <= 1) { startWindowGesture(card, e, 'move'); return }
+    // 보이는 카드가 한 장이면(집중 모드 포함) 바꿀 순서가 없고, 카드 위치를 고정했으면 순서를 바꾸지 않으니 제목줄처럼 창 전체를 옮긴다.
+    if (lastState?.focus || lastState?.config.lockCards || container.querySelectorAll('.service-grid [data-card]').length <= 1) { startWindowGesture(card, e, 'move'); return }
     startCardReorder(card, e)
   })
   // 카드 우클릭: 그 서비스의 메뉴(메인 프로세스의 기본 메뉴라 작은 위젯에서도 잘리지 않는다)
