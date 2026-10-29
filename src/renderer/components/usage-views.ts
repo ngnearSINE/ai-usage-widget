@@ -1,7 +1,7 @@
 import type { AccountUsage, HistoryPoint, WidgetConfig } from '../../common/types.js'
 import {
   cardBody, fitDesign, lowestLeft, fmtDuration, fmtDurationShort, formOf, paceWarning, pickWindow, richScale, richTier, serviceModel, severity, unusedWeekly, windowsOf, worstWindow,
-  type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
+  firstWindowLabel, type DesignId, type QuotaWindow, type ServiceModel, type ValueSource, TIER_NEED } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
 import { barColor, type ColorMode, normalizeStops, gradientColor, type BarStop } from '../../common/bar-color.js'
 import { displayOf } from '../../common/display-options.js'
@@ -246,7 +246,7 @@ function timeline(m: ServiceModel, x: ViewContext, b: { w: number; h: number; o:
   }
   const names = (w: QuotaWindow, vert: boolean) => w.period === 'weekly' && !vert ? '주간 (7일)' : w.label
   // 눈금: 5시간은 1시간, 주간은 하루, 월간은 한 주 간격.
-  const ticks = (w: QuotaWindow) => w.period === 'weekly' ? 7 : w.period === 'monthly' ? 4 : 5
+  const ticks = (w: QuotaWindow) => w.period === 'weekly' ? 7 : w.period === 'monthly' ? 4 : w.period === 'daily' ? 4 : 5
   const body = v ? ws.map((w, i) => lane(14 + i * 48, 22, 200, w, ticks(w), names(w, true), true)).join('')
     : ws.map((w, i) => lane(4, 20 + i * 58, 240, w, ticks(w), names(w, false), false)).join('')
   // 주간 시간축 안에서 현재 5시간 창의 위치를 괄호로 표시해 두 주기의 포함 관계를 보여 준다.
@@ -437,6 +437,6 @@ export function renderCard(u: AccountUsage, design: DesignId, x: ViewContext, bo
   const nameShown = box.w > (flag ? (showSrc ? 190 : 160) : 120)
   const body = design === 'rich' ? rich(m, x, { w: bw, h: bh }) : FULL[design](m, x, { w: bw, h: Math.max(20, bh - (foot ? 18 : 0)), o })
   return `<div ${cardAttrs(u, sev, '', style)} data-tip="${cardTip(u, m, x)}">
-    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && !isOutOfDate(u) && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${u.pending && box.w >= 240 ? `<span class="stale-chip pending" data-tip="${esc(PENDING_TIP)}">확인 중</span>` : isOutOfDate(u) && box.w >= 240 ? `<span class="stale-chip" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}">갱신 안 됨</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': u.primaryKind === 'monthly' ? '월간' : '5시간', tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
+    <div class="card-head">${logo(u, x, !nameShown)}${nameShown ? `<span class="svc">${esc(u.name)}</span>` : ''}${u.plan && !isOutOfDate(u) && box.w >= (flag ? 330 : 260) ? `<span class="plan-pill">${esc(u.plan)}</span>` : ''}${u.pending && box.w >= 240 ? `<span class="stale-chip pending" data-tip="${esc(PENDING_TIP)}">확인 중</span>` : isOutOfDate(u) && box.w >= 240 ? `<span class="stale-chip" data-tip="${esc(staleTip(u, Date.now(), u.status === 'stale'))}">갱신 안 됨</span>` : ''}${flag}${showSrc ? `<button class="src" data-src="${esc(u.id)}" data-tip="큰 숫자 기준 바꾸기" aria-label="큰 숫자 기준" aria-haspopup="menu">${({ weekly: '주간', '5h': firstWindowLabel(u.primaryKind), tight: '빠듯한 쪽' })[x.source(u.id)]}${chev}</button>` : ''}</div>
     <div class="body">${body}</div>${foot}</div>`
 }

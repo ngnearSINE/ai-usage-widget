@@ -10,7 +10,7 @@ import { executableDirs } from '../services/platform-paths.js'
  * CLI는 PATH·사용자 설치 위치에서, 앱은 Windows 시작 메뉴 앱 목록(Get-StartApps)이나 Linux .desktop 파일에서 찾는다.
  * Chrome 등에 설치한 웹앱(PWA)은 진짜 앱이 아니므로 빼고, 못 찾으면 메뉴를 흐리게 둔다.
  */
-const CLI: Record<string, string> = { claude: 'claude', codex: 'codex', xai: 'grok', antigravity: 'agy' }
+const CLI: Record<string, string> = { claude: 'claude', codex: 'codex', xai: 'grok', antigravity: 'agy', cursor: 'cursor-agent', copilot: 'copilot', google: 'gemini' }
 type AppMatch = (name: string, id: string) => boolean
 const notPwa = (id: string) => !/^Chrome\._crx_|^MSEdge\._crx_|_crx_/i.test(id)
 const APP: Record<string, AppMatch> = {
@@ -18,6 +18,7 @@ const APP: Record<string, AppMatch> = {
   codex: (n, id) => notPwa(id) && (/OpenAI\.Codex/i.test(id) || /^codex$/i.test(n)),
   xai: (n, id) => notPwa(id) && /^grok/i.test(n),
   antigravity: (n, id) => notPwa(id) && /antigravity/i.test(n),
+  cursor: (n, id) => notPwa(id) && /^cursor$/i.test(n),
 }
 
 /** 앱 목록의 한 항목(이름·앱 ID)이 이 서비스의 데스크톱 앱인지. */

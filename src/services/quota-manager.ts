@@ -4,11 +4,15 @@ import { AntigravityCliClient } from './antigravity-cli-client.js'
 import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
 import { GrokCliClient } from './grok-cli-client.js'
+import { CursorClient } from './cursor-client.js'
+import { CopilotClient } from './copilot-client.js'
+import { GeminiCliClient } from './gemini-cli-client.js'
 import { ClaudeOrgs, cliTokenExpired } from './claude-orgs.js'
 import { refreshCliTokenIfExpired } from './claude-cli-refresh.js'
 import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { displayUsage, retainedUsage } from '../common/widget-layout.js'
+import { nextPollDelay } from '../common/poll-schedule.js'
 
 export class QuotaManager {
   private usages: Map<string, AccountUsage> = new Map()
@@ -186,6 +190,12 @@ export class QuotaManager {
               usage = await CodexLocalClient.fetchUsage(acc)
             } else if (acc.provider === 'xai') {
               usage = await GrokCliClient.fetchUsage(acc)
+            } else if (acc.provider === 'cursor') {
+              usage = await CursorClient.fetchUsage(acc)
+            } else if (acc.provider === 'copilot') {
+              usage = await CopilotClient.fetchUsage(acc)
+            } else if (acc.provider === 'google' && !acc.customMock) {
+              usage = await GeminiCliClient.fetchUsage(acc)
             } else if (QuotaManager.isManualAccount(acc)) {
               // 실시간 조회 대상이 아닌 수동 입력 계정: 입력값이 곧 데이터
               usage = this.createInitialUsage(acc)
@@ -221,24 +231,42 @@ export class QuotaManager {
     return this.getUsages()
   }
 
-  public startPolling(intervalSec: number, immediate = true) {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
-    const safeInterval = Math.max(10, intervalSec) * 1000
-    this.timer = setInterval(() => {
-      this.refreshAll().catch(e => console.warn('[QuotaManager] Polling error', e))
-    }, safeInterval)
+  private baseIntervalMs = 0
+  private idleProbe: () => boolean = () => false
 
+  /** 적응형 조회에 쓸 '지금 안 쓰는 중'(화면 잠김·한동안 입력 없음) 판정을 받는다. */
+  public setIdleProbe(probe: () => boolean) { this.idleProbe = probe }
+
+  /** 정한 간격을 기준으로 조회한다. 매번 다음 간격을 새로 정한다(nextPollDelay: 안 쓰는 동안 느리게, 리셋 직후 바로). */
+  public startPolling(intervalSec: number, immediate = true) {
+    this.stopPolling()
+    this.baseIntervalMs = Math.max(10, intervalSec) * 1000
+    this.scheduleNext()
     if (immediate) {
       this.refreshAll().catch(e => console.warn('[QuotaManager] Initial refresh error', e))
     }
   }
 
+  /** 잠금 해제·절전 해제처럼 다시 쓰기 시작할 때: 바로 묻고 간격을 처음부터 다시 잰다. */
+  public wake() {
+    if (!this.baseIntervalMs) return
+    this.scheduleNext()
+    this.refreshAll().catch(e => console.warn('[QuotaManager] Wake refresh error', e))
+  }
+
+  private scheduleNext() {
+    if (this.timer) clearTimeout(this.timer)
+    const resets = this.getUsages().flatMap(u => [u.primaryQuota?.resetTime, u.weeklyQuota?.resetTime]).map(t => t ? Date.parse(t) : NaN)
+    let idle = false
+    try { idle = this.idleProbe() } catch { /* 판정 실패는 쓰는 중으로 본다 */ }
+    this.timer = setTimeout(() => {
+      this.refreshAll().catch(e => console.warn('[QuotaManager] Polling error', e)).finally(() => { if (this.timer) this.scheduleNext() })
+    }, nextPollDelay(this.baseIntervalMs, idle, resets))
+  }
+
   public stopPolling() {
     if (this.timer) {
-      clearInterval(this.timer)
+      clearTimeout(this.timer)
       this.timer = null
     }
   }

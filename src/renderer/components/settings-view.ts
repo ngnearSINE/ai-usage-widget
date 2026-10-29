@@ -1,6 +1,6 @@
 import type { AccountConfig, AppState, WidgetConfig, HeatSide } from '../../common/types.js'
 import { visibleUsages, DEFAULT_WINDOW_SIZE } from '../../common/widget-layout.js'
-import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
+import { chooseLayout, DESIGNS, firstWindowLabel, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { previewSpread, previewUsages } from '../../common/preview-data.js'
 import { downsample, previewHistory } from '../../common/history.js'
 import type { HistoryPoint } from '../../common/types.js'
@@ -271,6 +271,7 @@ function displayTab(c: WidgetConfig) {
         <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div></section>`
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
+      + toggle('snapEdges', '화면 가장자리에 붙기', '창이나 위젯을 끌어 화면 가장자리 가까이 가면 자석처럼 붙어요. 아래쪽은 작업 표시줄 바로 위에 붙고, 더 내리면 작업 표시줄에 붙어요.', c.snapEdges !== false)
       + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('창 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
 }
 
@@ -363,7 +364,7 @@ function servicesTab(s: AppState) {
   return section('서비스', `<div class="svc-list">${rows || hint('아직 서비스가 없어요. 아래에서 추가하세요.')}</div>`, '눌러서 이름·보일 곳·순서를 바꿔요')
     + hint('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 창이나 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.')
     + toggle('hideDisconnected', '연결 안 된 서비스 숨기기', '한 번도 연결된 적 없는 카드를 화면에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.', !!s.config.hideDisconnected)
-    + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok 앱이나 CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
+    + section('서비스 추가', `<div class="found-list">${detecting ? hint('이 PC의 로그인을 찾는 중…') : found || hint('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok·Cursor·GitHub Copilot·Gemini CLI에 로그인한 뒤 다시 찾아 보세요.')}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>다시 찾기</button>`)
     + advanced('services', `<button class="secondary-button danger" data-reset-defaults>기본 서비스 목록으로 되돌리기</button>${hint('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.')}`)
 }
 
@@ -373,7 +374,7 @@ function alertsTab(s: AppState) {
   // 서비스마다 실제로 있는 한도만 보여 준다(주간 전용 계정은 주간만).
   const rows = s.accounts.filter(a => a.enabled).map(a => {
     const u = s.usages.find(u => u.id === a.id)
-    const first = u?.primaryKind === 'monthly' ? '월간' : '5시간'
+    const first = firstWindowLabel(u?.primaryKind)
     const keys: Array<['5h' | 'weekly', string]> = u?.isWeeklyOnly ? [['weekly', '주간']] : u && !u.weeklyQuota ? [['5h', first]] : [['5h', first], ['weekly', '주간']]
     return `<div class="alert-row"><span class="alert-name">${renderAiIcon(a.provider, a.name, c.iconStyle, 20)}<b>${escapeText(a.name)}</b></span>${[['5h', first], ['weekly', '주간']].map(([k, label]) => keys.some(x => x[0] === k)
       ? `<label class="alert-check"><input type="checkbox" data-mute="${escapeText(a.id)}:${k}" ${muted.has(`${a.id}:${k}`) ? '' : 'checked'} ${on ? '' : 'disabled'}><span>${label}</span></label>` : '<span class="alert-check none">—</span>').join('')}</div>`

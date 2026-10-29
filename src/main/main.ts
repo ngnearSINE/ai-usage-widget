@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, powerMonitor, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
 import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
@@ -12,12 +12,15 @@ import { LocalAppDetector } from '../services/local-app-detector.js'
 import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
+import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, snapToEdges, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
 import { Updater } from './updater.js'
-import { setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
+import { cliConfigDir, setCliRefreshEnabled } from '../services/claude-cli-refresh.js'
+import { CostScanner, type CostSource } from '../services/cost-scanner.js'
+import { ModelPrices } from '../services/model-prices.js'
+import type { CostReport } from '../common/cost.js'
 import { findApp, findCli, openApp, openCli, warmLaunchers } from './service-launch.js'
 import { previewSpread, previewUsages } from '../common/preview-data.js'
 import { roundedWindowShape } from '../common/window-shape.js'
@@ -25,7 +28,7 @@ import { UsageNotifier } from './notifier.js'
 import { UsageHistory } from './history-store.js'
 import { previewHistory } from '../common/history.js'
 import { previewDaily } from '../common/stats.js'
-import { DESIGNS } from '../common/usage-model.js'
+import { DESIGNS, firstWindowLabel } from '../common/usage-model.js'
 import { SurfaceWindow, surfaceKind } from './surface-window.js'
 import { WebServer, DEFAULT_WEB_PORT, hashPassword } from './web-server.js'
 
@@ -74,7 +77,7 @@ function growToFitCards() {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   const st = getAppState(), cards = Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length)
   const gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6)), b = widgetWindow.getBounds()
-  const minH = Math.round(minWindowHeight(b.width / uiZoom(), cards, gap) * uiZoom())
+  const minH = Math.round(minWindowHeight(b.width / uiZoom(), cards, gap, !!accountStore.getConfig().hideHeader) * uiZoom())
   if (b.height >= minH) return
   const area = screen.getDisplayMatching(b).workArea
   const next = fitWindow({ ...b, height: Math.min(minH, area.height) }, area)
@@ -83,6 +86,22 @@ function growToFitCards() {
   rememberLayout()
 }
 let history: UsageHistory | null = null
+let costScanner: CostScanner | null = null
+let modelPrices: ModelPrices | null = null
+
+/** 비용 환산에 읽을 기록 폴더: 기본 로그인 폴더와 '다른 로그인 폴더' 계정의 폴더. */
+function costRoots(): Array<{ source: CostSource; dir: string }> {
+  const accs = accountStore.getAccounts()
+  const claude = [cliConfigDir(), ...accs.filter(a => a.provider === 'claude' && a.homeDir).map(a => a.homeDir!)]
+  const codex = [process.env.CODEX_HOME || path.join(app.getPath('home'), '.codex'), ...accs.filter(a => a.provider === 'codex' && a.homeDir).map(a => a.homeDir!)]
+  const uniq = (xs: string[]) => [...new Set(xs.map(x => path.resolve(x)))]
+  return [...uniq(claude).map(d => ({ source: 'claude' as const, dir: path.join(d, 'projects') })),
+    ...uniq(codex).flatMap(d => ['sessions', 'archived_sessions'].map(s => ({ source: 'codex' as const, dir: path.join(d, s) })))]
+}
+
+function costReport(): CostReport {
+  return { ...costScanner!.progress, prices: modelPrices!.table, pricesAt: modelPrices!.updatedAt, daily: costScanner!.totals() }
+}
 let web: WebServer | null = null
 let shortcutErrors: string[] = []
 
@@ -297,13 +316,14 @@ async function showCardMenu(sender: Electron.WebContents, id: string) {
     { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
     ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
     { type: 'separator' },
-    { label: '큰 숫자 기준', submenu: ([['weekly', '주간'], ['5h', usage?.primaryKind === 'monthly' ? '월간' : '5시간'], ['tight', '빠듯한 쪽']] as const).map(([k, label]) => ({
+    { label: '큰 숫자 기준', submenu: ([['weekly', '주간'], ['5h', firstWindowLabel(usage?.primaryKind)], ['tight', '빠듯한 쪽']] as const).map(([k, label]) => ({
       label, type: 'radio' as const, checked: src === k, click: () => save({ valueSource: { ...accountStore.getConfig().valueSource, [id]: k } }) })) },
     { label: '보여 줄 정보', submenu: DISPLAY_KEYS.map(([k, label]) => ({ label: k === 'showUsed' ? '쓴 양으로 표시' : k === 'showReset' ? '리셋까지 남은 시간' : label, type: 'checkbox' as const, checked: disp[k],
       click: (item: Electron.MenuItem) => save(setDisplay(accountStore.getConfig(), id, k, item.checked)) })) },
     { type: 'separator' },
     { label: '앞으로 옮기기', enabled: index > 0, click: () => { accountStore.reorderAccount(id, 'up'); broadcastState() } },
     { label: '뒤로 옮기기', enabled: index < accounts.length - 1, click: () => { accountStore.reorderAccount(id, 'down'); broadcastState() } },
+    { label: '카드 위치 고정', type: 'checkbox', checked: !!cfg.lockCards, click: item => save({ lockCards: item.checked }) },
     { type: 'separator' },
     { label: '작업 표시줄에서만 숨기기', type: 'checkbox', visible: dockSupported, checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
     { label: '이 카드 숨기기', click: () => { accountStore.hideAccount(id, true); broadcastState() } },
@@ -318,6 +338,8 @@ function servicePageUrl(accountId: string) {
   if (key.includes('claude')) return 'https://claude.ai/settings/usage'
   if (key.includes('codex') || key.includes('openai') || key.includes('gpt')) return 'https://chatgpt.com/codex/settings/usage'
   if (key.includes('xai') || key.includes('grok')) return 'https://grok.com/'
+  if (key.includes('cursor')) return 'https://cursor.com/dashboard?tab=usage'
+  if (key.includes('copilot')) return 'https://github.com/settings/copilot/features'
   return null
 }
 
@@ -347,6 +369,15 @@ async function toggleWidgetVisibility() {
     widgetWindow.show()
     await updateWidgetBounds()
   }
+}
+/** 숨긴 창(또는 독)을 다시 보이고 창은 맨 앞으로 가져온다. 이미 보이면 숨기지 않는다. */
+async function showWidgetWindow() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  widgetManuallyHidden = false
+  widgetHiddenForFullscreen = false
+  if (widgetWindow.isMinimized()) widgetWindow.restore()
+  if (!widgetWindow.isVisible()) { widgetWindow.show(); await updateWidgetBounds() }
+  if (accountStore.getConfig().placementMode !== 'docked') widgetWindow.moveTop()
 }
 function cycleDesign() {
   const c = accountStore.getConfig(), ids = DESIGNS.map(d => d[0])
@@ -427,8 +458,9 @@ async function refreshLaunchers() {
 
 /** '정보·업데이트' 창. 하나만 띄운다. */
 function openAboutWindow() {
+  // 위젯에서 열어도 위젯은 그대로 둔다. 정보 창으로 초점이 옮겨 가도 닫히지 않게 고정하고, 정보 창은 위젯 위에 띄운다(syncDialogTopmost).
+  if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) { cancelHidePopup(); isPopupLocked = true }
   if (aboutWindow && !aboutWindow.isDestroyed()) { if (aboutWindow.isMinimized()) aboutWindow.restore(); aboutWindow.show(); aboutWindow.focus(); return }
-  hidePopup(true)
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
   const area = screen.getDisplayMatching(anchor).workArea, width = Math.min(area.width - 40, Math.round(460 * uiZoom())), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = aboutWindow = new SurfaceWindow({
@@ -601,10 +633,13 @@ function applyWindowTopmost(config: WidgetConfig) {
  */
 function syncDialogTopmost() {
   const c = accountStore.getConfig(), pinned = c.placementMode === 'floating' && c.alwaysOnTop !== false
+  // 위젯은 항상 위에 떠 있으므로, 위젯이 보이는 동안 정보 창도 항상 위로 올려야 위젯에 가리지 않는다.
+  const overPopup = !!popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()
   for (const w of [settingsWindow, aboutWindow, statsWindow]) {
     if (!w || w.isDestroyed()) continue
-    w.setAlwaysOnTop(pinned, 'floating')
-    if (pinned && w.isFocused()) w.moveTop()
+    const top = pinned || (w === aboutWindow && overPopup)
+    w.setAlwaysOnTop(top, 'floating')
+    if (top && w.isFocused()) w.moveTop()
   }
 }
 
@@ -911,6 +946,18 @@ function moveKeepingSize(win: BrowserWindow, x: number, y: number, size: { width
   win.setBounds({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height })
 }
 
+/** 끄는 동안 옮긴다. 설정이 켜져 있으면 마우스가 있는 모니터의 작업 영역 가장자리에 자석처럼 붙인다(snapToEdges).
+ *  끄는 매 순간 계산하므로 붙고 떨어질 때 따로 움직이는 애니메이션 없이 손을 따라간다. displays는 끌기를 시작할 때 한 번 읽는다. */
+function dragMove(win: BrowserWindow, x: number, y: number, size: { width: number; height: number }, pointer: { x: number; y: number }, displays: Electron.Display[]) {
+  if (accountStore.getConfig().snapEdges !== false && displays.length) {
+    const display = screen.getDisplayNearestPoint(pointer)
+    const snapped = snapToEdges({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height }, display.workArea, display.bounds,
+      displays.filter(d => d.id !== display.id).map(d => d.bounds))
+    x = snapped.x; y = snapped.y
+  }
+  moveKeepingSize(win, x, y, size)
+}
+
 async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:number}, rendererDriven = false) {
   if (interacting || !widgetWindow || widgetWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
   interacting = true
@@ -932,6 +979,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
     let start = win.getBounds()
     let last = origin
     let moved = false
+    const displays = screen.getAllDisplays()
 
     // 작업표시줄 안 끌기: 도킹된 채로 좌우로만 움직이다가 위로 벗어나면 창으로 바뀐다.
     let mode: 'slide' | 'float' | 'converting' = startedDocked ? 'slide' : 'float'
@@ -987,7 +1035,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
         if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
         // 최소 높이는 지금 너비에서 보이는 카드가 모두 들어가는 높이(서비스가 하나면 카드 한 장 높이).
-        const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
+        const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap, !!accountStore.getConfig().hideHeader) * uiZoom())
         if (edge.includes('s')) height = Math.max(minH, start.height + dy)
         if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
         if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
@@ -1002,7 +1050,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         slideTo(slide.offset)
         return
       }
-      moveKeepingSize(win, start.x + dx, start.y + dy, start)
+      dragMove(win, start.x + dx, start.y + dy, start, p, displays)
       const display = screen.getDisplayNearestPoint(p)
       const target = dockSupported && isDockTarget(p, display.bounds, display.workArea)
       if (!target) leftDockArea = true
@@ -1145,16 +1193,17 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
   const shown = getAppState(), cardCount = shown.focus ? 1 : Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
   const start = win.getBounds()
   let last = origin
+  const displays = screen.getAllDisplays()
   const update = (p: { x: number; y: number }) => {
     if (win.isDestroyed()) return
     last = p
     const dx = p.x - origin.x, dy = p.y - origin.y
-    if (kind === 'move') { moveKeepingSize(win, start.x + dx, start.y + dy, start); return }
+    if (kind === 'move') { dragMove(win, start.x + dx, start.y + dy, start, p, displays); return }
     const edge = kind.slice(7)
     let { x, y, width, height } = start
     if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
     if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
-    const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
+    const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap, !!accountStore.getConfig().hideHeader) * uiZoom())
     if (edge.includes('s')) height = Math.max(minH, start.height + dy)
     if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
     if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
@@ -1302,6 +1351,7 @@ function hidePopup(force = false) {
     // 카드 위에 마우스를 둔 채 닫으면(Esc·닫기) 렌더러가 마우스가 떠난 것을 알 수 없어 설명 창이 남는다.
     hideTip()
     popupWindow.hide()
+    syncDialogTopmost() // 위젯 때문에 올려 둔 정보 창을 원래대로
   }
 }
 
@@ -1481,9 +1531,15 @@ function createTray() {
   updateTrayMenu()
 
   // Linux(AppIndicator)는 대부분 왼쪽 클릭을 메뉴로 보내지만, 클릭이 오는 환경에서는 위젯을 보이고 숨긴다.
+  // Windows는 더블 클릭을 클릭 두 번으로도 보낸다. 바로 이어진 두 번째 클릭은 무시해 위젯이 열렸다 곧바로 닫히지 않게 한다.
+  let lastTrayClick = 0
   tray.on('click', () => {
-    if (dockSupported) togglePopup()
-    else void toggleWidgetVisibility()
+    const now = Date.now()
+    if (now - lastTrayClick < 500) return
+    lastTrayClick = now
+    // 트레이로 숨겼으면 다시 보인다. 창 모드는 창을, 독 모드는 위젯을 연다.
+    if (widgetManuallyHidden || !dockSupported || accountStore.getConfig().placementMode !== 'docked') void showWidgetWindow()
+    else void togglePopup()
   })
 }
 
@@ -1524,6 +1580,8 @@ function setupIpcHandlers() {
     if (requestedMode && requestedMode !== prevConfig.placementMode) await setPlacement(requestedMode)
     else if (nextConfig.placementMode === 'docked' && ['offsetPx', 'alignment', 'verticalOffsetPx'].some(k => k in patch)) await updateWidgetBounds()
     if (patch.alwaysOnTop !== undefined) applyWindowTopmost(accountStore.getConfig())
+    // 제목줄을 다시 보이면 카드가 다 들어가도록 창 높이를 늘린다
+    if (patch.hideHeader === false && nextConfig.placementMode === 'floating' && !focusId) growToFitCards()
     if (patch.appearance !== undefined || patch.useAcrylic !== undefined || patch.opacity !== undefined) applySurface()
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
@@ -1751,6 +1809,16 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
   ipcMain.handle(IPC_CHANNELS.OPEN_STATS, (_event, id: unknown) => openStatsWindow(typeof id === 'string' ? id : undefined))
   ipcMain.handle(IPC_CHANNELS.GET_DAILY, () => history?.daily() ?? {})
+  // API 요금 환산: 새로 덧붙은 기록을 읽기 시작하고(백그라운드) 지금까지의 집계를 바로 돌려준다. 통계 창이 읽는 중이면 다시 묻는다.
+  ipcMain.handle(IPC_CHANNELS.GET_COSTS, async () => {
+    costScanner ||= new CostScanner(path.join(app.getPath('userData'), 'cost-cache.json'), costRoots)
+    modelPrices ||= new ModelPrices(path.join(app.getPath('userData'), 'model-prices.json'))
+    const first = !Object.keys(modelPrices.table).length
+    const pricing = modelPrices.refresh()
+    if (first) await pricing // 처음엔 가격표를 받은 뒤에 답한다
+    void costScanner.scan()
+    return costReport()
+  })
   ipcMain.handle(IPC_CHANNELS.QUIT_APP, () => { app.quit() })
   // 정보 창의 링크: 이 프로젝트 GitHub 주소만 연다.
   // 웹 페이지 접속 암호: 정하면 해시만 저장하고, null이면 없앤다. 바뀌면 열려 있던 페이지는 다시 암호를 묻는다.
@@ -1808,7 +1876,7 @@ function setupIpcHandlers() {
     if (win && win === widgetWindow && accountStore.getConfig().placementMode === 'floating') {
       const st = getAppState(), cards = st.focus ? 1 : Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
       const sizes: Array<[number, number]> = [[220, 0], [320, 240], [480, 360], [700, 560], [980, 700]]
-      const [w, h0] = sizes[i], h = Math.max(h0, Math.round(minWindowHeight(w / uiZoom(), cards, gap) * uiZoom()))
+      const [w, h0] = sizes[i], h = Math.max(h0, Math.round(minWindowHeight(w / uiZoom(), cards, gap, !!accountStore.getConfig().hideHeader) * uiZoom()))
       const b = win.getBounds(), area = screen.getDisplayMatching(b).workArea
       const next = fitWindow({ x: b.x, y: b.y, width: Math.min(w, area.width), height: Math.min(h, area.height) }, area)
       win.setBounds(next)
@@ -1838,6 +1906,7 @@ function setupIpcHandlers() {
       : {
           label: String(it.label).slice(0, 80),
           ...(typeof it.on === 'boolean' ? { type: 'radio' as const, checked: it.on } : {}),
+          ...(typeof it.check === 'boolean' ? { type: 'checkbox' as const, checked: it.check } : {}),
           ...(typeof it.accel === 'string' ? { accelerator: it.accel, registerAccelerator: false } : {}),
           click: () => { chosen = String(it.key) },
         })
@@ -1913,7 +1982,16 @@ app.whenReady().then(() => {
   registerShortcuts()
   if (!isPreview) applyAutoLaunch(accountStore.getConfig().openAtLogin ?? true)
 
-  if (!isPreview) quotaManager.startPolling(accountStore.getConfig().refreshIntervalSec)
+  if (!isPreview) {
+    // 적응형 조회: 화면이 잠겼거나 10분 넘게 입력이 없으면 느리게, 잠금·절전에서 돌아오면 바로 묻는다.
+    let screenLocked = false
+    quotaManager.setIdleProbe(() => screenLocked || powerMonitor.getSystemIdleTime() >= 600)
+    powerMonitor.on('lock-screen', () => { screenLocked = true })
+    powerMonitor.on('unlock-screen', () => { screenLocked = false; quotaManager.wake() })
+    // 절전에서 깨면 네트워크가 붙을 때까지 잠깐 기다렸다 묻는다.
+    powerMonitor.on('resume', () => { setTimeout(() => quotaManager.wake(), 5000) })
+    quotaManager.startPolling(accountStore.getConfig().refreshIntervalSec)
+  }
 
   startFullscreenWatch()
 

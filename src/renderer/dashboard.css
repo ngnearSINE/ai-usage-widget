@@ -415,6 +415,17 @@ body.is-settings-view #app { display:block; height:100vh; }
 .hist-legend { display:flex; gap:16px; margin-top:8px; font-size:11px; color:var(--muted); }
 .hist-legend i { display:inline-block; width:14px; height:2px; margin-right:6px; vertical-align:3px; }
 .hist-legend i.dash { height:0; border-top:2px dashed; }
+/* API 요금 환산 */
+.cost-tiles { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; }
+.cost-tile { border:1px solid var(--line); border-radius:8px; background:var(--card-bg); padding:10px 12px; display:flex; flex-direction:column; gap:2px; }
+.cost-tile span { font-size:11px; color:var(--muted); }
+.cost-tile b { font-size:18px; font-weight:650; font-variant-numeric:tabular-nums; }
+.cost-table { width:100%; border-collapse:collapse; margin:6px 0 4px; font-size:11px; }
+.cost-table th { text-align:left; font-weight:500; color:var(--muted); padding:4px 6px; border-bottom:1px solid var(--line); }
+.cost-table td { padding:4px 6px; border-bottom:1px solid color-mix(in srgb,var(--line) 50%,transparent); }
+.cost-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+.cost-table .dim { color:var(--dim); }
+@media (max-width:520px) { .cost-tiles { grid-template-columns:repeat(2, minmax(0,1fr)); } }
 
 /* 클릭 통과 잠금 표시 */
 .lock-badge { display:inline-flex; align-items:center; gap:3px; color:var(--accent); }
@@ -704,10 +715,11 @@ body.is-web-view [data-src] { pointer-events:none; }
 
 .dashboard .tool.pin.on { color:var(--accent); }
 
-/* 집중 모드: 그 서비스 하나만, 제목줄은 자동 숨김(위쪽 가장자리에 마우스를 올리면 나타남) */
-.dashboard.focus-mode .dashboard-header { position:absolute; left:0; right:0; top:0; z-index:6; opacity:0; pointer-events:none; transform:translateY(-6px); transition:opacity .14s ease, transform .14s ease; background:rgb(var(--surface)); box-shadow:0 4px 12px rgba(0,0,0,.25); }
-.dashboard.focus-mode .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
-.dashboard.focus-mode:has(.header-hot:hover) .dashboard-header, .dashboard.focus-mode .dashboard-header:hover { opacity:1; pointer-events:auto; transform:none; }
+/* 집중 모드·제목줄 항상 숨기기: 제목줄은 자동 숨김(위쪽 가장자리에 마우스를 올리면 나타남) */
+.dashboard.focus-mode .dashboard-header, .dashboard.header-auto .dashboard-header { position:absolute; left:0; right:0; top:0; z-index:6; opacity:0; pointer-events:none; transform:translateY(-6px); transition:opacity .14s ease, transform .14s ease; background:rgb(var(--surface)); box-shadow:0 4px 12px rgba(0,0,0,.25); }
+.dashboard.focus-mode .header-hot, .dashboard.header-auto .header-hot { display:block; position:absolute; left:0; right:0; top:0; height:10px; z-index:5; }
+.dashboard.focus-mode:has(.header-hot:hover) .dashboard-header, .dashboard.focus-mode .dashboard-header:hover,
+.dashboard.header-auto:has(.header-hot:hover) .dashboard-header, .dashboard.header-auto .dashboard-header:hover { opacity:1; pointer-events:auto; transform:none; }
 .dashboard .focus-chip { display:inline-flex; align-items:center; gap:4px; height:20px; padding:0 8px; border-radius:10px; font-size:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .dashboard .focus-chip:hover { background:color-mix(in srgb,var(--accent) 24%,transparent); }
 

@@ -1,7 +1,7 @@
 export type ThemeType = '1a' | '1b' | '1c' | '1d'
 export type IconStyle = 'color' | 'monochrome'
 export type PositionAlignment = 'right' | 'left'
-export type ProviderType = 'google' | 'claude' | 'mistral' | 'xai' | 'openai' | 'antigravity' | 'codex' | 'custom'
+export type ProviderType = 'google' | 'claude' | 'mistral' | 'xai' | 'openai' | 'antigravity' | 'codex' | 'cursor' | 'copilot' | 'custom'
 
 export interface QuotaInfo {
   remainingFraction: number // 0.0 ~ 1.0 (남은 비율)
@@ -40,7 +40,7 @@ export interface AccountUsage {
   primaryQuota: QuotaInfo // 5시간 또는 기본 한도
   weeklyQuota?: QuotaInfo // 주간 한도
   isWeeklyOnly?: boolean // ChatGPT Pro 등 5시간 세션 쿼터 없이 1주일 쿼터만 존재하는 계정 여부
-  primaryKind?: 'monthly' // 기본 한도가 5시간이 아니라 월간 크레딧인 계정(Grok)
+  primaryKind?: 'monthly' | 'daily' // 기본 한도가 5시간이 아닌 계정: 월간(Grok·Cursor·Copilot), 일간(Gemini CLI)
   scopedQuotas?: Array<{ label: string; quota: QuotaInfo }> // 모델 전용 주간 한도(예: Claude 팀의 Fable). 주간 한도 안의 별도 몫
   barColor?: string // 계정 설정의 평소 색을 CSS 색으로 푼 값(ownColor). 없으면 서비스 색
   scopedHidden?: string[] // 계정 설정으로 숨긴 모델 전용 한도 이름(설정 화면이 스위치를 보여 주는 데 쓴다)
@@ -132,6 +132,9 @@ export interface WidgetConfig {
   critPercent?: number // 남은 양이 이 값 이하이면 위험 (기본 10)
   showPace?: boolean // '예상 시간': 페이스 눈금·속도 칩·소진 예상 문구
   sortLowFirst?: boolean // 여유가 적은 서비스를 앞으로
+  lockCards?: boolean // 카드 위치 고정: 카드를 끌면 순서 대신 창을 옮긴다 (기본 끔)
+  hideHeader?: boolean // 제목줄 항상 숨기기: 위쪽 가장자리에 마우스를 올릴 때만 보인다 (기본 끔)
+  snapEdges?: boolean // 끌어 옮길 때 화면 가장자리에 자석처럼 붙기 (기본 켬)
   notifyEnabled?: boolean // Windows 알림 전체 (기본 켬)
   notifyLow?: boolean // 주의·위험 기준 도달 알림 (기본 켬)
   notifyPace?: boolean // 리셋 전 소진 예상 알림 (기본 켬)
@@ -159,7 +162,7 @@ export interface UpdateState {
 }
 
 /** 화면이 띄워 달라고 보내는 메뉴 항목(메인이 Windows 기본 메뉴로 그린다). on이 있으면 고르는 항목, accel은 오른쪽 안내. */
-export type MenuItemSpec = { key: string; label: string; on?: boolean; accel?: string } | '-'
+export type MenuItemSpec = { key: string; label: string; on?: boolean; check?: boolean; accel?: string } | '-' // on: 라디오(하나만 고름), check: 켜고 끄는 체크
 
 /** 웹 페이지 서버 상태: 열렸는지, 접속 주소, 열지 못한 이유 */
 export interface WebStatus { running: boolean; urls: string[]; error?: string }

@@ -9,13 +9,16 @@ import { ClaudeDesktopClient } from './claude-desktop-client.js'
 import { findClaudeDataDirs, hasDesktopSession } from './claude-desktop-oauth.js'
 import { appDataDir, findExecutable } from './platform-paths.js'
 import { GrokCliClient, readGrokAuth } from './grok-cli-client.js'
+import { CursorClient } from './cursor-client.js'
+import { CopilotClient, findGh } from './copilot-client.js'
+import { GeminiCliClient } from './gemini-cli-client.js'
 
 const execAsync = promisify(exec)
 
 export interface DetectedApp {
   id: string
   name: string
-  provider: 'antigravity' | 'claude' | 'codex' | 'google' | 'openai' | 'xai' | 'custom'
+  provider: 'antigravity' | 'claude' | 'codex' | 'google' | 'openai' | 'xai' | 'cursor' | 'copilot' | 'custom'
   installed: boolean
   running: boolean
   description: string
@@ -133,6 +136,12 @@ export class LocalAppDetector {
       iconLetter: 'G',
       brandColor: '#A1A1AA'
     })
+
+    // 5. Cursor·GitHub Copilot·Gemini CLI: 로그인 흔적이 있을 때만 목록에 보인다(없으면 목록을 늘리지 않는다).
+    if (CursorClient.isLoggedIn()) results.push({ id: 'local-cursor', name: 'Cursor', provider: 'cursor', installed: true, running: false, description: 'Cursor 앱 로그인 감지됨', iconLetter: 'C', brandColor: '#9CA3AF' })
+    const copilotPlugin = CopilotClient.hasPluginLogin()
+    if (copilotPlugin || findGh()) results.push({ id: 'local-copilot', name: 'GitHub Copilot', provider: 'copilot', installed: true, running: false, description: copilotPlugin ? '편집기 Copilot 로그인 감지됨' : 'GitHub CLI 로그인으로 확인', iconLetter: 'G', brandColor: '#8B949E' })
+    if (GeminiCliClient.isLoggedIn()) results.push({ id: 'local-gemini', name: 'Gemini CLI', provider: 'google', installed: true, running: false, description: 'Gemini CLI 로그인 감지됨', iconLetter: 'G', brandColor: '#4E82EE' })
 
     return results
   }

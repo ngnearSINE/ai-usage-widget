@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
 import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
+import type { CostReport } from '../common/cost.js'
 
 export const api = {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC_CHANNELS.GET_STATE),
@@ -50,6 +51,7 @@ export const api = {
   openAbout: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_ABOUT),
   openStats: (id?: string): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_STATS, id),
   getDaily: (): Promise<Record<string, Record<string, number>>> => ipcRenderer.invoke(IPC_CHANNELS.GET_DAILY),
+  getCosts: (): Promise<CostReport> => ipcRenderer.invoke(IPC_CHANNELS.GET_COSTS),
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   setWebPassword: (password: string | null): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.SET_WEB_PASSWORD, password),
   openWeb: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_WEB),

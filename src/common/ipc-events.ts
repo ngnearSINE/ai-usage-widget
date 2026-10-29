@@ -24,6 +24,7 @@ export const IPC_CHANNELS = {
   OPEN_ABOUT: 'app:open-about',
   OPEN_STATS: 'app:open-stats',
   GET_DAILY: 'app:get-daily',
+  GET_COSTS: 'app:get-costs',
   QUIT_APP: 'app:quit',
   OPEN_EXTERNAL: 'app:open-external',
   SET_WEB_PASSWORD: 'web:set-password',

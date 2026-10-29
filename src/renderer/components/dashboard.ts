@@ -4,7 +4,7 @@ import { barColor, gradientColor, normalizeStops } from '../../common/bar-color.
 import { initCardGlow } from './card-glow.js'
 import { displayOf } from '../../common/display-options.js'
 import { visibleUsages } from '../../common/widget-layout.js'
-import { chooseLayout, DESIGNS, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
+import { chooseLayout, DESIGNS, firstWindowLabel, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext, isOutOfDate, PENDING_TIP } from './usage-views.js'
 import { updateMarkup } from '../dom-update.js'
@@ -108,7 +108,7 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, stops: normalizeStops(config.barStops), warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
     const value = available && q ? clamp(showUsed ? q.percentUsed : q.percentLeft) : null
-    const name = i === 0 ? (u.primaryKind === 'monthly' ? '월간' : '5시간') : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
+    const name = i === 0 ? firstWindowLabel(u.primaryKind) : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
     const label = `${name} ${showUsed ? '사용한 양' : '남은 양'}`
     // 줄마다 기본 색(--row-base: 서비스 평소 색과 그 흐린 색)에서 경고색으로 바뀐다(CSS에서 줄별로 정함).
     const fill = available && q ? barColor(clamp(q.percentLeft), 'var(--row-base)', colorOpts) : 'var(--row-base)'
@@ -247,7 +247,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
       <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
       <button class="tool" data-view-menu aria-haspopup="menu" title="메뉴 · 지금 디자인: ${DESIGNS.find(d => d[0] === design)![1]}" aria-label="메뉴">${icon('menu')}</button>
       ${popup ? `<button class="tool window-hide" data-action="close" title="닫기 (Esc)" aria-label="닫기">${icon('close')}</button>` : `<button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button>`}</header>`
-  updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''}">
+  updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''} ${state.config.hideHeader && !web ? 'header-auto' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
     ${header}
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
@@ -349,9 +349,11 @@ export function updatePill(state: AppState) {
 }
 
 /** 단추 아래에 메뉴를 띄운다. Windows 기본 메뉴라서 창이 작아도 창 밖까지 펼쳐진다. */
-function openMenu(anchor: HTMLElement, items: Array<{ key: string; label: string; accel?: string; on?: boolean; run: () => void } | '-'>) {
-  const r = anchor.getBoundingClientRect()
-  void window.api.popupMenu(items.map(it => it === '-' ? '-' : { key: it.key, label: it.label, on: it.on, accel: it.accel }), { x: Math.round(r.left), y: Math.round(r.bottom + 2) })
+type MenuItem = { key: string; label: string; accel?: string; on?: boolean; check?: boolean; run: () => void } | '-'
+/** 기본 메뉴를 띄운다. 요소를 주면 그 아래에, 좌표를 주면 그 자리(우클릭한 곳)에. */
+function openMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuItem[]) {
+  const at = anchor instanceof HTMLElement ? (r => ({ x: r.left, y: r.bottom + 2 }))(anchor.getBoundingClientRect()) : anchor
+  void window.api.popupMenu(items.map(it => it === '-' ? '-' : { key: it.key, label: it.label, on: it.on, check: it.check, accel: it.accel }), { x: Math.round(at.x), y: Math.round(at.y) })
     .then(key => { const it = items.find(i => i !== '-' && i.key === key); if (it && it !== '-') it.run() })
 }
 
@@ -373,6 +375,31 @@ async function update(patch: Partial<WidgetConfig>) {
   catch { notify('설정을 저장하지 못했어요. 다시 시도해 주세요.') }
 }
 
+function toggleLockCards() {
+  const on = !lastState.config.lockCards
+  void update({ lockCards: on }); notify(on ? '카드 위치를 고정했어요. 카드를 끌면 창이 움직여요.' : '카드를 끌어 순서를 바꿀 수 있어요.')
+}
+function toggleHideHeader() {
+  const on = !lastState.config.hideHeader
+  void update({ hideHeader: on }); notify(on ? '제목줄을 숨겼어요. 위쪽 가장자리에 마우스를 올리면 나타나요.' : '제목줄을 늘 보여 줘요.')
+}
+
+/** 제목줄 메뉴(☰ 단추, 제목줄 우클릭): 디자인, 켜고 끄는 보기 설정, 창 열기, 숨기기·종료. */
+function mainMenu(): MenuItem[] {
+  const c = lastState.config, current = designOf(c), pinned = c.alwaysOnTop !== false
+  return [...DESIGNS.map(([key, label], i) => ({ key, label, accel: `Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
+    { key: 'pin', label: '항상 위', check: pinned, run: () => { void update({ alwaysOnTop: !pinned }); notify(!pinned ? '항상 위에 표시해요.' : '다른 창 뒤로 갈 수 있어요.') } },
+    { key: 'lock-cards', label: '카드 위치 고정', accel: 'Shift+`', check: !!c.lockCards, run: toggleLockCards },
+    { key: 'hide-header', label: '제목줄 항상 숨기기', accel: '`', check: !!c.hideHeader, run: toggleHideHeader },
+    '-',
+    { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
+    { key: 'stats', label: '사용량 통계', run: () => { void window.api.openStats() } },
+    { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
+    { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
+    '-',
+    { key: 'quit', label: '종료', run: () => { void window.api.quitApp() } }]
+}
+
 /** 카드·메뉴처럼 배치 때마다 다시 그려지는 요소는 컨테이너에 한 번만 위임해 처리한다. */
 function bindDelegated(container: HTMLElement) {
   if (delegated) return
@@ -385,22 +412,15 @@ function bindDelegated(container: HTMLElement) {
     const view = t.closest<HTMLElement>('[data-view-menu]')
     if (view) {
       e.stopPropagation()
-      const current = designOf(lastState.config)
-      openMenu(view, [...DESIGNS.map(([key, label], i) => ({ key, label, accel: `Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
-        { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
-        { key: 'stats', label: '사용량 통계', run: () => { void window.api.openStats() } },
-        { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
-        { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
-        '-',
-        { key: 'quit', label: '종료', run: () => { void window.api.quitApp() } }])
+      openMenu(view, mainMenu())
       return
     }
     const src = t.closest<HTMLElement>('[data-src]')
     if (src) {
       e.stopPropagation()
       const id = src.dataset.src!, now = lastState.config.valueSource?.[id] || 'weekly'
-      const monthly = lastState.usages.find(u => u.id === id)?.primaryKind === 'monthly'
-      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: k === '5h' && monthly ? '월간' : SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
+      const kind = lastState.usages.find(u => u.id === id)?.primaryKind
+      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: k === '5h' ? firstWindowLabel(kind) : SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
         { key: 'all', label: '모든 카드에 같은 기준 적용', run: () => { const all: Record<string, ValueSource> = {}; for (const u of lastState.usages) all[u.id] = now; void update({ valueSource: all }) } }])
       return
     }
@@ -429,21 +449,23 @@ function bindDelegated(container: HTMLElement) {
     if (web) return
     const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
     if (!card || e.button !== 0 || (e.target as HTMLElement).closest('button') || card.closest('.pv-win')) return
-    // 보이는 카드가 한 장이면(집중 모드 포함) 바꿀 순서가 없으니 제목줄처럼 창 전체를 옮긴다.
-    if (lastState?.focus || container.querySelectorAll('.service-grid [data-card]').length <= 1) { startWindowGesture(card, e, 'move'); return }
+    // 보이는 카드가 한 장이면(집중 모드 포함) 바꿀 순서가 없고, 카드 위치를 고정했으면 순서를 바꾸지 않으니 제목줄처럼 창 전체를 옮긴다.
+    if (lastState?.focus || lastState?.config.lockCards || container.querySelectorAll('.service-grid [data-card]').length <= 1) { startWindowGesture(card, e, 'move'); return }
     startCardReorder(card, e)
   })
-  // 카드 우클릭: 그 서비스의 메뉴(메인 프로세스의 기본 메뉴라 작은 위젯에서도 잘리지 않는다)
+  // 카드 우클릭: 그 서비스의 메뉴(메인 프로세스의 기본 메뉴라 작은 위젯에서도 잘리지 않는다). 제목줄 우클릭: ☰ 메뉴를 그 자리에.
   container.addEventListener('contextmenu', e => {
     if (web) return
-    const card = (e.target as HTMLElement).closest<HTMLElement>('[data-card]')
-    if (!card) return
-    e.preventDefault()
-    void window.api.showCardMenu?.(card.dataset.card!)
+    const t = e.target as HTMLElement
+    const card = t.closest<HTMLElement>('[data-card]')
+    if (card) { e.preventDefault(); void window.api.showCardMenu?.(card.dataset.card!); return }
+    if (t.closest('.dashboard-header')) { e.preventDefault(); openMenu({ x: e.clientX, y: e.clientY }, mainMenu()) }
   })
-  // 숫자키 1~5로 크기, Ctrl+1~6으로 디자인 바꾸기(글자 입력 중이 아닐 때)
+  // 숫자키 1~5로 크기, Ctrl+1~6으로 디자인 바꾸기, `로 제목줄 항상 숨기기, ~(Shift+`)로 카드 위치 고정(글자 입력 중이 아닐 때)
   document.addEventListener('keydown', e => {
-    if (web || (e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.shiftKey || e.repeat) return
+    if (web || (e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.repeat) return
+    if (e.code === 'Backquote' && !e.ctrlKey) { e.preventDefault(); if (e.shiftKey) toggleLockCards(); else toggleHideHeader(); return }
+    if (e.shiftKey) return
     const m = /^Digit([1-9])$/.exec(e.code)
     if (!m) return
     const n = Number(m[1])
