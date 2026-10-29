@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cardLayout, fitWindow, isDockTarget, moveAccountBefore, retainedUsage, visibleUsages, minWindowHeight } from '../src/common/widget-layout.js'
+import { cardLayout, fitWindow, isDockTarget, moveAccountBefore, retainedUsage, visibleUsages, minWindowHeight, snapToEdges } from '../src/common/widget-layout.js'
 import { previewUsages } from '../src/common/preview-data.js'
 import type { AccountConfig, WidgetConfig } from '../src/common/types.js'
 import { roundedWindowShape } from '../src/common/window-shape.js'
@@ -104,4 +104,25 @@ test('카드 위치 고정은 참·거짓만 받는다', async () => {
 test('제목줄을 항상 숨기면 최소 높이에서 제목줄을 뺀다', () => {
   assert.equal(minWindowHeight(340, 3), 166)
   assert.equal(minWindowHeight(340, 3, 6, true), 130)
+})
+
+test('화면 가장자리 자석: 가로·세로를 따로, 같은 쪽 경계로 잰다', () => {
+  // 모니터 1920×1080, 작업 표시줄 48px(작업 영역 높이 1032)
+  const bounds = { x: 0, y: 0, width: 1920, height: 1080 }, area = { x: 0, y: 0, width: 1920, height: 1032 }
+  const win = (x: number, y: number) => ({ x, y, width: 400, height: 300 })
+  assert.deepEqual(snapToEdges(win(500, 500), area, bounds), { x: 500, y: 500 }, '멀면 그대로')
+  assert.deepEqual(snapToEdges(win(10, 500), area, bounds), { x: 0, y: 500 }, '왼쪽 12px 안')
+  assert.deepEqual(snapToEdges(win(-9, 500), area, bounds), { x: 0, y: 500 }, '밖으로 조금 나가도 붙음')
+  assert.deepEqual(snapToEdges(win(13, 500), area, bounds), { x: 13, y: 500 }, '12px 넘으면 그대로')
+  assert.deepEqual(snapToEdges(win(1515, 8), area, bounds), { x: 1520, y: 0 }, '오른쪽 위 모서리')
+  assert.deepEqual(snapToEdges(win(500, 740), area, bounds), { x: 500, y: 732 }, '아래는 작업 표시줄 바로 위(창 아래쪽 경계로 잼)')
+  assert.deepEqual(snapToEdges(win(500, 745), area, bounds), { x: 500, y: 745 }, '더 내리면 떨어짐(독 판정은 그대로)')
+})
+
+test('화면 가장자리 자석: 다른 모니터와 맞닿은 경계에는 붙지 않는다', () => {
+  const left = { x: 0, y: 0, width: 1920, height: 1080 }, right = { x: 1920, y: 300, width: 2560, height: 1440 }
+  const area = { x: 0, y: 0, width: 1920, height: 1032 }
+  assert.deepEqual(snapToEdges({ x: 1515, y: 500, width: 400, height: 300 }, area, left, [right]), { x: 1515, y: 500 }, '오른쪽은 안쪽 경계')
+  assert.deepEqual(snapToEdges({ x: 1515, y: 500, width: 400, height: 300 }, area, left, []), { x: 1520, y: 500 }, '모니터 하나면 붙음')
+  assert.deepEqual(snapToEdges({ x: 1515, y: 6, width: 400, height: 250 }, area, left, [right]), { x: 1520, y: 0 }, '옆 모니터가 낮게 붙어 있으면 오른쪽 위 구석은 바깥 경계라 붙음')
 })

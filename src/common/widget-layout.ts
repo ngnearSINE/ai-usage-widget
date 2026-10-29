@@ -26,6 +26,34 @@ export function fitWindow(rect: Rect, area: Rect): Rect {
     y: Math.round(Math.max(area.y, Math.min(y, area.y + area.height - height))), width: Math.round(width), height: Math.round(height) }
 }
 
+/** 이 거리(px) 안으로 가장자리에 다가가면 붙는다. 더 끌어 이 거리를 넘으면 바로 떨어진다(붙는 기준과 떨어지는 기준이 같아 떨리지 않는다). */
+export const SNAP_PX = 12
+
+/**
+ * 끄는 창을 모니터 작업 영역(작업 표시줄 제외)의 가장자리에 붙인다. 가로·세로를 따로 보므로 둘 다 붙으면 모서리에 붙는다.
+ * 각 가장자리는 창의 같은 쪽 경계와 잰다(위는 창 위쪽, 아래는 창 아래쪽). 아래는 작업 표시줄 바로 위다.
+ * 다른 모니터와 맞닿은 경계에는 붙지 않는다(모니터를 건너갈 때 걸리지 않게). 맞닿았는지는 창이 걸친 범위로 본다:
+ * 옆 모니터가 낮게 붙어 있으면 그 위쪽 구석은 바깥 경계라 붙는다.
+ */
+export function snapToEdges(rect: Rect, area: Rect, bounds: Rect, others: Rect[] = [], threshold = SNAP_PX): { x: number; y: number } {
+  const overlapsY = (o: Rect) => o.y < rect.y + rect.height && o.y + o.height > rect.y
+  const overlapsX = (o: Rect) => o.x < rect.x + rect.width && o.x + o.width > rect.x
+  // 작업 영역 가장자리가 모니터 가장자리이고 그 너머에 다른 모니터가 붙어 있으면 안쪽 경계다.
+  const inner = {
+    left: area.x === bounds.x && others.some(o => o.x + o.width === bounds.x && overlapsY(o)),
+    right: area.x + area.width === bounds.x + bounds.width && others.some(o => o.x === bounds.x + bounds.width && overlapsY(o)),
+    top: area.y === bounds.y && others.some(o => o.y + o.height === bounds.y && overlapsX(o)),
+    bottom: area.y + area.height === bounds.y + bounds.height && others.some(o => o.y === bounds.y + bounds.height && overlapsX(o)),
+  }
+  const near = (a: number, b: number) => Math.abs(a - b) <= threshold
+  let { x, y } = rect
+  if (!inner.left && near(rect.x, area.x)) x = area.x
+  else if (!inner.right && near(rect.x + rect.width, area.x + area.width)) x = area.x + area.width - rect.width
+  if (!inner.top && near(rect.y, area.y)) y = area.y
+  else if (!inner.bottom && near(rect.y + rect.height, area.y + area.height)) y = area.y + area.height - rect.height
+  return { x, y }
+}
+
 export function isDockTarget(point: { x: number; y: number }, bounds: Rect, workArea: Rect): boolean {
   // 하단 작업표시줄과 자동 숨김 작업표시줄만 드롭 대상으로 삼는다.
   if (workArea.y > bounds.y || workArea.x > bounds.x || workArea.width < bounds.width) return false

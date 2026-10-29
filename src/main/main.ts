@@ -12,7 +12,7 @@ import { LocalAppDetector } from '../services/local-app-detector.js'
 import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { detectLang, setLang, t } from '../common/i18n.js'
-import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, visibleUsages } from '../common/widget-layout.js'
+import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, snapToEdges, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
@@ -925,6 +925,18 @@ function moveKeepingSize(win: BrowserWindow, x: number, y: number, size: { width
   win.setBounds({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height })
 }
 
+/** 끄는 동안 옮긴다. 설정이 켜져 있으면 마우스가 있는 모니터의 작업 영역 가장자리에 자석처럼 붙인다(snapToEdges).
+ *  끄는 매 순간 계산하므로 붙고 떨어질 때 따로 움직이는 애니메이션 없이 손을 따라간다. displays는 끌기를 시작할 때 한 번 읽는다. */
+function dragMove(win: BrowserWindow, x: number, y: number, size: { width: number; height: number }, pointer: { x: number; y: number }, displays: Electron.Display[]) {
+  if (accountStore.getConfig().snapEdges !== false && displays.length) {
+    const display = screen.getDisplayNearestPoint(pointer)
+    const snapped = snapToEdges({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height }, display.workArea, display.bounds,
+      displays.filter(d => d.id !== display.id).map(d => d.bounds))
+    x = snapped.x; y = snapped.y
+  }
+  moveKeepingSize(win, x, y, size)
+}
+
 async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:number}, rendererDriven = false) {
   if (interacting || !widgetWindow || widgetWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
   interacting = true
@@ -946,6 +958,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
     let start = win.getBounds()
     let last = origin
     let moved = false
+    const displays = screen.getAllDisplays()
 
     // 작업표시줄 안 끌기: 도킹된 채로 좌우로만 움직이다가 위로 벗어나면 창으로 바뀐다.
     let mode: 'slide' | 'float' | 'converting' = startedDocked ? 'slide' : 'float'
@@ -1016,7 +1029,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         slideTo(slide.offset)
         return
       }
-      moveKeepingSize(win, start.x + dx, start.y + dy, start)
+      dragMove(win, start.x + dx, start.y + dy, start, p, displays)
       const display = screen.getDisplayNearestPoint(p)
       const target = dockSupported && isDockTarget(p, display.bounds, display.workArea)
       if (!target) leftDockArea = true
@@ -1159,11 +1172,12 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
   const shown = getAppState(), cardCount = shown.focus ? 1 : Math.max(1, visibleUsages(shown.usages, shown.accounts, shown.config).length), cardGap = Math.max(4, Math.min(16, shown.config.cardGap ?? 6))
   const start = win.getBounds()
   let last = origin
+  const displays = screen.getAllDisplays()
   const update = (p: { x: number; y: number }) => {
     if (win.isDestroyed()) return
     last = p
     const dx = p.x - origin.x, dy = p.y - origin.y
-    if (kind === 'move') { moveKeepingSize(win, start.x + dx, start.y + dy, start); return }
+    if (kind === 'move') { dragMove(win, start.x + dx, start.y + dy, start, p, displays); return }
     const edge = kind.slice(7)
     let { x, y, width, height } = start
     if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)

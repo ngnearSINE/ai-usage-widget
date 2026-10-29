@@ -271,6 +271,7 @@ function displayTab(c: WidgetConfig) {
         <div class="heat-reset-row"><button class="ghost-button" data-heat-reset ${isHeatDefault(c) ? 'disabled' : ''} title="세기 30% · 퍼짐 30% · 테두리">${icon('refresh')}기본값으로</button></div></div></section>`
     + section('보여 줄 정보', displayTable(c), '맨 윗줄은 모든 서비스에 한 번에')
     + section('창', toggle('alwaysOnTop', '항상 위에 표시', '다른 창에 가려지지 않아요.', c.alwaysOnTop !== false)
+      + toggle('snapEdges', '화면 가장자리에 붙기', '창이나 위젯을 끌어 화면 가장자리 가까이 가면 자석처럼 붙어요. 아래쪽은 작업 표시줄 바로 위에 붙고, 더 내리면 작업 표시줄에 붙어요.', c.snapEdges !== false)
       + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}작업 표시줄에 붙이기</button>${hint('창 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.')}`))
 }
 

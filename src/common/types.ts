@@ -134,6 +134,7 @@ export interface WidgetConfig {
   sortLowFirst?: boolean // 여유가 적은 서비스를 앞으로
   lockCards?: boolean // 카드 위치 고정: 카드를 끌면 순서 대신 창을 옮긴다 (기본 끔)
   hideHeader?: boolean // 제목줄 항상 숨기기: 위쪽 가장자리에 마우스를 올릴 때만 보인다 (기본 끔)
+  snapEdges?: boolean // 끌어 옮길 때 화면 가장자리에 자석처럼 붙기 (기본 켬)
   notifyEnabled?: boolean // Windows 알림 전체 (기본 켬)
   notifyLow?: boolean // 주의·위험 기준 도달 알림 (기본 켬)
   notifyPace?: boolean // 리셋 전 소진 예상 알림 (기본 켬)
