@@ -74,7 +74,7 @@ function growToFitCards() {
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   const st = getAppState(), cards = Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length)
   const gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6)), b = widgetWindow.getBounds()
-  const minH = Math.round(minWindowHeight(b.width / uiZoom(), cards, gap) * uiZoom())
+  const minH = Math.round(minWindowHeight(b.width / uiZoom(), cards, gap, !!accountStore.getConfig().hideHeader) * uiZoom())
   if (b.height >= minH) return
   const area = screen.getDisplayMatching(b).workArea
   const next = fitWindow({ ...b, height: Math.min(minH, area.height) }, area)
@@ -1001,7 +1001,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
         if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
         // 최소 높이는 지금 너비에서 보이는 카드가 모두 들어가는 높이(서비스가 하나면 카드 한 장 높이).
-        const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
+        const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap, !!accountStore.getConfig().hideHeader) * uiZoom())
         if (edge.includes('s')) height = Math.max(minH, start.height + dy)
         if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
         if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
@@ -1168,7 +1168,7 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
     let { x, y, width, height } = start
     if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
     if (edge.includes('w')) { width = Math.max(MIN_WINDOW_SIZE.width, start.width - dx); x = start.x + start.width - width }
-    const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap) * uiZoom())
+    const minH = Math.round(minWindowHeight(width / uiZoom(), cardCount, cardGap, !!accountStore.getConfig().hideHeader) * uiZoom())
     if (edge.includes('s')) height = Math.max(minH, start.height + dy)
     if (edge.includes('n')) { height = Math.max(minH, start.height - dy); y = start.y + start.height - height }
     if (!edge.includes('s') && !edge.includes('n')) height = Math.max(minH, height)
@@ -1545,6 +1545,8 @@ function setupIpcHandlers() {
     if (requestedMode && requestedMode !== prevConfig.placementMode) await setPlacement(requestedMode)
     else if (nextConfig.placementMode === 'docked' && ['offsetPx', 'alignment', 'verticalOffsetPx'].some(k => k in patch)) await updateWidgetBounds()
     if (patch.alwaysOnTop !== undefined) applyWindowTopmost(accountStore.getConfig())
+    // 제목줄을 다시 보이면 카드가 다 들어가도록 창 높이를 늘린다
+    if (patch.hideHeader === false && nextConfig.placementMode === 'floating' && !focusId) growToFitCards()
     if (patch.appearance !== undefined || patch.useAcrylic !== undefined || patch.opacity !== undefined) applySurface()
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
@@ -1829,7 +1831,7 @@ function setupIpcHandlers() {
     if (win && win === widgetWindow && accountStore.getConfig().placementMode === 'floating') {
       const st = getAppState(), cards = st.focus ? 1 : Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
       const sizes: Array<[number, number]> = [[220, 0], [320, 240], [480, 360], [700, 560], [980, 700]]
-      const [w, h0] = sizes[i], h = Math.max(h0, Math.round(minWindowHeight(w / uiZoom(), cards, gap) * uiZoom()))
+      const [w, h0] = sizes[i], h = Math.max(h0, Math.round(minWindowHeight(w / uiZoom(), cards, gap, !!accountStore.getConfig().hideHeader) * uiZoom()))
       const b = win.getBounds(), area = screen.getDisplayMatching(b).workArea
       const next = fitWindow({ x: b.x, y: b.y, width: Math.min(w, area.width), height: Math.min(h, area.height) }, area)
       win.setBounds(next)

@@ -100,3 +100,8 @@ test('카드 위치 고정은 참·거짓만 받는다', async () => {
   assert.deepEqual(sanitizeConfigPatch({ lockCards: true }), { lockCards: true })
   assert.deepEqual(sanitizeConfigPatch({ lockCards: 'yes' }), {})
 })
+
+test('제목줄을 항상 숨기면 최소 높이에서 제목줄을 뺀다', () => {
+  assert.equal(minWindowHeight(340, 3), 166)
+  assert.equal(minWindowHeight(340, 3, 6, true), 130)
+})

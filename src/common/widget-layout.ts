@@ -8,12 +8,12 @@ export const MIN_WINDOW_SIZE = { width: CARD_MIN.width + 12, height: CARD_MIN.he
 export const HEADER_HIDE = { width: 300, height: 110 }
 const HEADER_H = 36
 
-/** 너비가 width일 때 카드 n개가 모두 들어가는 최소 창 높이. 남는 높이가 제목줄 숨김 기준보다 작으면 제목줄을 빼고 잰다. */
-export function minWindowHeight(width: number, n: number, gap = 6) {
+/** 너비가 width일 때 카드 n개가 모두 들어가는 최소 창 높이. 남는 높이가 제목줄 숨김 기준보다 작거나 제목줄을 항상 숨기면 제목줄을 빼고 잰다. */
+export function minWindowHeight(width: number, n: number, gap = 6, headerHidden = false) {
   const cols = Math.max(1, Math.min(Math.max(1, n), Math.floor((width - 12 + gap) / (CARD_MIN.width + gap))))
   const rows = Math.ceil(Math.max(1, n) / cols)
   const base = rows * CARD_MIN.height + (rows - 1) * gap + 12
-  return width >= HEADER_HIDE.width && base + HEADER_H >= HEADER_HIDE.height ? base + HEADER_H : base
+  return !headerHidden && width >= HEADER_HIDE.width && base + HEADER_H >= HEADER_HIDE.height ? base + HEADER_H : base
 }
 export interface Rect { x: number; y: number; width: number; height: number }
 
