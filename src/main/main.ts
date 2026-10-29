@@ -348,6 +348,15 @@ async function toggleWidgetVisibility() {
     await updateWidgetBounds()
   }
 }
+/** 숨긴 창(또는 독)을 다시 보이고 창은 맨 앞으로 가져온다. 이미 보이면 숨기지 않는다. */
+async function showWidgetWindow() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return
+  widgetManuallyHidden = false
+  widgetHiddenForFullscreen = false
+  if (widgetWindow.isMinimized()) widgetWindow.restore()
+  if (!widgetWindow.isVisible()) { widgetWindow.show(); await updateWidgetBounds() }
+  if (accountStore.getConfig().placementMode !== 'docked') widgetWindow.moveTop()
+}
 function cycleDesign() {
   const c = accountStore.getConfig(), ids = DESIGNS.map(d => d[0])
   const next = ids[(ids.indexOf(c.design || 'rich') + 1) % ids.length]
@@ -427,8 +436,9 @@ async function refreshLaunchers() {
 
 /** '정보·업데이트' 창. 하나만 띄운다. */
 function openAboutWindow() {
+  // 위젯에서 열어도 위젯은 그대로 둔다. 정보 창으로 초점이 옮겨 가도 닫히지 않게 고정하고, 정보 창은 위젯 위에 띄운다(syncDialogTopmost).
+  if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) { cancelHidePopup(); isPopupLocked = true }
   if (aboutWindow && !aboutWindow.isDestroyed()) { if (aboutWindow.isMinimized()) aboutWindow.restore(); aboutWindow.show(); aboutWindow.focus(); return }
-  hidePopup(true)
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
   const area = screen.getDisplayMatching(anchor).workArea, width = Math.min(area.width - 40, Math.round(460 * uiZoom())), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = aboutWindow = new SurfaceWindow({
@@ -601,10 +611,13 @@ function applyWindowTopmost(config: WidgetConfig) {
  */
 function syncDialogTopmost() {
   const c = accountStore.getConfig(), pinned = c.placementMode === 'floating' && c.alwaysOnTop !== false
+  // 위젯은 항상 위에 떠 있으므로, 위젯이 보이는 동안 정보 창도 항상 위로 올려야 위젯에 가리지 않는다.
+  const overPopup = !!popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()
   for (const w of [settingsWindow, aboutWindow, statsWindow]) {
     if (!w || w.isDestroyed()) continue
-    w.setAlwaysOnTop(pinned, 'floating')
-    if (pinned && w.isFocused()) w.moveTop()
+    const top = pinned || (w === aboutWindow && overPopup)
+    w.setAlwaysOnTop(top, 'floating')
+    if (top && w.isFocused()) w.moveTop()
   }
 }
 
@@ -1302,6 +1315,7 @@ function hidePopup(force = false) {
     // 카드 위에 마우스를 둔 채 닫으면(Esc·닫기) 렌더러가 마우스가 떠난 것을 알 수 없어 설명 창이 남는다.
     hideTip()
     popupWindow.hide()
+    syncDialogTopmost() // 위젯 때문에 올려 둔 정보 창을 원래대로
   }
 }
 
@@ -1481,9 +1495,15 @@ function createTray() {
   updateTrayMenu()
 
   // Linux(AppIndicator)는 대부분 왼쪽 클릭을 메뉴로 보내지만, 클릭이 오는 환경에서는 위젯을 보이고 숨긴다.
+  // Windows는 더블 클릭을 클릭 두 번으로도 보낸다. 바로 이어진 두 번째 클릭은 무시해 위젯이 열렸다 곧바로 닫히지 않게 한다.
+  let lastTrayClick = 0
   tray.on('click', () => {
-    if (dockSupported) togglePopup()
-    else void toggleWidgetVisibility()
+    const now = Date.now()
+    if (now - lastTrayClick < 500) return
+    lastTrayClick = now
+    // 트레이로 숨겼으면 다시 보인다. 창 모드는 창을, 독 모드는 위젯을 연다.
+    if (widgetManuallyHidden || !dockSupported || accountStore.getConfig().placementMode !== 'docked') void showWidgetWindow()
+    else void togglePopup()
   })
 }
 
