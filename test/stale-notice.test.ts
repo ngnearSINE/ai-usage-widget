@@ -7,7 +7,8 @@ import type { AccountConfig, AccountUsage, WidgetConfig } from '../src/common/ty
 test('갱신 불가 안내: 흔한 경우를 쉬운 말로', () => {
   assert.match(staleNotice({ provider: 'claude', name: 'Claude', errorMessage: 'Claude Code CLI 토큰이 3시간 전에 만료됐어요. 위젯이 곧 자동으로 다시 연결해요' }).title, /Claude 로그인이 잠시 끊겼어요/)
   assert.match(staleNotice({ provider: 'claude', name: 'Claude', errorMessage: 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요' }).fix, /다시 로그인/)
-  assert.match(staleNotice({ provider: 'xai', name: 'Grok', errorMessage: 'Grok 로그인이 만료됐어요. 터미널에서 grok을 한 번 실행하면 갱신됩니다' }).fix, /grok/)
+  assert.match(staleNotice({ provider: 'xai', name: 'Grok', errorMessage: 'Grok 로그인 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 grok 실행)' }).title, /잠시 끊겼/)
+  assert.match(staleNotice({ provider: 'xai', name: 'Grok', errorMessage: 'Grok 로그인 기간이 끝났어요. 터미널에서 grok login으로 다시 로그인해 주세요' }).fix, /grok login/)
   assert.match(staleNotice({ provider: 'codex', name: 'Codex', errorMessage: 'fetch failed' }).title, /인터넷/)
   assert.match(staleNotice({ provider: 'claude', name: 'Claude', errorMessage: 'Claude 사용량 API 요청 제한(HTTP 429)' }).title, /잠깐 조회를 막았/)
   assert.match(staleNotice({ provider: 'antigravity', name: 'A', errorMessage: '알 수 없는 오류' }).title, /새로 받지 못했/)

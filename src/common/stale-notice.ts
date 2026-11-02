@@ -23,6 +23,10 @@ export function staleNotice(u: Pick<AccountUsage, 'provider' | 'errorMessage' | 
     return { title: 'Claude 로그인이 잠시 끊겼어요', reason: '한동안 Claude Code를 쓰지 않아 로그인 시간이 지났어요.', fix: '잠시 기다리면 앱이 자동으로 다시 연결해요. 바로 하려면 터미널에서 claude 를 한 번 실행해 주세요.' }
   if (u.provider === 'claude' && has(msg, '조직의 로그인 정보', 'Claude 앱', '데스크톱'))
     return { title: 'Claude 앱 로그인을 찾지 못했어요', reason: '이 계정으로 로그인된 Claude 앱이나 Claude Code를 찾지 못했어요.', fix: 'Claude 앱을 열어 이 계정으로 한 번 전환하거나, 터미널에서 claude 를 실행해 주세요.' }
+  if (u.provider === 'xai' && has(msg, '자동으로'))
+    return { title: 'Grok 로그인이 잠시 끊겼어요', reason: '한동안 Grok을 쓰지 않아 로그인 토큰(6시간짜리)이 만료됐어요.', fix: '잠시 기다리면 앱이 자동으로 다시 연결해요. 바로 하려면 터미널에서 grok 을 한 번 실행해 주세요.' }
+  if (u.provider === 'xai' && has(msg, '로그인 기간'))
+    return { title: 'Grok 로그인 기간이 끝났어요', reason: 'Grok에 로그인한 지 오래돼 다시 로그인해야 해요.', fix: '터미널에서 grok login 을 실행해 다시 로그인해 주세요.' }
   if (u.provider === 'xai' && has(msg, '로그인', 'auth', '만료', '401'))
     return { title: 'Grok 로그인이 끝났어요', reason: 'Grok 로그인 시간이 지났어요.', fix: '터미널에서 grok 을 한 번 실행하면 다시 연결돼요.' }
   if (u.provider === 'google' && has(msg, '개인 Google 계정'))

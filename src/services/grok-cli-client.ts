@@ -4,12 +4,13 @@ import path from 'node:path'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
 import { exeName } from './platform-paths.js'
+import { grokNeedsRelogin, refreshGrokTokenIfExpired } from './grok-token-refresh.js'
 
 /**
- * Grok 사용량. Grok CLI가 로그인해 둔 토큰(~/.grok/auth.json)을 읽기만 하고,
+ * Grok 사용량. Grok CLI가 로그인해 둔 토큰(~/.grok/auth.json)을 읽고,
  * CLI가 쓰는 billing 경로(공식 문서에 없는 경로)로 주간 사용률과 월간 크레딧을 조회한다.
- * 토큰은 갱신하지 않는다 — 위젯이 갱신하면 CLI의 갱신 토큰이 바뀌어 CLI 로그인이 끊길 수 있다.
- * 만료되면 grok을 한 번 실행하라고 안내하고, 마지막 실측값은 상위(retainedUsage)가 지연 상태로 보여 준다.
+ * 토큰(6시간)이 만료되고 10분이 지나도록 CLI가 갱신하지 않으면 grok-token-refresh가 CLI와 같은 방식으로 대신 갱신해
+ * auth.json에 다시 쓴다(갱신 토큰이 바뀌므로 CLI도 이어서 쓰게). 그 사이와 갱신이 안 될 때는 마지막 실측값을 상위(retainedUsage)가 지연 상태로 보여 준다.
  */
 const BILLING_URL = 'https://cli-chat-proxy.grok.com/v1/billing'
 const TIMEOUT_MS = 8000
@@ -17,7 +18,9 @@ const BRAND = '#A1A1AA'
 
 export const GROK_TEXT = {
   notLoggedIn: 'Grok CLI 로그인이 필요합니다 (grok login)',
-  expired: 'Grok 로그인이 만료됐어요. 터미널에서 grok을 한 번 실행하면 갱신됩니다',
+  expired: 'Grok 로그인 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 grok 실행)',
+  relogin: 'Grok 로그인 기간이 끝났어요. 터미널에서 grok login으로 다시 로그인해 주세요',
+  rejected: 'Grok이 로그인 토큰을 받아 주지 않았어요. 터미널에서 grok을 한 번 실행해 주세요',
   unavailable: 'Grok 사용량 정보를 받지 못했습니다',
 } as const
 
@@ -87,13 +90,16 @@ export class GrokCliClient {
 
   public static async fetchUsage(account: AccountConfig): Promise<AccountUsage> {
     // 두 번째 계정: 그 계정의 로그인 폴더(GROK_HOME)의 auth.json
-    const auth = readGrokAuth(account.homeDir ? path.join(account.homeDir, 'auth.json') : grokAuthPath())
+    const file = account.homeDir ? path.join(account.homeDir, 'auth.json') : grokAuthPath()
+    // 만료되고 한동안 아무도 갱신하지 않았으면 대신 갱신한 뒤 읽는다(쓰는 중인 토큰은 건드리지 않음).
+    await refreshGrokTokenIfExpired(file).catch(() => 'failed' as const)
+    const auth = readGrokAuth(file)
     if (!auth) return this.failed(account, 'unauthenticated', GROK_TEXT.notLoggedIn)
-    if (auth.expiresAt !== null && auth.expiresAt < Date.now() + 30e3) return this.failed(account, 'error', GROK_TEXT.expired)
+    if (auth.expiresAt !== null && auth.expiresAt < Date.now() + 30e3) return this.failed(account, 'error', grokNeedsRelogin(file) ? GROK_TEXT.relogin : GROK_TEXT.expired)
     const headers = { authorization: `Bearer ${auth.key}`, 'x-xai-token-auth': 'xai-grok-cli', accept: 'application/json' }
     const get = async (url: string) => {
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) })
-      if (res.status === 401 || res.status === 403) throw Object.assign(new Error(GROK_TEXT.expired), { auth: true })
+      if (res.status === 401 || res.status === 403) throw Object.assign(new Error(GROK_TEXT.rejected), { auth: true })
       if (!res.ok) throw new Error(`${GROK_TEXT.unavailable} (HTTP ${res.status})`)
       return res.json()
     }
