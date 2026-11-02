@@ -739,7 +739,7 @@ body.is-web-view [data-src] { pointer-events:none; }
 .dashboard .hour-select { width:auto; min-width:96px; }
 
 /* 제목줄 가운데 갱신 시각: 끌기 영역을 가리지 않게 마우스는 통과 */
-@container (min-width:300px) and (min-height:110px) { .dashboard:not(.focus-mode) .dashboard-header { position:relative; } }
+@container (min-width:300px) and (min-height:110px) { .dashboard:not(.focus-mode):not(.header-auto) .dashboard-header { position:relative; } }
 .dashboard .header-clock { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:11px; color:var(--dim); white-space:nowrap; pointer-events:none; font-variant-numeric:tabular-nums; }
 .dashboard .header-clock:empty { display:none; }
 

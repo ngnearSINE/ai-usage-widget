@@ -49,6 +49,8 @@ let previewOrder: string[] | null = null // 카드를 끄는 동안의 임시 �
 let lastState: AppState
 let host: HTMLElement
 let toastTimer: ReturnType<typeof setTimeout>
+// 떠 있는 알림. 설정을 바꾸면 화면을 다시 그리므로 알림 글자·표시 여부를 여기 두고 그릴 때마다 그대로 넣는다(안 그러면 바로 지워진다).
+let toastText = '', toastShown = false
 let mediaQuery: MediaQueryList | undefined
 let layoutObserver: ResizeObserver | undefined
 let layoutFrame = 0
@@ -251,7 +253,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
     <div class="header-hot" aria-hidden="true"></div>
     ${header}
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
-    <div class="toast" role="status" aria-live="polite"></div>
+    <div class="toast${toastShown ? ' visible' : ''}" role="status" aria-live="polite">${escapeText(toastText)}</div>
     ${web ? '' : ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(edge => `<div class="resize-handle resize-${edge}" data-resize="${edge}" aria-hidden="true"></div>`).join('')}
   </div>`)
   bindEvents(container, state)
@@ -365,10 +367,11 @@ async function openTool(kind: 'cli' | 'app', id: string) {
 }
 
 function notify(message: string) {
+  toastText = message; toastShown = true
   const toast = host.querySelector<HTMLElement>('.toast')
-  if (!toast) return
-  clearTimeout(toastTimer); toast.textContent = message; toast.classList.add('visible')
-  toastTimer = setTimeout(() => toast.classList.remove('visible'), 2400)
+  if (toast) { toast.textContent = message; toast.classList.add('visible') }
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toastShown = false; host.querySelector('.toast')?.classList.remove('visible') }, 2400)
 }
 async function update(patch: Partial<WidgetConfig>) {
   try { const next = await window.api.updateConfig(patch); renderDashboard(host, next, true) }
