@@ -4,6 +4,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { failedUsage, iso, num, quotaFromUsed } from './usage-quota.js'
+import { msg } from '../common/i18n.js'
 
 /**
  * GitHub Copilot 사용량. 편집기 Copilot 플러그인이 저장한 GitHub 토큰(github-copilot/apps.json·hosts.json),
@@ -16,9 +17,9 @@ const BRAND = { name: 'GitHub Copilot', letter: 'G', color: '#8B949E' }
 const GH_TOKEN_TTL_MS = 10 * 60e3
 
 export const COPILOT_TEXT = {
-  notLoggedIn: 'GitHub 로그인을 찾지 못했어요. 편집기에서 Copilot에 로그인하거나 터미널에서 gh auth login을 해 주세요',
-  expired: 'GitHub 로그인이 만료됐거나 Copilot을 쓸 수 없는 계정이에요. 편집기 Copilot이나 gh auth login으로 다시 로그인해 주세요',
-  unavailable: 'Copilot 사용량 정보를 받지 못했어요',
+  notLoggedIn: msg('GitHub 로그인을 찾지 못했어요. 편집기에서 Copilot에 로그인하거나 터미널에서 gh auth login을 해 주세요'),
+  expired: msg('GitHub 로그인이 만료됐거나 Copilot을 쓸 수 없는 계정이에요. 편집기 Copilot이나 gh auth login으로 다시 로그인해 주세요'),
+  unavailable: msg('Copilot 사용량 정보를 받지 못했어요'),
 } as const
 
 /** Copilot 편집기 플러그인의 로그인 파일들. */
@@ -62,7 +63,7 @@ function ghToken(): Promise<string | null> {
   }))
 }
 
-const LABEL: Record<string, string> = { premium_interactions: '프리미엄 요청', chat: '채팅', completions: '자동 완성' }
+const LABEL: Record<string, string> = { premium_interactions: msg('프리미엄 요청'), chat: msg('채팅'), completions: msg('자동 완성') }
 
 /** copilot_internal/user 응답을 카드 데이터로. 한도가 있는 것 중 프리미엄 요청 → 채팅 → 자동 완성 순으로 첫 칸에 쓴다. */
 export function copilotUsageFromUser(account: AccountConfig, j: any): AccountUsage {
@@ -73,10 +74,10 @@ export function copilotUsageFromUser(account: AccountConfig, j: any): AccountUsa
   const percentUsed = main ? 100 - (num(main.s.percent_remaining) ?? (num(main.s.remaining) ?? 0) / num(main.s.entitlement)! * 100) : 0
   const sku = String(j?.access_type_sku || ''), plan = String(j?.copilot_plan || '')
   const planLabel = /free/i.test(sku) ? 'Free' : plan === 'individual' ? (/pro_plus|plus/i.test(sku) ? 'Pro+' : 'Pro') : plan ? plan.replace(/^\w/, c => c.toUpperCase()) : undefined
-  const left = main ? `${LABEL[main.k]} ${Math.max(0, Math.round(num(main.s.remaining) ?? 0))}/${Math.round(num(main.s.entitlement)!)} 남음` : '무제한'
+  const tier = main ? msg('Copilot · {kind} {left}/{total} 남음', { kind: LABEL[main.k], left: Math.max(0, Math.round(num(main.s.remaining) ?? 0)), total: Math.round(num(main.s.entitlement)!) }) : msg('Copilot · 무제한')
   return {
     id: account.id, name: account.name || BRAND.name, provider: account.provider, iconLetter: BRAND.letter, brandColor: BRAND.color,
-    email: typeof j?.login === 'string' ? j.login : undefined, plan: planLabel, tier: `Copilot · ${left}`,
+    email: typeof j?.login === 'string' ? j.login : undefined, plan: planLabel, tier,
     status: 'ready', primaryKind: 'monthly', primaryQuota: quotaFromUsed(percentUsed, reset), updatedAt: new Date().toISOString(),
   }
 }
@@ -97,7 +98,7 @@ export class CopilotClient {
       if (!res.ok) { await res.body?.cancel().catch(() => {}); return failedUsage(account, BRAND, 'error', `${COPILOT_TEXT.unavailable} (HTTP ${res.status})`) }
       return copilotUsageFromUser(account, await res.json())
     } catch (err: any) {
-      return failedUsage(account, BRAND, 'error', err?.name === 'TimeoutError' ? 'Copilot 응답 시간 초과' : err?.message || COPILOT_TEXT.unavailable)
+      return failedUsage(account, BRAND, 'error', err?.name === 'TimeoutError' ? msg('Copilot 응답 시간 초과') : err?.message || COPILOT_TEXT.unavailable)
     }
   }
 }

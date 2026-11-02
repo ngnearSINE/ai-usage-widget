@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
 import { appDataDir } from './platform-paths.js'
+import { msg } from '../common/i18n.js'
 
 export function findClaudeDataDirs(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string[] {
   // Linux: ~/.config/Claude
@@ -47,7 +48,7 @@ function unprotectKey(wrapped: Buffer): Promise<Buffer> {
     const fail = () => {
       if (!settled) {
         settled = true
-        reject(new Error('Claude 앱 암호화 키 복호화 실패'))
+        reject(new Error(msg('Claude 앱 암호화 키 복호화 실패')))
       }
     }
     child.on('error', fail)
@@ -109,11 +110,11 @@ function linuxSafeStoragePassword(app = 'Claude'): Promise<Buffer> {
     if (!env.DBUS_SESSION_BUS_ADDRESS && typeof process.getuid === 'function') env.DBUS_SESSION_BUS_ADDRESS = `unix:path=/run/user/${process.getuid()}/bus`
     const child = spawn('python3', ['-c', LINUX_SECRET_SCRIPT, app], { env, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })
     let output = ''
-    child.on('error', () => reject(new Error('키링 암호 읽기 실패')))
+    child.on('error', () => reject(new Error(msg('키링 암호 읽기 실패'))))
     child.stdout.on('data', chunk => { output += chunk.toString(); if (output.length > 4096) child.kill() })
     child.on('close', code => {
       const pw = Buffer.from(output.trim(), 'base64'); output = ''
-      if (code === 0 && pw.length) resolve(pw); else { pw.fill(0); reject(new Error('키링 암호 읽기 실패')) }
+      if (code === 0 && pw.length) resolve(pw); else { pw.fill(0); reject(new Error(msg('키링 암호 읽기 실패'))) }
     })
   })
 }
@@ -121,7 +122,7 @@ function linuxSafeStoragePassword(app = 'Claude'): Promise<Buffer> {
 /** Linux Chromium os_crypt: v11은 키링 암호, v10은 고정 암호 'peanuts'. PBKDF2(1회, saltysalt)로 만든 AES-128-CBC, IV는 공백 16개. */
 export function decryptClaudeCacheLinux(encoded: string, password: Buffer): unknown {
   const blob = Buffer.from(encoded, 'base64')
-  if (blob.length < 19 || !['v10', 'v11'].includes(blob.subarray(0, 3).toString())) throw new Error('지원하지 않는 Claude 앱 OAuth 암호화 형식')
+  if (blob.length < 19 || !['v10', 'v11'].includes(blob.subarray(0, 3).toString())) throw new Error(msg('지원하지 않는 Claude 앱 OAuth 암호화 형식'))
   const key = pbkdf2Sync(password, 'saltysalt', 1, 16, 'sha1')
   const decipher = createDecipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20))
   const partial = decipher.update(blob.subarray(3))
@@ -140,17 +141,17 @@ async function openClaudeCache(dir: string, encoded: string): Promise<unknown> {
   if (process.platform !== 'win32') {
     const v10 = Buffer.from(encoded, 'base64').subarray(0, 3).toString() === 'v10'
     let password: Buffer
-    try { password = v10 ? Buffer.from('peanuts') : await linuxSafeStoragePassword() } catch { throw new StepError('키링 암호 읽기') }
-    try { return decryptClaudeCacheLinux(encoded, password) } catch { throw new StepError('OAuth 캐시 복호화') } finally { password.fill(0) }
+    try { password = v10 ? Buffer.from('peanuts') : await linuxSafeStoragePassword() } catch { throw new StepError(msg('키링 암호 읽기')) }
+    try { return decryptClaudeCacheLinux(encoded, password) } catch { throw new StepError(msg('OAuth 캐시 복호화')) } finally { password.fill(0) }
   }
   let state: any
-  try { state = JSON.parse(await fs.promises.readFile(path.join(dir, 'Local State'), 'utf8')) } catch { throw new StepError('Local State 읽기') }
-  if (typeof state.os_crypt?.encrypted_key !== 'string') throw new StepError('encrypted_key 없음', true)
+  try { state = JSON.parse(await fs.promises.readFile(path.join(dir, 'Local State'), 'utf8')) } catch { throw new StepError(msg('Local State 읽기')) }
+  if (typeof state.os_crypt?.encrypted_key !== 'string') throw new StepError(msg('encrypted_key 없음'), true)
   const wrapped = Buffer.from(state.os_crypt.encrypted_key, 'base64')
-  if (wrapped.subarray(0, 5).toString() !== 'DPAPI') throw new StepError('DPAPI 접두사 없음', true)
+  if (wrapped.subarray(0, 5).toString() !== 'DPAPI') throw new StepError(msg('DPAPI 접두사 없음'), true)
   let key: Buffer
-  try { key = await unprotectKey(wrapped.subarray(5)) } catch { throw new StepError('DPAPI 키 복호화') }
-  try { return decryptClaudeCache(encoded, key) } catch { throw new StepError('OAuth 캐시 복호화') } finally { key.fill(0) }
+  try { key = await unprotectKey(wrapped.subarray(5)) } catch { throw new StepError(msg('DPAPI 키 복호화')) }
+  try { return decryptClaudeCache(encoded, key) } catch { throw new StepError(msg('OAuth 캐시 복호화')) } finally { key.fill(0) }
 }
 
 /** 데스크톱 앱 로그인 흔적: config.json(+ Windows는 Local State의 암호화 키). */
@@ -161,7 +162,7 @@ export function hasDesktopSession(dir: string, platform = process.platform) {
 export function decryptClaudeCache(encoded: string, key: Buffer): unknown {
   const blob = Buffer.from(encoded, 'base64')
   if (blob.length < 31 || !['v10', 'v11'].includes(blob.subarray(0, 3).toString())) {
-    throw new Error('지원하지 않는 Claude 앱 OAuth 암호화 형식')
+    throw new Error(msg('지원하지 않는 Claude 앱 OAuth 암호화 형식'))
   }
   const decipher = createDecipheriv('aes-256-gcm', key, blob.subarray(3, 15))
   decipher.setAuthTag(blob.subarray(-16))
@@ -177,7 +178,7 @@ interface DesktopToken { token: string; expiresAt: number; subscriptionType?: st
 
 export function selectClaudeDesktopToken(cache: unknown, activeAccount: unknown, now = Date.now()): DesktopToken {
   if (!cache || typeof cache !== 'object' || typeof activeAccount !== 'string' || !activeAccount) {
-    throw new Error('Claude 앱 활성 계정 또는 OAuth 캐시 없음')
+    throw new Error(msg('Claude 앱 활성 계정 또는 OAuth 캐시 없음'))
   }
   const candidates: DesktopToken[] = []
   for (const [key, raw] of Object.entries(cache)) {
@@ -194,7 +195,7 @@ export function selectClaudeDesktopToken(cache: unknown, activeAccount: unknown,
     candidates.push(entry as DesktopToken)
   }
   candidates.sort((a, b) => b.expiresAt - a.expiresAt)
-  if (!candidates.length) throw new Error('Claude 앱 사용량 조회 세션 없음 또는 만료됨')
+  if (!candidates.length) throw new Error(msg('Claude 앱 사용량 조회 세션 없음 또는 만료됨'))
   return candidates[0]
 }
 
@@ -204,7 +205,7 @@ export function parseClaudeDesktopLiveUsage(raw: unknown, account: AccountConfig
     if (!v || typeof v.utilization !== 'number' || !Number.isFinite(v.utilization) ||
         v.utilization < 0 || v.utilization > 100 ||
         (v.resets_at != null && (typeof v.resets_at !== 'string' || !Number.isFinite(Date.parse(v.resets_at))))) {
-      throw new Error('Claude 앱 사용량 응답 형식 오류')
+      throw new Error(msg('Claude 앱 사용량 응답 형식 오류'))
     }
     const used = Math.round(v.utilization)
     const resetTime = typeof v.resets_at === 'string' ? v.resets_at : undefined
@@ -212,11 +213,11 @@ export function parseClaudeDesktopLiveUsage(raw: unknown, account: AccountConfig
       resetTime, resetCountdown: formatCountdown(resetTime), isExhausted: v.utilization >= 100 }
   }
   const data = raw as { five_hour?: unknown; seven_day?: unknown; limits?: unknown } | null
-  if (!data) throw new Error('Claude 앱 사용량 응답 없음')
+  if (!data) throw new Error(msg('Claude 앱 사용량 응답 없음'))
   const scopedQuotas = parseScopedLimits(data.limits)
   return {
     id: account.id, name: account.name || 'Claude Code', provider: 'claude', iconLetter: 'C',
-    brandColor: '#D97757', tier: `${tier?.toUpperCase() || 'Claude'} (앱 실시간 세션)`,
+    brandColor: '#D97757', tier: msg('{plan} (앱 실시간 세션)', { plan: tier?.toUpperCase() || 'Claude' }),
     dataSource: 'claude-desktop-live', status: 'ready', primaryQuota: quota(data.five_hour),
     weeklyQuota: data.seven_day == null ? undefined : quota(data.seven_day), updatedAt: new Date().toISOString(),
     ...(scopedQuotas.length ? { scopedQuotas } : {})
@@ -281,7 +282,7 @@ const DEFAULT_RATE_LIMIT_BACKOFF_MS = 5 * 60 * 1000
 
 export class ClaudeRateLimitError extends Error {
   constructor(public readonly retryAfterMs: number) {
-    super(`Claude 사용량 API 요청 제한 (HTTP 429, ${Math.ceil(retryAfterMs / 1000)}초 후 재시도)`)
+    super(msg('Claude 사용량 API 요청 제한 (HTTP 429, {sec}초 후 재시도)', { sec: Math.ceil(retryAfterMs / 1000) }))
   }
 }
 
@@ -297,19 +298,19 @@ export function parseRetryAfterMs(header: string | null, now = Date.now()): numb
 }
 
 export async function fetchClaudeDesktopLiveUsage(account: AccountConfig): Promise<AccountUsage> {
-  if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error('Claude 앱 OAuth 조회는 Windows·Linux에서 지원됩니다')
+  if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error(msg('Claude 앱 OAuth 조회는 Windows·Linux에서 지원됩니다'))
   const failures: string[] = []
   for (const dir of findClaudeDataDirs()) {
     if (!hasDesktopSession(dir)) continue
     // 실패 사유는 단계 이름만 남긴다. 예외 메시지에는 복호화된 내용 일부가 섞일 수 있어 그대로 쓰지 않는다
-    let step = '설정 파일 읽기'
+    let step = msg('설정 파일 읽기')
     try {
       const config = JSON.parse(await fs.promises.readFile(path.join(dir, 'config.json'), 'utf8'))
-      if (typeof config['oauth:tokenCacheV2'] !== 'string') { failures.push('tokenCacheV2 없음'); continue }
+      if (typeof config['oauth:tokenCacheV2'] !== 'string') { failures.push(msg('tokenCacheV2 없음')); continue }
       let cache: unknown
       try { cache = await openClaudeCache(dir, config['oauth:tokenCacheV2']) }
-      catch (e) { if (e instanceof StepError) { failures.push(e.bare ? e.step : `${e.step} 실패`); continue } throw e }
-      step = '토큰 선택'
+      catch (e) { if (e instanceof StepError) { failures.push(e.bare ? e.step : msg('{step} 실패', { step: e.step })); continue } throw e }
+      step = msg('토큰 선택')
 
       let activeAccount = typeof config.lastKnownAccountUuid === 'string' && config.lastKnownAccountUuid
         ? config.lastKnownAccountUuid
@@ -327,7 +328,7 @@ export async function fetchClaudeDesktopLiveUsage(account: AccountConfig): Promi
       }
 
       const credential = selectClaudeDesktopToken(cache, activeAccount)
-      step = '사용량 API 호출'
+      step = msg('사용량 API 호출')
       const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
         headers: { Authorization: `Bearer ${credential.token}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' },
         signal: AbortSignal.timeout(5000), redirect: 'error'
@@ -335,15 +336,15 @@ export async function fetchClaudeDesktopLiveUsage(account: AccountConfig): Promi
       if (!response.ok) {
         await response.body?.cancel().catch(() => {})
         if (response.status === 429) throw new ClaudeRateLimitError(parseRetryAfterMs(response.headers.get('retry-after')))
-        failures.push(`사용량 API HTTP ${response.status}`)
+        failures.push(msg('사용량 API HTTP {status}', { status: response.status }))
         continue
       }
-      step = '사용량 응답 파싱'
+      step = msg('사용량 응답 파싱')
       return parseClaudeDesktopLiveUsage(await response.json(), account, credential.subscriptionType)
     } catch (err) {
       if (err instanceof ClaudeRateLimitError) throw err
-      failures.push(`${step} 실패`)
+      failures.push(msg('{step} 실패', { step }))
     }
   }
-  throw new Error(`Claude 앱 실시간 세션 조회 실패: ${failures.join(', ') || '데이터 폴더 없음'}`)
+  throw new Error(msg('Claude 앱 실시간 세션 조회 실패: {reason}', { reason: failures.join(', ') || msg('데이터 폴더 없음') }))
 }

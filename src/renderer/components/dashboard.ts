@@ -1,5 +1,6 @@
 import { staleTip } from '../../common/stale-notice.js'
-import type { AccountUsage, AppState, QuotaInfo, WidgetConfig, HeatSide } from '../../common/types.js'
+import type { AccountUsage, AppState, QuotaInfo, WidgetConfig, HeatSide, MenuItemSpec } from '../../common/types.js'
+import { LANG_NAMES, LANGUAGE_LABEL, locale, tr, trText } from '../../common/i18n.js'
 import { barColor, gradientColor, normalizeStops } from '../../common/bar-color.js'
 import { initCardGlow } from './card-glow.js'
 import { displayOf } from '../../common/display-options.js'
@@ -110,17 +111,17 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   const colorOpts = { on: config.colorByUsage !== false, mode: config.colorMode, stops: normalizeStops(config.barStops), warn, crit: Math.max(0, Math.min(warn, config.critPercent ?? 10)) }
   return `<div class="mini-summary">${renderAiIcon(u.provider, u.name, config.iconStyle, 20)}<div class="mini-quotas ${rows.length > 2 ? 'three' : ''}">${rows.map((q, i) => {
     const value = available && q ? clamp(showUsed ? q.percentUsed : q.percentLeft) : null
-    const name = i === 0 ? firstWindowLabel(u.primaryKind) : i === 1 ? '전체(주간)' : `${scoped[i - 2].label}(주간)`
-    const label = `${name} ${showUsed ? '사용한 양' : '남은 양'}`
+    const name = i === 0 ? trText(firstWindowLabel(u.primaryKind)) : i === 1 ? tr('전체(주간)') : tr('{label}(주간)', { label: trText(scoped[i - 2].label) })
+    const label = showUsed ? tr('{name} 사용한 양', { name }) : tr('{name} 남은 양', { name }), none = tr('정보 없음')
     // 줄마다 기본 색(--row-base: 서비스 평소 색과 그 흐린 색)에서 경고색으로 바뀐다(CSS에서 줄별로 정함).
     const fill = available && q ? barColor(clamp(q.percentLeft), 'var(--row-base)', colorOpts) : 'var(--row-base)'
     // 숫자도 막대와 같은 색 점을 따른다('서비스 색' 자리는 평소 글씨색)
     const ink = available && q && colorOpts.on ? ` style="color:${gradientColor(clamp(q.percentLeft), i === 0 ? 'var(--ink)' : 'var(--muted)', colorOpts.stops, colorOpts.mode)}"` : ''
-    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? '정보 없음' : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%;--fill:${fill}"></div></div><span class="mini-value"${ink} aria-label="${label}: ${value === null ? '정보 없음' : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
+    return `<div class="mini-quota ${i === 1 ? 'secondary' : i > 1 ? 'secondary scoped' : ''}" title="${label}: ${value === null ? none : `${value}%`}"><div class="meter"><div class="meter-fill" style="--value:${value ?? 0}%;--fill:${fill}"></div></div><span class="mini-value"${ink} aria-label="${label}: ${value === null ? none : `${value}%`}">${value === null ? '—' : `${value}<small>%</small>`}</span></div>`
   }).join('')}</div></div>`
 }
 export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {
-  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText(u.pending ? `${u.name}\n${PENDING_TIP}` : isOutOfDate(u) ? `${u.name}\n${staleTip(u, Date.now(), u.status === 'stale')}` : u.name)}">${u.pending ? '<span class="stale-mark dock pending" aria-hidden="true"><i></i><i></i><i></i></span>' : isOutOfDate(u) ? '<span class="stale-mark dock" aria-hidden="true">!</span>' : ''}${miniSummary(u, config)}</div>`
+  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText(u.pending ? `${u.name}\n${trText(PENDING_TIP)}` : isOutOfDate(u) ? `${u.name}\n${trText(staleTip(u, Date.now(), u.status === 'stale'))}` : u.name)}">${u.pending ? '<span class="stale-mark dock pending" aria-hidden="true"><i></i><i></i><i></i></span>' : isOutOfDate(u) ? '<span class="stale-mark dock" aria-hidden="true">!</span>' : ''}${miniSummary(u, config)}</div>`
 }
 
 /** 트레이·다른 창에서 '디자인 설정'을 열 때. 설정은 별도 설정 창에서 한다. */
@@ -165,7 +166,7 @@ function startCardReorder(card: HTMLElement, down: PointerEvent) {
   const move = (e: PointerEvent) => {
     if (!started) {
       if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 6) return
-      if (lastState.config.sortLowFirst) { notify('‘여유가 적은 서비스를 앞으로’가 켜져 있어 순서를 바꿀 수 없어요. 설정 → 표시에서 끌 수 있어요.'); cleanup(); return }
+      if (lastState.config.sortLowFirst) { notify(tr('‘여유가 적은 서비스를 앞으로’가 켜져 있어 순서를 바꿀 수 없어요. 설정 → 표시에서 끌 수 있어요.')); cleanup(); return }
       started = true; dragId = id
       const r = card.getBoundingClientRect(); grabX = startX - r.left; grabY = startY - r.top; cardW = r.width; cardH = r.height
       order = shownUsages(lastState).map(u => u.id)
@@ -213,8 +214,8 @@ function startCardReorder(card: HTMLElement, down: PointerEvent) {
     previewOrder = null; dragId = null
     if (save && final.join('|') !== order.join('|')) {
       const i = final.indexOf(id), beforeId = final[i + 1] ?? null
-      try { const next = await window.api.moveAccount(id, beforeId); renderDashboard(host, next, true); notify('순서를 저장했어요.'); return }
-      catch { notify('순서를 저장하지 못했어요.') }
+      try { const next = await window.api.moveAccount(id, beforeId); renderDashboard(host, next, true); notify(tr('순서를 저장했어요.')); return }
+      catch { notify(tr('순서를 저장하지 못했어요.')) }
     }
     renderDashboard(host, lastState, true)
   }
@@ -239,16 +240,16 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
   if (!force && (busy || dragId)) return
   const design = designOf(state.config)
   const header = web
-    ? `<header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+    ? `<header class="dashboard-header"><div class="window-handle"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">${tr('AI 사용량')}</span><span class="header-status" data-status></span></div>
       <span class="header-clock num" data-clock aria-hidden="true"></span></header>`
-    : `<header class="dashboard-header"><div class="window-handle" data-window-drag title="${popup || state.dockSupported === false ? '끌어서 창 이동' : '끌어서 창 이동 · 아래로 끌면 도킹'}"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">AI 사용량</span><span class="header-status" data-status></span></div>
+    : `<header class="dashboard-header"><div class="window-handle" data-window-drag title="${popup || state.dockSupported === false ? tr('끌어서 창 이동') : tr('끌어서 창 이동 · 아래로 끌면 도킹')}"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">${tr('AI 사용량')}</span><span class="header-status" data-status></span></div>
       <span class="header-clock num" data-clock aria-hidden="true"></span>
       ${updatePill(state)}
-      <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? '항상 위 켜짐 · 눌러서 끄기' : '항상 위 꺼짐 · 눌러서 켜기'}" aria-label="항상 위에 표시">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
-      <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="사용량 새로고침" title="새로고침" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
-      <button class="tool" data-settings="last" title="설정" aria-label="설정 열기">${icon('sliders')}</button>
-      <button class="tool" data-view-menu aria-haspopup="menu" title="메뉴 · 지금 디자인: ${DESIGNS.find(d => d[0] === design)![1]}" aria-label="메뉴">${icon('menu')}</button>
-      ${popup ? `<button class="tool window-hide" data-action="close" title="닫기 (Esc)" aria-label="닫기">${icon('close')}</button>` : `<button class="tool window-hide" data-action="hide" title="트레이로 숨기기" aria-label="트레이로 숨기기">${icon('minus')}</button>`}</header>`
+      <button class="tool pin ${state.config.alwaysOnTop !== false ? 'on' : ''}" data-action="pin" aria-pressed="${state.config.alwaysOnTop !== false}" title="${state.config.alwaysOnTop !== false ? tr('항상 위 켜짐 · 눌러서 끄기') : tr('항상 위 꺼짐 · 눌러서 켜기')}" aria-label="${tr('항상 위에 표시')}">${icon(state.config.alwaysOnTop !== false ? 'pinFill' : 'pin')}</button>
+      <button class="tool ${state.isRefreshing ? 'is-refreshing' : ''}" data-action="refresh" aria-label="${tr('사용량 새로고침')}" title="${tr('새로고침')}" ${state.isRefreshing ? 'disabled' : ''}>${icon('refresh')}</button>
+      <button class="tool" data-settings="last" title="${tr('설정')}" aria-label="${tr('설정 열기')}">${icon('sliders')}</button>
+      <button class="tool" data-view-menu aria-haspopup="menu" title="${tr('메뉴 · 지금 디자인: {design}', { design: trText(DESIGNS.find(d => d[0] === design)![1]) })}" aria-label="${tr('메뉴')}">${icon('menu')}</button>
+      ${popup ? `<button class="tool window-hide" data-action="close" title="${tr('닫기 (Esc)')}" aria-label="${tr('닫기')}">${icon('close')}</button>` : `<button class="tool window-hide" data-action="hide" title="${tr('트레이로 숨기기')}" aria-label="${tr('트레이로 숨기기')}">${icon('minus')}</button>`}</header>`
   updateMarkup(container, `<div class="dashboard ${state.focus ? 'focus-mode' : ''} ${state.config.hideHeader && !web ? 'header-auto' : ''}">
     <div class="header-hot" aria-hidden="true"></div>
     ${header}
@@ -278,7 +279,7 @@ function layoutCards() {
   const hidden = state.accounts.filter(a => a.enabled).length - visibleUsages(state.usages, state.accounts, state.config).length
   let pages = 1, gridHtml: string
   if (!all.length) {
-    gridHtml = `<div class="service-grid empty"><div class="empty-state">${icon(anyLoading ? 'refresh' : 'grid')}<h2>${anyLoading ? '서비스를 확인하고 있어요' : '표시할 서비스가 없어요'}</h2>${W > 260 && H > 140 ? `<p>${anyLoading ? '기존 로그인으로 사용량을 가져옵니다.' : '연결 상태와 숨김 설정을 서비스 관리에서 확인해 주세요.'}</p>` : ''}<button class="secondary-button" data-settings="services">서비스 관리</button></div></div>`
+    gridHtml = `<div class="service-grid empty"><div class="empty-state">${icon(anyLoading ? 'refresh' : 'grid')}<h2>${anyLoading ? tr('서비스를 확인하고 있어요') : tr('표시할 서비스가 없어요')}</h2>${W > 260 && H > 140 ? `<p>${anyLoading ? tr('기존 로그인으로 사용량을 가져옵니다.') : tr('연결 상태와 숨김 설정을 서비스 관리에서 확인해 주세요.')}</p>` : ''}<button class="secondary-button" data-settings="services">${tr('서비스 관리')}</button></div></div>`
   } else {
     const L = chooseLayout(W, H, all.length, design, gap)
     pages = Math.ceil(all.length / L.per)
@@ -296,18 +297,18 @@ function layoutCards() {
   // 제목줄 상태: 연결 수·마지막 확인·주의 수, 페이지가 나뉘면 페이지 넘김.
   const connected = state.usages.filter(u => ['ready', 'stale'].includes(u.status)).length
   const warnN = all.filter(u => severity(serviceModel(u), x.warn, x.crit, x.per ? x.per(u.id).showPace : x.showPace)).length
-  const hm = (t: number) => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const hm = (t: number) => new Date(t).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
   const last = state.lastRefreshedAt ? Date.parse(state.lastRefreshedAt) : NaN
   // 마지막·다음 갱신 시각은 제목줄에 쓰지 않고 새로고침 단추의 설명으로만 보여 준다.
   const refreshBtn = host.querySelector<HTMLElement>('[data-action="refresh"]')
-  if (refreshBtn) refreshBtn.title = Number.isFinite(last) ? `새로고침 · 마지막 갱신 ${hm(last)} · 다음 ${hm(last + (state.config.refreshIntervalSec || 60) * 1000)}` : '새로고침'
+  if (refreshBtn) refreshBtn.title = Number.isFinite(last) ? tr('새로고침 · 마지막 갱신 {last} · 다음 {next}', { last: hm(last), next: hm(last + (state.config.refreshIntervalSec || 60) * 1000) }) : tr('새로고침')
   const status = host.querySelector<HTMLElement>('[data-status]')
-  const lock = state.config.clickThrough ? `<span class="lock-badge" title="클릭 통과 잠금 중">${icon('lock')}잠김${state.config.shortcuts?.lock ? ` · ${escapeText(state.config.shortcuts.lock)}로 풀기` : ''}</span> · ` : ''
+  const lock = state.config.clickThrough ? `<span class="lock-badge" title="${tr('클릭 통과 잠금 중')}">${icon('lock')}${tr('잠김')}${state.config.shortcuts?.lock ? ` · ${tr('{key}로 풀기', { key: escapeText(state.config.shortcuts.lock) })}` : ''}</span> · ` : ''
   const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
-  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="집중 모드 끄기 (${popup ? '' : 'Esc · '}카드 더블클릭)">집중: ${escapeText(focusName)} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
+  if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="${popup ? tr('집중 모드 끄기 (카드 더블클릭)') : tr('집중 모드 끄기 (Esc · 카드 더블클릭)')}">${tr('집중: {name}', { name: escapeText(focusName) })} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
   if (status) status.innerHTML = lock + (pages > 1
-    ? `<button class="pager" data-page="-1" aria-label="이전 서비스">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="다음 서비스">›</button>${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}`
-    : `<b>${anyLoading ? '확인 중' : `${connected}개 연결`}</b>${state.preview ? '<span data-pv-fallback hidden> · 미리보기</span>' : ''}${warnN ? ` · <span class="w">${warnN}개 주의</span>` : ''}${hidden > 0 ? web ? ` · ${hidden}개 숨김` : ` · <button class="status-link" data-settings="services">${hidden}개 숨김</button>` : ''}`)
+    ? `<button class="pager" data-page="-1" aria-label="${tr('이전 서비스')}">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="${tr('다음 서비스')}">›</button>${warnN ? ` · <span class="w">${tr('{n}개 주의', { n: warnN })}</span>` : ''}`
+    : `<b>${anyLoading ? tr('확인 중') : tr('{n}개 연결', { n: connected })}</b>${state.preview ? `<span data-pv-fallback hidden> · ${tr('미리보기')}</span>` : ''}${warnN ? ` · <span class="w">${tr('{n}개 주의', { n: warnN })}</span>` : ''}${hidden > 0 ? web ? ` · ${tr('{n}개 숨김', { n: hidden })}` : ` · <button class="status-link" data-settings="services">${tr('{n}개 숨김', { n: hidden })}</button>` : ''}`)
   tickClock(true)
 }
 
@@ -319,7 +320,7 @@ function tickClock(force = false) {
   const clock = host?.querySelector<HTMLElement>('[data-clock]')
   if (!clock) return
   // 미리보기 앱이면 시각 뒤에 '(미리보기)'를 붙인다. 시계를 숨길 때는 왼쪽 상태 문구에 대신 보인다.
-  const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) + (lastState?.preview ? ' (미리보기)' : '')
+  const now = new Date().toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false }) + (lastState?.preview ? ` (${tr('미리보기')})` : '')
   if (!force) { if (clock.dataset.on === '1' && clock.textContent !== now) clock.textContent = now; return }
   clock.textContent = now; clock.dataset.on = '1'
   const header = clock.parentElement!, r = clock.getBoundingClientRect()
@@ -337,33 +338,38 @@ function tickClock(force = false) {
 
 /* ---------- 메뉴 ---------- */
 /** 자동 업데이트 설치 시각 표기와 고르기. */
-export const hourLabel = (h: number) => `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}시`
+export const hourLabel = (h: number) => h < 12 ? tr('오전 {h}시', { h: h % 12 || 12 }) : tr('오후 {h}시', { h: h % 12 || 12 })
 export function updateHourSelect(state: AppState) {
   const cur = state.config.updateHour ?? 3
-  return `<select class="text-input short hour-select" data-update-hour aria-label="자동 업데이트 설치 시각" ${state.config.autoUpdate === false ? 'disabled' : ''}>${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === cur ? 'selected' : ''}>${hourLabel(h)}</option>`).join('')}</select>`
+  return `<select class="text-input short hour-select" data-update-hour aria-label="${tr('자동 업데이트 설치 시각')}" ${state.config.autoUpdate === false ? 'disabled' : ''}>${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === cur ? 'selected' : ''}>${hourLabel(h)}</option>`).join('')}</select>`
 }
 
 /** 새 버전을 받아 두었으면 제목줄에 짧은 '업데이트' 단추(마우스를 올리면 전체 안내). */
 export function updatePill(state: AppState) {
   const u = state.update
   if (u?.status !== 'ready') return ''
-  return `<button class="update-pill" data-update-install data-tip="새 버전 ${escapeText(u.version || '')} 설치하고 다시 시작" aria-label="새 버전 ${escapeText(u.version || '')} 설치하고 다시 시작">업데이트</button>`
+  const tip = tr('새 버전 {v} 설치하고 다시 시작', { v: escapeText(u.version || '') })
+  return `<button class="update-pill" data-update-install data-tip="${tip}" aria-label="${tip}">${tr('업데이트')}</button>`
 }
 
 /** 단추 아래에 메뉴를 띄운다. Windows 기본 메뉴라서 창이 작아도 창 밖까지 펼쳐진다. */
-type MenuItem = { key: string; label: string; accel?: string; on?: boolean; check?: boolean; run: () => void } | '-'
+type MenuItem = { key: string; label: string; accel?: string; on?: boolean; check?: boolean; run: () => void } | { key: string; label: string; sub: MenuItem[] } | '-'
 /** 기본 메뉴를 띄운다. 요소를 주면 그 아래에, 좌표를 주면 그 자리(우클릭한 곳)에. */
 function openMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuItem[]) {
   const at = anchor instanceof HTMLElement ? (r => ({ x: r.left, y: r.bottom + 2 }))(anchor.getBoundingClientRect()) : anchor
-  void window.api.popupMenu(items.map(it => it === '-' ? '-' : { key: it.key, label: it.label, on: it.on, check: it.check, accel: it.accel }), { x: Math.round(at.x), y: Math.round(at.y) })
-    .then(key => { const it = items.find(i => i !== '-' && i.key === key); if (it && it !== '-') it.run() })
+  const spec = (list: MenuItem[]): MenuItemSpec[] => list.map(it => it === '-' ? '-' : 'sub' in it ? { key: it.key, label: it.label, sub: spec(it.sub) } : { key: it.key, label: it.label, on: it.on, check: it.check, accel: it.accel })
+  const flat = (list: MenuItem[]): MenuItem[] => list.flatMap(it => it !== '-' && 'sub' in it ? flat(it.sub) : [it])
+  void window.api.popupMenu(spec(items), { x: Math.round(at.x), y: Math.round(at.y) })
+    .then(key => { const it = flat(items).find(i => i !== '-' && i.key === key); if (it && it !== '-' && 'run' in it) it.run() })
 }
 
 /** CLI·앱 열기(못 찾으면 안내). */
 async function openTool(kind: 'cli' | 'app', id: string) {
   const ok = await window.api.openServiceTool(kind, id).catch(() => false)
-  const name = lastState?.accounts.find(a => a.id === id)?.name || '이 서비스'
-  notify(ok ? `${name} ${kind === 'cli' ? 'CLI를 터미널에서' : '앱을'} 여는 중이에요.` : `이 PC에서 ${name} ${kind === 'cli' ? 'CLI' : '앱'}을 찾지 못했어요.`)
+  const name = lastState?.accounts.find(a => a.id === id)?.name || tr('이 서비스')
+  notify(kind === 'cli'
+    ? ok ? tr('{name} CLI를 터미널에서 여는 중이에요.', { name }) : tr('이 PC에서 {name} CLI를 찾지 못했어요.', { name })
+    : ok ? tr('{name} 앱을 여는 중이에요.', { name }) : tr('이 PC에서 {name} 앱을 찾지 못했어요.', { name }))
 }
 
 function notify(message: string) {
@@ -375,32 +381,43 @@ function notify(message: string) {
 }
 async function update(patch: Partial<WidgetConfig>) {
   try { const next = await window.api.updateConfig(patch); renderDashboard(host, next, true) }
-  catch { notify('설정을 저장하지 못했어요. 다시 시도해 주세요.') }
+  catch { notify(tr('설정을 저장하지 못했어요. 다시 시도해 주세요.')) }
 }
 
 function toggleLockCards() {
   const on = !lastState.config.lockCards
-  void update({ lockCards: on }); notify(on ? '카드 위치를 고정했어요. 카드를 끌면 창이 움직여요.' : '카드를 끌어 순서를 바꿀 수 있어요.')
+  void update({ lockCards: on }); notify(on ? tr('카드 위치를 고정했어요. 카드를 끌면 창이 움직여요.') : tr('카드를 끌어 순서를 바꿀 수 있어요.'))
 }
 function toggleHideHeader() {
   const on = !lastState.config.hideHeader
-  void update({ hideHeader: on }); notify(on ? '제목줄을 숨겼어요. 위쪽 가장자리에 마우스를 올리면 나타나요.' : '제목줄을 늘 보여 줘요.')
+  void update({ hideHeader: on }); notify(on ? tr('제목줄을 숨겼어요. 위쪽 가장자리에 마우스를 올리면 나타나요.') : tr('제목줄을 늘 보여 줘요.'))
 }
 
 /** 제목줄 메뉴(☰ 단추, 제목줄 우클릭): 디자인, 켜고 끄는 보기 설정, 창 열기, 숨기기·종료. */
 function mainMenu(): MenuItem[] {
   const c = lastState.config, current = designOf(c), pinned = c.alwaysOnTop !== false
-  return [...DESIGNS.map(([key, label], i) => ({ key, label, accel: `Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
-    { key: 'pin', label: '항상 위', check: pinned, run: () => { void update({ alwaysOnTop: !pinned }); notify(!pinned ? '항상 위에 표시해요.' : '다른 창 뒤로 갈 수 있어요.') } },
-    { key: 'lock-cards', label: '카드 위치 고정', accel: 'Shift+`', check: !!c.lockCards, run: toggleLockCards },
-    { key: 'hide-header', label: '제목줄 항상 숨기기', accel: '`', check: !!c.hideHeader, run: toggleHideHeader },
+  return [...DESIGNS.map(([key, label], i) => ({ key, label: trText(label), accel: `Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
+    { key: 'pin', label: tr('항상 위'), check: pinned, run: () => { void update({ alwaysOnTop: !pinned }); notify(!pinned ? tr('항상 위에 표시해요.') : tr('다른 창 뒤로 갈 수 있어요.')) } },
+    { key: 'lock-cards', label: tr('카드 위치 고정'), accel: 'Shift+`', check: !!c.lockCards, run: toggleLockCards },
+    { key: 'hide-header', label: tr('제목줄 항상 숨기기'), accel: '`', check: !!c.hideHeader, run: toggleHideHeader },
     '-',
-    { key: 'settings', label: '설정', run: () => { void window.api.openSettings('last') } },
-    { key: 'stats', label: '사용량 통계', run: () => { void window.api.openStats() } },
-    { key: 'about', label: '정보·업데이트', run: () => { void window.api.openAbout?.() } },
-    { key: 'hide', label: '트레이로 숨기기', run: () => { void window.api.hideWidget() } },
+    { key: 'settings', label: tr('설정'), run: () => { void window.api.openSettings('last') } },
+    { key: 'stats', label: tr('사용량 통계'), run: () => { void window.api.openStats() } },
+    { key: 'about', label: tr('정보·업데이트'), run: () => { void window.api.openAbout?.() } },
+    languageMenu(c),
+    { key: 'hide', label: tr('트레이로 숨기기'), run: () => { void window.api.hideWidget() } },
     '-',
-    { key: 'quit', label: '종료', run: () => { void window.api.quitApp() } }]
+    { key: 'quit', label: tr('종료'), run: () => { void window.api.quitApp() } }]
+}
+
+/** 언어 하위 메뉴(트레이 메뉴와 같은 항목). 고르면 모든 창이 바로 그 언어로 바뀐다. */
+function languageMenu(c: WidgetConfig): MenuItem {
+  const setting = c.language ?? 'system'
+  const pick = (language: 'system' | 'ko' | 'en') => () => { void update({ language }) }
+  return { key: 'language', label: LANGUAGE_LABEL, sub: [
+    { key: 'lang-system', label: tr('시스템 따라'), on: setting === 'system', run: pick('system') }, '-',
+    { key: 'lang-ko', label: LANG_NAMES.ko, on: setting === 'ko', run: pick('ko') },
+    { key: 'lang-en', label: LANG_NAMES.en, on: setting === 'en', run: pick('en') }] }
 }
 
 /** 카드·메뉴처럼 배치 때마다 다시 그려지는 요소는 컨테이너에 한 번만 위임해 처리한다. */
@@ -423,8 +440,8 @@ function bindDelegated(container: HTMLElement) {
       e.stopPropagation()
       const id = src.dataset.src!, now = lastState.config.valueSource?.[id] || 'weekly'
       const kind = lastState.usages.find(u => u.id === id)?.primaryKind
-      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: k === '5h' ? firstWindowLabel(kind) : SOURCE_LABEL[k], on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
-        { key: 'all', label: '모든 카드에 같은 기준 적용', run: () => { const all: Record<string, ValueSource> = {}; for (const u of lastState.usages) all[u.id] = now; void update({ valueSource: all }) } }])
+      openMenu(src, [...(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => ({ key: k, label: trText(k === '5h' ? firstWindowLabel(kind) : SOURCE_LABEL[k]), on: now === k, run: () => { void update({ valueSource: { ...lastState.config.valueSource, [id]: k } }) } })), '-',
+        { key: 'all', label: tr('모든 카드에 같은 기준 적용'), run: () => { const all: Record<string, ValueSource> = {}; for (const u of lastState.usages) all[u.id] = now; void update({ valueSource: all }) } }])
       return
     }
     if (t.closest('[data-focus-off]')) { void window.api.setFocus(null); return }
@@ -474,8 +491,8 @@ function bindDelegated(container: HTMLElement) {
     const n = Number(m[1])
     if (e.ctrlKey) {
       if (n > DESIGNS.length) return
-      e.preventDefault(); void update({ design: DESIGNS[n - 1][0] }); notify(`디자인: ${DESIGNS[n - 1][1]}`)
-    } else if (n <= 5) void window.api.sizePreset(n).then(label => { if (label) notify(`크기: ${label}`) })
+      e.preventDefault(); void update({ design: DESIGNS[n - 1][0] }); notify(tr('디자인: {name}', { name: trText(DESIGNS[n - 1][1]) }))
+    } else if (n <= 5) void window.api.sizePreset(n).then(label => { if (label) notify(tr('크기: {name}', { name: trText(label) })) })
   })
 }
 
@@ -484,10 +501,10 @@ function bindEvents(container: HTMLElement, state: AppState) {
   container.querySelectorAll<HTMLElement>('[data-settings]').forEach(el => el.onclick = () => { void window.api.openSettings(el.dataset.settings as 'design' | 'services') })
   container.querySelectorAll<HTMLElement>('[data-action]').forEach(el => el.onclick = async () => {
     switch (el.dataset.action) {
-      case 'refresh': try { await window.api.refreshQuota() } catch { notify('새로고침에 실패했어요.') }; break
+      case 'refresh': try { await window.api.refreshQuota() } catch { notify(tr('새로고침에 실패했어요.')) }; break
       case 'hide': await window.api.hideWidget(); break
       case 'close': void window.api.unlockPopup(); await window.api.hidePopup(); break
-      case 'pin': { const on = lastState.config.alwaysOnTop === false; await update({ alwaysOnTop: on }); notify(on ? '항상 위에 표시해요.' : '다른 창 뒤로 갈 수 있어요.'); break }
+      case 'pin': { const on = lastState.config.alwaysOnTop === false; await update({ alwaysOnTop: on }); notify(on ? tr('항상 위에 표시해요.') : tr('다른 창 뒤로 갈 수 있어요.')); break }
     }
   })
   container.querySelectorAll<HTMLElement>('[data-window-drag],[data-resize]').forEach(el => el.onpointerdown = e => {
@@ -513,6 +530,6 @@ function startWindowGesture(el: HTMLElement, e: PointerEvent, kind: string) {
   const stop = () => { cancelAnimationFrame(frame); el.onpointermove = null; el.onpointerup = null; el.onpointercancel = null }
   el.onpointerup = up => { void window.api.endInteraction?.({ x: up.screenX, y: up.screenY }); stop() }
   el.onpointercancel = () => { void window.api.endInteraction?.(); stop() }
-  void window.api.beginInteraction(kind, { x: e.screenX, y: e.screenY }).catch(() => notify('창 조작을 시작하지 못했어요.'))
+  void window.api.beginInteraction(kind, { x: e.screenX, y: e.screenY }).catch(() => notify(tr('창 조작을 시작하지 못했어요.')))
 }
 

@@ -12,6 +12,7 @@ import { GrokCliClient, readGrokAuth } from './grok-cli-client.js'
 import { CursorClient } from './cursor-client.js'
 import { CopilotClient, findGh } from './copilot-client.js'
 import { GeminiCliClient } from './gemini-cli-client.js'
+import { msg } from '../common/i18n.js'
 
 const execAsync = promisify(exec)
 
@@ -38,7 +39,7 @@ export class LocalAppDetector {
       provider: 'antigravity',
       installed: true,
       running: !!lspProc,
-      description: lspProc ? '현재 실행 중 (무인증 실시간 연동)' : '설치됨 (실행 시 자동 연동)',
+      description: lspProc ? msg('현재 실행 중 (무인증 실시간 연동)') : msg('설치됨 (실행 시 자동 연동)'),
       iconLetter: 'A',
       brandColor: '#2563EB'
     })
@@ -86,10 +87,10 @@ export class LocalAppDetector {
       installed: claudeAvailable,
       running: claudeLoggedIn || desktopRunning,
       description: claudeLoggedIn && desktopSessionDetected
-        ? 'CLI 로그인 · 데스크톱 실시간 세션 감지됨'
-        : claudeLoggedIn ? 'CLI 로그인 세션 감지됨'
-          : desktopSessionDetected ? '데스크톱 앱 실시간 세션 감지됨'
-            : desktopDetected ? '앱 사용량 기록 감지됨' : (claudeAvailable ? '설치됨 (연결 가능)' : '미설치'),
+        ? msg('CLI 로그인 · 데스크톱 실시간 세션 감지됨')
+        : claudeLoggedIn ? msg('CLI 로그인 세션 감지됨')
+          : desktopSessionDetected ? msg('데스크톱 앱 실시간 세션 감지됨')
+            : desktopDetected ? msg('앱 사용량 기록 감지됨') : (claudeAvailable ? msg('설치됨 (연결 가능)') : msg('미설치')),
       iconLetter: 'C',
       brandColor: '#D97757'
     })
@@ -118,7 +119,7 @@ export class LocalAppDetector {
       provider: 'codex',
       installed: codexInstalled,
       running: codexLoggedIn,
-      description: codexLoggedIn ? '로컬 세션 감지됨 (연결 완료)' : (codexInstalled ? '설치됨 (연결 가능)' : '미설치 (기본 프리셋 제공)'),
+      description: codexLoggedIn ? msg('로컬 세션 감지됨 (연결 완료)') : (codexInstalled ? msg('설치됨 (연결 가능)') : msg('미설치 (기본 프리셋 제공)')),
       iconLetter: 'X',
       brandColor: '#6366F1'
     })
@@ -132,16 +133,16 @@ export class LocalAppDetector {
       provider: 'xai',
       installed: grokInstalled,
       running: !!grokAuth,
-      description: grokAuth ? 'CLI 로그인 세션 감지됨' : (grokInstalled ? '설치됨 (grok login 필요)' : '미설치'),
+      description: grokAuth ? msg('CLI 로그인 세션 감지됨') : (grokInstalled ? msg('설치됨 (grok login 필요)') : msg('미설치')),
       iconLetter: 'G',
       brandColor: '#A1A1AA'
     })
 
     // 5. Cursor·GitHub Copilot·Gemini CLI: 로그인 흔적이 있을 때만 목록에 보인다(없으면 목록을 늘리지 않는다).
-    if (CursorClient.isLoggedIn()) results.push({ id: 'local-cursor', name: 'Cursor', provider: 'cursor', installed: true, running: false, description: 'Cursor 앱 로그인 감지됨', iconLetter: 'C', brandColor: '#9CA3AF' })
+    if (CursorClient.isLoggedIn()) results.push({ id: 'local-cursor', name: 'Cursor', provider: 'cursor', installed: true, running: false, description: msg('Cursor 앱 로그인 감지됨'), iconLetter: 'C', brandColor: '#9CA3AF' })
     const copilotPlugin = CopilotClient.hasPluginLogin()
-    if (copilotPlugin || findGh()) results.push({ id: 'local-copilot', name: 'GitHub Copilot', provider: 'copilot', installed: true, running: false, description: copilotPlugin ? '편집기 Copilot 로그인 감지됨' : 'GitHub CLI 로그인으로 확인', iconLetter: 'G', brandColor: '#8B949E' })
-    if (GeminiCliClient.isLoggedIn()) results.push({ id: 'local-gemini', name: 'Gemini CLI', provider: 'google', installed: true, running: false, description: 'Gemini CLI 로그인 감지됨', iconLetter: 'G', brandColor: '#4E82EE' })
+    if (copilotPlugin || findGh()) results.push({ id: 'local-copilot', name: 'GitHub Copilot', provider: 'copilot', installed: true, running: false, description: copilotPlugin ? msg('편집기 Copilot 로그인 감지됨') : msg('GitHub CLI 로그인으로 확인'), iconLetter: 'G', brandColor: '#8B949E' })
+    if (GeminiCliClient.isLoggedIn()) results.push({ id: 'local-gemini', name: 'Gemini CLI', provider: 'google', installed: true, running: false, description: msg('Gemini CLI 로그인 감지됨'), iconLetter: 'G', brandColor: '#4E82EE' })
 
     return results
   }

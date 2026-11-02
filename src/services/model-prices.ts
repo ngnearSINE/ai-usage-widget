@@ -51,7 +51,7 @@ export class ModelPrices {
         fs.mkdirSync(path.dirname(this.file), { recursive: true })
         fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.saved))
         fs.renameSync(`${this.file}.tmp`, this.file)
-      } catch (err) { console.warn('[Cost] 가격표를 받지 못했어요', err) }
+      } catch (err) { console.warn('[Cost] 가격표를 받지 못했어요', err) } // i18n-ok
     })().finally(() => { this.loading = null })
     return this.loading
   }

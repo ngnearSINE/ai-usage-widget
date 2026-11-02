@@ -5,6 +5,7 @@ import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { OrcaLocalClient } from './orca-local-client.js'
 import { appDataDir } from './platform-paths.js'
+import { msg } from '../common/i18n.js'
 
 export class CodexLocalClient {
   private static cachedUsage?: AccountUsage
@@ -24,7 +25,7 @@ export class CodexLocalClient {
     }
 
     // 다른 로그인 폴더 계정은 그 폴더의 실측만 쓴다(기본 계정의 대체 값과 섞이지 않게).
-    if (account.homeDir) throw new Error('이 로그인 폴더의 Codex 사용량을 받지 못했어요. 터미널에서 CODEX_HOME을 이 폴더로 두고 codex login을 했는지 확인해 주세요')
+    if (account.homeDir) throw new Error(msg('이 로그인 폴더의 Codex 사용량을 받지 못했어요. 터미널에서 CODEX_HOME을 이 폴더로 두고 codex login을 했는지 확인해 주세요'))
 
     // 1. Orca 로컬 세션 네임드 파이프 직결 조회 시도 (2순위)
     try {
@@ -62,7 +63,7 @@ export class CodexLocalClient {
     }
 
     if (!authData) {
-      return this.getFallback(account, 'Codex 세션 파일 없음 (~/.codex/auth.json)')
+      return this.getFallback(account, msg('Codex 세션 파일 없음 (~/.codex/auth.json)'))
     }
 
     // 2. 계정 정보 파싱 (JWT id_token / access_token에서 사용자 정보 추출)
@@ -166,7 +167,7 @@ export class CodexLocalClient {
 
     // DB를 못 읽으면 sessionPercent/weeklyPercent 가 0으로 남아 "쿼터 가득 남음"처럼 보인다 — 그건 실패로 보고한다
     if (!sqliteRead) {
-      return this.getFallback(account, 'Codex 사용량 DB(state_5.sqlite)를 읽지 못했습니다')
+      return this.getFallback(account, msg('Codex 사용량 DB(state_5.sqlite)를 읽지 못했습니다'))
     }
 
     const isPro = plan.toLowerCase().includes('pro')
@@ -180,7 +181,7 @@ export class CodexLocalClient {
       iconLetter: 'X',
       brandColor: '#6366F1',
       email: email || undefined,
-      tier: `${plan} (로컬 추정)`,
+      tier: msg('{plan} (로컬 추정)', { plan }),
       status: 'ready',
       isEstimated: true,
       isWeeklyOnly,
@@ -201,7 +202,7 @@ export class CodexLocalClient {
       models: [
         {
           modelId: latestModel,
-          displayName: isWeeklyOnly ? `${latestModel} (1주일)` : latestModel,
+          displayName: isWeeklyOnly ? msg('{model} (1주일)', { model: latestModel }) : latestModel,
           quota: {
             remainingFraction: (100 - (isWeeklyOnly ? weeklyPercent : sessionPercent)) / 100,
             percentLeft: 100 - (isWeeklyOnly ? weeklyPercent : sessionPercent),

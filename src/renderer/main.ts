@@ -1,6 +1,6 @@
 import { renderAiIcon } from './components/ai-icons.js'
 import type { AccountUsage, AppState, WidgetConfig } from '../common/types.js'
-import { detectLang, setLang, t } from '../common/i18n.js'
+import { detectLang, getLang, setLang, tr, trText } from '../common/i18n.js'
 import { applyAppearance, renderDashboard, renderDockedUsage, setPopupSurface, setWebSurface } from './components/dashboard.js'
 import { installWebApi } from './web-api.js'
 import { initSettings, renderSettings } from './components/settings-view.js'
@@ -15,7 +15,7 @@ function updateTrayIcon(state: AppState) {
   const c = state.config
   const list = visibleUsages(state.usages, state.accounts, c).filter(u => ['ready', 'stale'].includes(u.status)).map(u => ({ u, m: serviceModel(u) }))
   const tight = list.sort((a, b) => lowestLeft(a.m) - lowestLeft(b.m))[0]
-  const tooltip = list.length ? `AI 사용량 · ${list.map(({ u, m }) => `${u.name} ${lowestLeft(m)}%`).join(' · ')}` : 'AI 사용량'
+  const tooltip = list.length ? tr('AI 사용량 · {list}', { list: list.map(({ u, m }) => `${u.name} ${lowestLeft(m)}%`).join(' · ') }) : tr('AI 사용량')
   if (c.trayShowNumber === false || !tight) {
     if (lastTrayKey !== 'default') { lastTrayKey = 'default'; window.api.setTrayImage?.(null, tooltip) }
     return
@@ -49,9 +49,19 @@ function escapeHtml(s: string): string {
   )
 }
 
-const lang = detectLang(navigator.language)
-setLang(lang)
-document.documentElement.lang = lang
+// 첫 화면은 브라우저 언어로, 상태가 오면 메인이 정한 언어(설정·시스템)로 맞춘다.
+function applyLang(lang: 'ko' | 'en') {
+  setLang(lang)
+  document.documentElement.lang = lang
+}
+applyLang(detectLang(navigator.language))
+/** 상태의 언어로 맞추고, 바뀌었으면 true. */
+function syncLang(state: AppState): boolean {
+  const next = state.lang ?? getLang()
+  if (next === getLang()) return false
+  applyLang(next)
+  return true
+}
 
 const urlParams = new URLSearchParams(window.location.search)
 const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -93,7 +103,7 @@ function updateVerticalOffset(offsetPx?: number) {
 function renderUnavailable(u: AccountUsage, config: WidgetConfig): string {
   const iconHtml = renderAiIcon(u.provider, u.name, config.iconStyle, 18)
   const loading = u.status === 'loading'
-  const tooltip = escapeHtml(`${u.name}: ${loading ? t('statusLoading') : (u.errorMessage || t('statusUnavailable'))}`)
+  const tooltip = escapeHtml(`${u.name}: ${loading ? tr('조회 중') : (trText(u.errorMessage) || tr('사용량을 가져오지 못했습니다'))}`)
   return `
     <div class="account-item is-unavailable ${loading ? 'is-loading' : ''}" data-account-id="${escapeHtml(u.id)}" title="${tooltip}">
       ${iconHtml}
@@ -126,7 +136,7 @@ function renderWidget(state: AppState) {
   if (isEmpty) {
     // 연결된 계정이 없을 때: 하얀색 작은 동그라미 더미 아이콘 표시
     accountsHtml = `
-      <div class="white-circle-dot" title="${t('noAccountTitle')}"></div>
+      <div class="white-circle-dot" title="${tr('연결된 AI 계정 없음 (클릭하여 계정 추가 또는 로컬 앱 감지)')}"></div>
     `
   } else {
     accountsHtml = activeUsages.map((u) => {
@@ -141,8 +151,8 @@ function renderWidget(state: AppState) {
 
   const showCard = state.config.showCardBackground ?? false
   const newHtml = `
-    <div class="widget-root ${isEmpty ? 'is-empty' : ''} ${showCard ? 'has-card-bg' : 'no-card-bg'}" id="widget-container" title="${t('widgetClickTitle')}">
-      <span class="dock-grip" title="끌어내면 자유 창으로 전환됩니다">⠿</span>
+    <div class="widget-root ${isEmpty ? 'is-empty' : ''} ${showCard ? 'has-card-bg' : 'no-card-bg'}" id="widget-container" title="${tr('한 번 누르면 위젯 열기 · 두 번 누르면 그 카드만 보기(집중 모드)')}">
+      <span class="dock-grip" title="${tr('끌어내면 자유 창으로 전환됩니다')}">⠿</span>
       ${accountsHtml}
     </div>
   `
@@ -333,42 +343,52 @@ async function init() {
   }
 
   const state = await window.api.getState()
+  syncLang(state)
+  // 설정·정보·통계 창은 처음 한 번 그린 뼈대를 고쳐 쓰므로, 언어가 바뀌면 지금 탭을 유지한 채 다시 연다.
+  const reloadOnLang = (next: AppState) => {
+    if (!syncLang(next)) return false
+    location.reload()
+    return true
+  }
 
   if (viewType === 'stats') {
     void renderStats(appEl, state, urlParams.get('id') || undefined)
-    window.api.onStateChange(next => { void renderStats(appEl, next) })
+    window.api.onStateChange(next => { if (!reloadOnLang(next)) void renderStats(appEl, next) })
     window.api.onStatsFocus(focusStats)
     return
   }
   if (viewType === 'about') {
     renderAbout(appEl, state)
-    window.api.onStateChange((nextState) => renderAbout(appEl, nextState))
+    window.api.onStateChange((nextState) => { if (!reloadOnLang(nextState)) renderAbout(appEl, nextState) })
     return
   }
   if (viewType === 'settings') {
     initSettings(appEl, state, urlParams.get('tab') || undefined)
-    window.api.onStateChange((nextState) => renderSettings(nextState))
+    window.api.onStateChange((nextState) => { if (!reloadOnLang(nextState)) renderSettings(nextState) })
     return
   }
 
   if (viewType === 'web') {
     renderDashboard(appEl, state)
-    window.api.onStateChange(next => renderDashboard(appEl, next))
+    window.api.onStateChange(next => { syncLang(next); renderDashboard(appEl, next) })
     return
   }
   if (viewType === 'popup') {
     renderPopup(state)
     window.api.onStateChange((nextState) => {
+      syncLang(nextState)
       renderPopup(nextState)
     })
     // 메인이 팝업을 투명하게 띄운 상태: 등장 애니메이션 첫 프레임이 화면에 반영된 뒤 불투명 전환 요청
     window.api.onPopupOpened((nextState) => {
+      syncLang(nextState)
       renderPopup(nextState, true)
       requestAnimationFrame(() => requestAnimationFrame(() => window.api.popupReady()))
     })
   } else {
     renderWidget(state)
     window.api.onStateChange((nextState) => {
+      if (syncLang(nextState)) lastWidgetHtml = ''
       renderWidget(nextState)
     })
   }

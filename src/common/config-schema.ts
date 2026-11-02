@@ -55,6 +55,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
     return out
   },
   appearance: oneOf('dark', 'light', 'system'),
+  language: oneOf('system', 'ko', 'en'),
   barStyle: oneOf('silk', 'aurora', 'neon', 'segments', 'mono', 'spectrum'),
   motion: oneOf('off', 'subtle', 'expressive'),
   accentColor: v => typeof v === 'string' && /^#[\da-f]{6}$/i.test(v) ? v : SKIP,

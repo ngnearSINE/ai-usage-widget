@@ -1,4 +1,5 @@
 import type { WidgetConfig } from './types.js'
+import { msg } from './i18n.js'
 
 /**
  * 서비스별 '보여 줄 정보'. 서비스마다 따로 정한 값이 없으면 전체 값을 쓴다.
@@ -6,10 +7,11 @@ import type { WidgetConfig } from './types.js'
  */
 export type DisplayKey = 'showUsed' | 'showPace' | 'showReset'
 export type DisplayOptions = Record<DisplayKey, boolean>
+/** [키, 이름, 설명]. 이름·설명은 msg 원문이라 그릴 때 trText로 감싼다. */
 export const DISPLAY_KEYS: Array<[DisplayKey, string, string]> = [
-  ['showUsed', '쓴 양으로', '끄면 남은 양으로 보여요'],
-  ['showPace', '예상 시간', '페이스 눈금·속도 칩·소진 예상 문구'],
-  ['showReset', '리셋 시간', '리셋까지 남은 시간'],
+  ['showUsed', msg('쓴 양으로'), msg('끄면 남은 양으로 보여요')],
+  ['showPace', msg('예상 시간'), msg('페이스 눈금·속도 칩·소진 예상 문구')],
+  ['showReset', msg('리셋 시간'), msg('리셋까지 남은 시간')],
 ]
 
 export function globalDisplay(c: WidgetConfig): DisplayOptions {

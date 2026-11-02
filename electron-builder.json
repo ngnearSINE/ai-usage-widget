@@ -25,6 +25,10 @@
     {
       "from": "docs/user-guide.pdf",
       "to": "사용 설명서.pdf"
+    },
+    {
+      "from": "docs/user-guide.en.pdf",
+      "to": "User Guide.pdf"
     }
   ],
   "win": {

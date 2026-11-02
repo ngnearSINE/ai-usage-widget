@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { parseClaudeDesktopLiveUsage, parseRetryAfterMs, readClaudeDesktopTokens } from './claude-desktop-oauth.js'
 import { cliConfigDir, cliNeedsRelogin, refreshCliTokenIfExpired } from './claude-cli-refresh.js'
+import { msg } from '../common/i18n.js'
 
 /**
  * Claude 조직(팀/개인)별 사용량. 한 계정(이메일)이 여러 조직에 속할 수 있고 한도와 로그인 토큰은 조직마다 따로다.
@@ -28,7 +29,7 @@ export interface ClaudeToken { token: string; expiresAt: number | null; source: 
 export interface ClaudeProfile { orgUuid: string; orgName: string; orgType: string; rateTier?: string; email: string }
 export interface ClaudeOrg extends ClaudeProfile { label: string; kind: string; tokens: ClaudeToken[] }
 
-const KIND: Record<string, string> = { claude_team: '팀', claude_enterprise: '엔터프라이즈' }
+const KIND: Record<string, string> = { claude_team: msg('팀'), claude_enterprise: msg('엔터프라이즈') }
 
 /** 플랜 배지. 등급 문자열 예: default_claude_max_20x, default_claude_max_5x. 모르면 조직 종류로. */
 export function claudePlan(orgType: string, rateTier?: string): string {
@@ -42,8 +43,8 @@ export function claudePlan(orgType: string, rateTier?: string): string {
 
 /** 카드 기본 이름: 팀은 조직 이름, 개인은 이메일 앞부분. */
 export function claudeOrgLabel(p: Pick<ClaudeProfile, 'orgType' | 'orgName' | 'email'>) {
-  const kind = KIND[p.orgType] || '개인'
-  const who = kind === '개인' ? (p.email.split('@')[0] || p.orgName) : p.orgName
+  const kind = KIND[p.orgType] || msg('개인')
+  const who = kind === '개인' ? (p.email.split('@')[0] || p.orgName) : p.orgName // i18n-ok
   return { kind, label: `Claude ${kind} · ${who}` }
 }
 
@@ -58,7 +59,7 @@ export function groupClaudeOrgs(found: Array<{ token: ClaudeToken; profile: Clau
   const score = (t: ClaudeToken) => (t.scopes.includes('user:sessions:claude_code') ? 2 : 0) + (t.source === 'cli' ? 1 : 0)
   for (const org of byOrg.values()) org.tokens.sort((a, b) => score(b) - score(a) || (b.expiresAt ?? Infinity) - (a.expiresAt ?? Infinity))
   // 팀·엔터프라이즈를 앞에, 그다음 이름 순.
-  return [...byOrg.values()].sort((a, b) => Number(b.kind !== '개인') - Number(a.kind !== '개인') || a.label.localeCompare(b.label))
+  return [...byOrg.values()].sort((a, b) => Number(b.kind !== '개인') - Number(a.kind !== '개인') || a.label.localeCompare(b.label)) // i18n-ok
 }
 
 /**
@@ -76,8 +77,10 @@ export function cliExpiredOrg(): { orgUuid: string; hours: number } | null {
   } catch { return null }
 }
 export const cliExpiredMessage = (hours: number) => cliNeedsRelogin()
-  ? 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 터미널에서 claude를 실행해 다시 로그인해 주세요'
-  : `Claude Code CLI 토큰이 ${hours < 1 ? '방금' : hours < 48 ? `${Math.floor(hours)}시간 전에` : `${Math.floor(hours / 24)}일 전에`} 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)`
+  ? msg('Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 터미널에서 claude를 실행해 다시 로그인해 주세요')
+  : hours < 1 ? msg('Claude Code CLI 토큰이 방금 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)')
+  : hours < 48 ? msg('Claude Code CLI 토큰이 {n}시간 전에 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)', { n: Math.floor(hours) })
+  : msg('Claude Code CLI 토큰이 {n}일 전에 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 claude 실행)', { n: Math.floor(hours / 24) })
 
 /** CLI 로그인 파일은 있는데 토큰이 만료된 상태(어느 조직인지 아직 모름). */
 export function cliTokenExpired(dir = cliConfigDir()): boolean {
@@ -161,13 +164,13 @@ export class ClaudeOrgs {
     if (!org) {
       const expired = cliExpiredOrg()
       throw new Error(expired?.orgUuid === orgUuid ? cliExpiredMessage(expired.hours)
-        : '이 조직의 로그인 정보를 찾지 못했어요. Claude 데스크톱 앱에서 이 조직으로 한 번 전환하거나, 터미널에서 claude를 실행해 주세요')
+        : msg('이 조직의 로그인 정보를 찾지 못했어요. Claude 데스크톱 앱에서 이 조직으로 한 번 전환하거나, 터미널에서 claude를 실행해 주세요'))
     }
     const result = await this.requestUsage(orgUuid, account, org.tokens, org)
     if (typeof result !== 'number') return result
     // 토큰이 모두 거절되면 다음 조회 때 다시 찾는다.
     this.discoveredAt = 0
-    throw new Error(`이 조직의 사용량을 받지 못했어요${result ? ` (HTTP ${result})` : ''}`)
+    throw new Error(result ? msg('이 조직의 사용량을 받지 못했어요 (HTTP {status})', { status: result }) : msg('이 조직의 사용량을 받지 못했어요'))
   }
 
   /**
@@ -183,22 +186,22 @@ export class ClaudeOrgs {
     if (!token) {
       throw new Error(cliTokenExpired(dir)
         ? cliNeedsRelogin(dir)
-          ? 'Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 이 로그인 폴더로 다시 로그인해 주세요'
-          : 'Claude Code CLI 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요'
-        : '이 로그인 폴더에서 Claude Code 로그인 정보를 찾지 못했어요. 터미널에서 CLAUDE_CONFIG_DIR을 이 폴더로 두고 claude로 로그인해 주세요')
+          ? msg('Claude Code CLI 로그인 기간(약 한 달)이 끝났어요. 이 로그인 폴더로 다시 로그인해 주세요')
+          : msg('Claude Code CLI 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요')
+        : msg('이 로그인 폴더에서 Claude Code 로그인 정보를 찾지 못했어요. 터미널에서 CLAUDE_CONFIG_DIR을 이 폴더로 두고 claude로 로그인해 주세요'))
     }
     const profile = await this.profileOf(token.token)
     const info = profile ? { ...profile, ...claudeOrgLabel(profile) } : null
     const result = await this.requestUsage(key, account, [token], info)
     if (typeof result !== 'number') return result
-    throw new Error(`이 로그인 폴더의 Claude 사용량을 받지 못했어요${result ? ` (HTTP ${result})` : ''}`)
+    throw new Error(result ? msg('이 로그인 폴더의 Claude 사용량을 받지 못했어요 (HTTP {status})', { status: result }) : msg('이 로그인 폴더의 Claude 사용량을 받지 못했어요'))
   }
 
   /** 막 받은 값이 있거나 요청 제한으로 쉬는 중이면 묻지 않고 답한다. */
   private static beforeRequest(key: string, account: AccountConfig): AccountUsage | null {
     const cached = this.lastUsage.get(key)
     if (cached && Date.now() - cached.at < USAGE_MIN_INTERVAL_MS) return { ...cached.usage, id: account.id, name: account.name }
-    if ((this.backoffUntil.get(key) || 0) > Date.now()) return this.whileLimited(key, account, 'Claude 사용량 API 요청 제한으로 잠시 쉬는 중')
+    if ((this.backoffUntil.get(key) || 0) > Date.now()) return this.whileLimited(key, account, msg('Claude 사용량 API 요청 제한으로 잠시 쉬는 중'))
     return null
   }
 
@@ -216,13 +219,13 @@ export class ClaudeOrgs {
         const strikes = (this.strikes.get(key) || 0) + 1
         this.strikes.set(key, strikes)
         this.backoffUntil.set(key, Date.now() + rateLimitWait(parseRetryAfterMs(res.headers.get('retry-after')), strikes))
-        return this.whileLimited(key, account, 'Claude 사용량 API 요청 제한(HTTP 429)')
+        return this.whileLimited(key, account, msg('Claude 사용량 API 요청 제한(HTTP 429)'))
       }
       if (!res.ok) { lastStatus = res.status; await res.body?.cancel().catch(() => {}); continue }
       const usage = parseClaudeDesktopLiveUsage(await res.json(), account)
       const result: AccountUsage = {
         ...usage, name: account.name || org?.label || 'Claude', dataSource: t.source === 'cli' ? 'claude-cli' : 'claude-desktop-live',
-        ...(org ? { email: org.email, plan: claudePlan(org.orgType, org.rateTier) || undefined, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}` } : {}),
+        ...(org ? { email: org.email, plan: claudePlan(org.orgType, org.rateTier) || undefined, tier: `${org.kind} · ${org.kind === '개인' ? org.email : org.orgName}` } : {}), // i18n-ok
       }
       this.lastUsage.set(key, { at: Date.now(), usage: result })
       this.strikes.delete(key)

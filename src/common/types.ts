@@ -109,6 +109,7 @@ export interface WidgetConfig {
   windowBounds?: { x: number; y: number; width: number; height: number }
   focusId?: string // 집중 모드로 보던 카드(계정 id). 앱을 다시 켜도 이어서 본다
   appearance?: 'dark' | 'light' | 'system'
+  language?: 'system' | 'ko' | 'en' // 화면 언어: 시스템 따라(기본, 한국어가 아니면 영어)·한국어·English
   barStyle?: 'silk' | 'aurora' | 'neon' | 'segments' | 'mono' | 'spectrum'
   motion?: 'off' | 'subtle' | 'expressive'
   accentColor?: string
@@ -162,7 +163,7 @@ export interface UpdateState {
 }
 
 /** 화면이 띄워 달라고 보내는 메뉴 항목(메인이 Windows 기본 메뉴로 그린다). on이 있으면 고르는 항목, accel은 오른쪽 안내. */
-export type MenuItemSpec = { key: string; label: string; on?: boolean; check?: boolean; accel?: string } | '-' // on: 라디오(하나만 고름), check: 켜고 끄는 체크
+export type MenuItemSpec = { key: string; label: string; on?: boolean; check?: boolean; accel?: string; sub?: MenuItemSpec[] } | '-' // on: 라디오(하나만 고름), check: 켜고 끄는 체크, sub: 하위 메뉴
 
 /** 웹 페이지 서버 상태: 열렸는지, 접속 주소, 열지 못한 이유 */
 export interface WebStatus { running: boolean; urls: string[]; error?: string }
@@ -176,6 +177,7 @@ export interface AppState {
   acrylicSupported?: boolean
   launchers?: Record<string, { cli?: string; app?: string }> // 자동으로 찾은 CLI·앱(설정 화면 표시용)
   dockSupported?: boolean // 작업 표시줄 도킹 가능(Windows만)
+  lang?: 'ko' | 'en' // 지금 화면 언어(설정과 시스템 언어로 메인이 정함)
   config: WidgetConfig
   accounts: AccountConfig[]
   usages: AccountUsage[]

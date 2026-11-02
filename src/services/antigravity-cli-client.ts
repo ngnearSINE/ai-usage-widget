@@ -4,6 +4,7 @@ import path from 'node:path'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, ModelQuotaDetail, QuotaInfo } from '../common/types.js'
 import { findExecutable } from './platform-paths.js'
+import { msg } from '../common/i18n.js'
 
 type AgyErrorCode =
   | 'ANTIGRAVITY_CLI_NOT_FOUND'
@@ -13,11 +14,11 @@ type AgyErrorCode =
   | 'ANTIGRAVITY_QUOTA_UNAVAILABLE'
 
 const ERROR_TEXT: Record<AgyErrorCode, string> = {
-  ANTIGRAVITY_CLI_NOT_FOUND: 'agy CLI를 찾을 수 없습니다',
-  ANTIGRAVITY_NOT_AUTHENTICATED: 'agy CLI 로그인이 필요합니다',
-  ANTIGRAVITY_CLI_TIMEOUT: 'agy CLI 응답 시간 초과',
-  ANTIGRAVITY_QUOTA_PARSE_ERROR: 'agy CLI 응답을 해석하지 못했습니다',
-  ANTIGRAVITY_QUOTA_UNAVAILABLE: '사용량 정보를 받지 못했습니다'
+  ANTIGRAVITY_CLI_NOT_FOUND: msg('agy CLI를 찾을 수 없습니다'),
+  ANTIGRAVITY_NOT_AUTHENTICATED: msg('agy CLI 로그인이 필요합니다'),
+  ANTIGRAVITY_CLI_TIMEOUT: msg('agy CLI 응답 시간 초과'),
+  ANTIGRAVITY_QUOTA_PARSE_ERROR: msg('agy CLI 응답을 해석하지 못했습니다'),
+  ANTIGRAVITY_QUOTA_UNAVAILABLE: msg('사용량 정보를 받지 못했습니다')
 }
 
 class AgyError extends Error {
@@ -153,7 +154,7 @@ export class AntigravityCliClient {
 
     // 5h/weekly 중 아무것도 못 읽었으면 스키마가 바뀐 것이다 — 100% 남음으로 보이게 두지 않는다
     if (!primary && !weekly) {
-      throw new AgyError('ANTIGRAVITY_QUOTA_PARSE_ERROR', '5h/weekly 버킷의 remaining_fraction 을 찾지 못했습니다')
+      throw new AgyError('ANTIGRAVITY_QUOTA_PARSE_ERROR', msg('5h/weekly 버킷의 remaining_fraction 을 찾지 못했습니다'))
     }
 
     // 5h 버킷이 없으면 주간 한도만 있는 계정으로 본다 (가짜 5h 100% 를 만들지 않는다)

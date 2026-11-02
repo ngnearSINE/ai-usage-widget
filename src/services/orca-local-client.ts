@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, ModelQuotaDetail } from '../common/types.js'
 import { appDataDir } from './platform-paths.js'
+import { msg } from '../common/i18n.js'
 
 interface OrcaRuntimeMetadata {
   runtimeId?: string
@@ -203,7 +204,7 @@ export class OrcaLocalClient {
     if (isWeeklyOnly) {
       models.push({
         modelId: 'gpt-5.6-terra-weekly',
-        displayName: 'Codex (1주일)',
+        displayName: msg('Codex (1주일)'),
         quota: {
           remainingFraction: weeklyLeft / 100,
           percentLeft: weeklyLeft,
@@ -217,7 +218,7 @@ export class OrcaLocalClient {
       models.push(
         {
           modelId: 'gpt-5.6-terra',
-          displayName: 'Codex (5시간)',
+          displayName: msg('Codex (5시간)'),
           quota: {
             remainingFraction: sessionLeft / 100,
             percentLeft: sessionLeft,
@@ -229,7 +230,7 @@ export class OrcaLocalClient {
         },
         {
           modelId: 'gpt-5.6-terra-weekly',
-          displayName: 'Codex (1주일)',
+          displayName: msg('Codex (1주일)'),
           quota: {
             remainingFraction: weeklyLeft / 100,
             percentLeft: weeklyLeft,
@@ -249,7 +250,7 @@ export class OrcaLocalClient {
       iconLetter: 'X',
       brandColor: '#6366F1',
       email,
-      tier: `${plan} (Orca 직결)`,
+      tier: msg('{plan} (Orca 직결)', { plan }),
       status: 'ready',
       isWeeklyOnly,
       primaryQuota: {
@@ -306,7 +307,7 @@ export class OrcaLocalClient {
       iconLetter: 'C',
       brandColor: '#D97706',
       email,
-      tier: 'Pro (Orca 직결)',
+      tier: msg('Pro (Orca 직결)'),
       status: 'ready',
       primaryQuota: {
         remainingFraction: sessionLeft / 100,

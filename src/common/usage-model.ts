@@ -1,4 +1,5 @@
 import type { AccountUsage, QuotaInfo } from './types.js'
+import { msg, tr, trText } from './i18n.js'
 
 /** 대시보드 디자인과 그 디자인이 크기에 따라 바뀌는 규칙. 렌더러와 테스트가 함께 쓰는 순수 계산만 둔다. */
 export const WINDOW_5H = 5 * 3600e3
@@ -8,16 +9,19 @@ export const WINDOW_30D = 30 * 86400e3
 export type WindowPeriod = '5h' | 'daily' | 'weekly' | 'monthly'
 export const PERIOD_LEN: Record<WindowPeriod, number> = { '5h': WINDOW_5H, daily: 86400e3, weekly: WINDOW_7D, monthly: WINDOW_30D }
 // 짧은 이름도 한 글자로 줄이지 않는다('주' 한 글자는 잘린 글자처럼 보인다).
-const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': ['5시간', '5h'], daily: ['일간', '일간'], weekly: ['주간', '주간'], monthly: ['월간', '월간'] }
-/** 첫 번째 칸의 이름: 5시간, 또는 그 서비스의 주기(월간·일간). */
-export const firstWindowLabel = (kind?: 'monthly' | 'daily') => kind === 'monthly' ? '월간' : kind === 'daily' ? '일간' : '5시간'
+// 라벨은 msg(한국어 원문)로 두고 쓰는 순간 trText로 옮긴다.
+const PERIOD_LABEL: Record<WindowPeriod, [string, string]> = { '5h': [msg('5시간'), '5h'], daily: [msg('일간'), msg('일간')], weekly: [msg('주간'), msg('주간')], monthly: [msg('월간'), msg('월간')] }
+/** 첫 번째 칸의 이름: 5시간, 또는 그 서비스의 주기(월간·일간). 지금 언어로. */
+export const firstWindowLabel = (kind?: 'monthly' | 'daily') => kind === 'monthly' ? tr('월간') : kind === 'daily' ? tr('일간') : tr('5시간')
 export type DesignId = 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
 export type ValueSource = 'weekly' | '5h' | 'tight'
+/** [id, 이름, 설명]. 이름·설명은 msg 원문이라 그릴 때 trText로 감싼다. */
 export const DESIGNS: Array<[DesignId, string, string]> = [
-  ['rich', '종합', '크기에 맞춰 정보 조율'], ['numeral', '숫자', '큰 숫자'], ['bars', '막대', '막대 + 페이스'],
-  ['rings', '원형', '이중 링 게이지'], ['timeline', '타임라인', '시간 vs 남은 양'], ['battery', '배터리', '칸으로 세는 여유'],
+  ['rich', msg('종합'), msg('크기에 맞춰 정보 조율')], ['numeral', msg('숫자'), msg('큰 숫자')], ['bars', msg('막대'), msg('막대 + 페이스')],
+  ['rings', msg('원형'), msg('이중 링 게이지')], ['timeline', msg('타임라인'), msg('시간 vs 남은 양')], ['battery', msg('배터리'), msg('칸으로 세는 여유')],
 ]
-export const SOURCE_LABEL: Record<ValueSource, string> = { weekly: '주간', '5h': '5시간', tight: '빠듯한 쪽' }
+/** msg 원문. 그릴 때 trText로 감싼다. */
+export const SOURCE_LABEL: Record<ValueSource, string> = { weekly: msg('주간'), '5h': msg('5시간'), tight: msg('빠듯한 쪽') }
 
 export interface QuotaWindow {
   /** 칸 이름. 설정(기준 선택·알림 끄기)과 기록에 저장되는 값이라 주기와 따로 둔다. */
@@ -64,7 +68,7 @@ export function quotaWindow(q: QuotaInfo, key: '5h' | 'weekly', now = Date.now()
   const rate = elapsed === null ? 0 : used / (elapsed * len)
   const toEmptyMs = elapsed === null ? null : rate > 0 ? left / rate : Infinity
   return {
-    key, period, label: PERIOD_LABEL[period][0], short: PERIOD_LABEL[period][1],
+    key, period, label: trText(PERIOD_LABEL[period][0]), short: trText(PERIOD_LABEL[period][1]),
     left, used, resetMs, elapsed,
     expectedLeft: elapsed === null ? null : Math.round((1 - elapsed) * 100),
     toEmptyMs, runsOut: used > 0 && toEmptyMs !== null && resetMs !== null && toEmptyMs < resetMs,
@@ -210,10 +214,10 @@ export function chooseLayout(W: number, H: number, n: number, design: DesignId, 
 export const fmtDuration = (ms: number | null) => {
   if (ms === null || !Number.isFinite(ms)) return '—'
   const m = Math.max(1, Math.round(ms / 60e3)), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mm = m % 60
-  return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${mm}분` : `${mm}분`
+  return d ? tr('{d}일 {h}시간', { d, h }) : h ? tr('{h}시간 {m}분', { h, m: mm }) : tr('{m}분', { m: mm })
 }
 export const fmtDurationShort = (ms: number | null) => {
   if (ms === null || !Number.isFinite(ms)) return '—'
   const m = Math.max(1, Math.round(ms / 60e3)), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mm = m % 60
-  return d ? `${d}일 ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`
+  return d ? tr('{d}일 {h}h', { d, h }) : h ? `${h}h ${mm}m` : `${mm}m`
 }

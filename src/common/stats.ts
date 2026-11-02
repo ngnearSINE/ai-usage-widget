@@ -1,5 +1,6 @@
 import type { HistoryPoint } from './types.js'
 import type { HistoryStore } from './history.js'
+import { getLang, tr } from './i18n.js'
 
 /**
  * 사용량 통계. 단위는 모두 '주간 한도의 %'다(하루에 주간 한도를 15% 썼다, 한 주에 80% 썼다).
@@ -62,6 +63,10 @@ function shift(period: Period, d: Date, n: number) {
   return x
 }
 
+// 한국어는 '3월'·'(월)'처럼 숫자·한 글자, 영어는 'Mar'·'(Mon)'.
+const monthName = (d: Date) => getLang() === 'en' ? d.toLocaleDateString('en-US', { month: 'short' }) : String(d.getMonth() + 1)
+const weekday = (d: Date) => getLang() === 'en' ? d.toLocaleDateString('en-US', { weekday: 'short' }) : '일월화수목금토'[d.getDay()] // i18n-ok
+
 /** 최근 count칸(오늘·이번 주·이번 달까지)의 합계. 칸마다 그 안에 든 날짜를 더한다. */
 export function buckets(days: Record<string, number> | undefined, period: Period, now = Date.now(), count = PERIOD_COUNT[period]): Bucket[] {
   const last = startOf(period, now), out: Bucket[] = []
@@ -74,8 +79,8 @@ export function buckets(days: Record<string, number> | undefined, period: Period
     const end = new Date(e.getTime() - 86400e3)
     out.push({
       start: s.getTime(),
-      label: period === 'month' ? `${s.getMonth() + 1}월` : md,
-      tip: period === 'day' ? `${md}(${'일월화수목금토'[s.getDay()]})` : period === 'week' ? `${md}~${end.getMonth() + 1}/${end.getDate()}` : `${s.getFullYear()}년 ${s.getMonth() + 1}월`,
+      label: period === 'month' ? tr('{m}월', { m: monthName(s) }) : md,
+      tip: period === 'day' ? `${md}(${weekday(s)})` : period === 'week' ? `${md}~${end.getMonth() + 1}/${end.getDate()}` : tr('{y}년 {m}월', { y: s.getFullYear(), m: monthName(s) }),
       total: round1(total),
       days: Math.round((Math.min(e.getTime(), startOf('day', now).getTime() + 86400e3) - s.getTime()) / 86400e3),
     })

@@ -1,6 +1,7 @@
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { ClaudeLocalClient } from './claude-local-client.js'
 import { ClaudeDesktopClient } from './claude-desktop-client.js'
+import { msg } from '../common/i18n.js'
 
 type UsageSources = {
   cli: () => Promise<AccountUsage>
@@ -42,5 +43,5 @@ export async function fetchClaudeUsage(account: AccountConfig, sources: UsageSou
   if (desktopUsage.status === 'ready' || desktopUsage.status === 'stale') return desktopUsage
 
   return sourceError(account,
-    `CLI: ${cliUsage.errorMessage || '조회 실패'} · Claude 앱: ${desktopUsage.errorMessage || '기록 없음'}`)
+    msg('CLI: {cli} · Claude 앱: {app}', { cli: cliUsage.errorMessage || msg('조회 실패'), app: desktopUsage.errorMessage || msg('기록 없음') }))
 }

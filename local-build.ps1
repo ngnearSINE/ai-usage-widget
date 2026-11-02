@@ -38,16 +38,19 @@ if ($LASTEXITCODE -ne 0 -or !$lockHash) { throw '의존성 목록을 읽지 못�
 $receipt = Join-Path $buildRoot 'dependency.sha256'
 $needsInstall = !(Test-Path -LiteralPath (Join-Path $buildRoot 'node_modules/electron/dist/electron.exe'))
 if (!(Test-Path -LiteralPath $receipt) -or (Get-Content -LiteralPath $receipt -Raw).Trim() -ne $lockHash) { $needsInstall = $true }
-foreach ($entry in @('src','native','tools','public','test','index.html','tsconfig.json','vite.config.ts','electron-builder.json','package.json','package-lock.json','CHANGELOG.md')) {
+foreach ($entry in @('src','native','tools','public','test','index.html','tsconfig.json','vite.config.ts','electron-builder.json','package.json','package-lock.json','CHANGELOG.md','CHANGELOG.en.md')) {
   Copy-Item -LiteralPath (Join-Path $sourceRoot $entry) -Destination $buildRoot -Recurse -Force
 }
-# 사용 설명서 PDF는 배포본(설치 폴더·zip)에 '사용 설명서.pdf'로 들어간다(electron-builder.json extraFiles).
-$guidePdf = Join-Path $sourceRoot 'docs/user-guide.pdf'
-if (Test-Path -LiteralPath $guidePdf) {
-  New-Item -ItemType Directory -Force -Path (Join-Path $buildRoot 'docs') | Out-Null
-  Copy-Item -LiteralPath $guidePdf -Destination (Join-Path $buildRoot 'docs/user-guide.pdf') -Force
-  if ((Get-Item -LiteralPath $guidePdf).LastWriteTime -lt (Get-Item -LiteralPath (Join-Path $sourceRoot 'docs/user-guide.md')).LastWriteTime) { Write-Warning '사용 설명서 PDF가 user-guide.md보다 오래되었습니다. PDF를 다시 만드세요.' }
-} elseif ($Release -or $Package) { throw 'docs/user-guide.pdf가 없습니다. 배포본에 넣을 사용 설명서 PDF를 먼저 만드세요.' }
+# 사용 설명서 PDF는 배포본(설치 폴더·zip)에 한국어 '사용 설명서.pdf', 영어 'User Guide.pdf'로 들어간다(electron-builder.json extraFiles).
+foreach ($guide in @('user-guide', 'user-guide.en')) {
+  $guidePdf = Join-Path $sourceRoot ('docs/' + $guide + '.pdf')
+  if (Test-Path -LiteralPath $guidePdf) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $buildRoot 'docs') | Out-Null
+    Copy-Item -LiteralPath $guidePdf -Destination (Join-Path $buildRoot ('docs/' + $guide + '.pdf')) -Force
+    $guideMd = Join-Path $sourceRoot ('docs/' + $guide + '.md')
+    if ((Test-Path -LiteralPath $guideMd) -and (Get-Item -LiteralPath $guidePdf).LastWriteTime -lt (Get-Item -LiteralPath $guideMd).LastWriteTime) { Write-Warning ('사용 설명서 PDF(' + $guide + '.pdf)가 ' + $guide + '.md보다 오래되었습니다. PDF를 다시 만드세요.') }
+  } elseif ($Release -or $Package) { throw ('docs/' + $guide + '.pdf가 없습니다. 배포본에 넣을 사용 설명서 PDF를 먼저 만드세요.') }
+}
 if ($Release) {
   # 새 버전은 빌드 캐시 사본에서만 먼저 쓰고, 배포본이 다 만들어진 뒤에 프로젝트 파일에 반영한다.
   $releaseVersion = Set-ReleaseVersion $buildRoot ''

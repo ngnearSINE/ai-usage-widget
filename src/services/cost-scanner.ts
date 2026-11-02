@@ -156,7 +156,7 @@ export class CostScanner {
         fs.mkdirSync(path.dirname(this.cacheFile), { recursive: true })
         fs.writeFileSync(`${this.cacheFile}.tmp`, JSON.stringify(this.cache))
         fs.renameSync(`${this.cacheFile}.tmp`, this.cacheFile)
-      } catch (err) { console.warn('[Cost] 집계 저장 실패', err) }
+      } catch (err) { console.warn('[Cost] 집계 저장 실패', err) } // i18n-ok
     }, delay)
   }
 }
