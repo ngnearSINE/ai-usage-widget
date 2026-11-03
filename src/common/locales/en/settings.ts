@@ -274,6 +274,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '가장 빠듯한 서비스의 남은 양을 보여 주고, 주의·위험이면 색이 바뀌어요. 창을 숨겨도 볼 수 있어요.': 'Shows what’s left on the tightest service and changes color at warning/critical. Visible even when the window is hidden.',
   '클릭 통과': 'Click-through',
   '창 클릭 통과 잠금': 'Click-through lock',
+  '전체 화면 앱이 뜨면 숨기기': 'Hide while a full-screen app is open',
+  '같은 모니터에 게임·영상 같은 전체 화면 앱이 뜨면 창을 숨겼다가 끝나면 다시 보여요. 끄면 직접 숨길 때만 사라져요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)': 'Hides the window while a full-screen app such as a game or video is open on the same monitor, and shows it again afterwards. When off, the window disappears only when you hide it. (Not used while docked to the taskbar.)',
   '창을 눌러도 그 뒤의 프로그램이 눌려요. 마우스로는 풀 수 없으니 단축키나 트레이 메뉴로 푸세요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)': 'Clicks pass through the window to what’s behind. The mouse can’t undo it, so use the shortcut or tray menu. (Not used while docked to the taskbar.)',
   '단축키': 'Shortcuts',
   '창·작업 표시줄 독 보이기·숨기기': 'Show/hide window or taskbar dock',

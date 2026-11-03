@@ -374,16 +374,12 @@ function setClickThrough(on: boolean) {
 }
 async function toggleWidgetVisibility() {
   if (!widgetWindow) return
-  if (widgetWindow.isVisible()) {
+  // 최소화된 창은 보이지 않으므로 숨긴 것으로 보고 다시 보인다.
+  if (widgetWindow.isVisible() && !widgetWindow.isMinimized()) {
     widgetManuallyHidden = true
     widgetWindow.hide()
     hidePopup(true)
-  } else {
-    widgetManuallyHidden = false
-    widgetHiddenForFullscreen = false
-    widgetWindow.show()
-    await updateWidgetBounds()
-  }
+  } else await showWidgetWindow()
 }
 /** 숨긴 창(또는 독)을 다시 보이고 창은 맨 앞으로 가져온다. 이미 보이면 숨기지 않는다. */
 async function showWidgetWindow() {
@@ -758,6 +754,7 @@ function createWidgetWindow() {
     height: currentWidgetHeight,
     alwaysOnTop: isFloating && (config.alwaysOnTop !== false),
     skipTaskbar: true,
+    minimizable: false, // 사용자가 숨길 때만 사라지게: Windows의 '모든 창 최소화'에서 빠진다
     resizable: false, // 투명 HWND의 기본 리사이즈 충돌을 피하고 8방향 사용자 핸들로 조절한다.
     hasShadow: false,
     focusable: true, // 마우스 클릭 이벤트가 정상적으로 DOM에 전달되도록 true 유지
@@ -776,6 +773,12 @@ function createWidgetWindow() {
     widgetWindow.setAlwaysOnTop(true, 'floating')
   }
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 작업 표시줄 단추가 없어 최소화되면 되살릴 곳이 없다. 숨기기는 hide()로만 하므로 최소화는 곧바로 되돌린다(포커스는 가져오지 않음).
+  win.on('minimize', () => setImmediate(() => {
+    if (win.isDestroyed() || !win.isMinimized()) return
+    win.showInactive()
+    if (win.isMinimized()) win.restore()
+  }))
 
   widgetWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error('[WidgetWindow] Load failed:', code, desc, url)
@@ -1629,6 +1632,7 @@ function setupIpcHandlers() {
     if (patch.hideHeader === false && nextConfig.placementMode === 'floating' && !focusId) growToFitCards()
     if (patch.appearance !== undefined || patch.useAcrylic !== undefined || patch.opacity !== undefined) applySurface()
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
+    if (patch.hideOnFullscreen !== undefined) startFullscreenWatch()
     if (patch.language !== undefined) { applyLang(nextConfig.language); relabelForLanguage(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
     if (patch.shortcuts !== undefined) { registerShortcuts(); updateTrayMenu() }
@@ -2064,9 +2068,26 @@ app.whenReady().then(() => {
   screen.on('display-removed', onScreenChange)
 })
 
-/** 전체 화면 앱이 뜨면 자유 창 위젯을 숨긴다. 위젯과 같은 모니터인지 보려고 창 핸들을 넘기므로 위젯 창을 새로 만들면 다시 건다. */
+/**
+ * 전체 화면 앱이 뜨면 자유 창 위젯을 숨긴다(설정 '전체 화면 앱이 뜨면 숨기기', 기본 끔). 위젯과 같은 모니터인지 보려고 창 핸들을 넘기므로
+ * 위젯 창을 새로 만들면 다시 건다. 감시 프로그램이 끝나면 숨긴 창부터 되살리고 잠시 뒤 다시 건다(숨긴 채로 남지 않게).
+ */
+let fullscreenRetry: ReturnType<typeof setTimeout> | undefined
+function restoreFromFullscreenHide() {
+  if (!widgetHiddenForFullscreen) return
+  widgetHiddenForFullscreen = false
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetManuallyHidden) return
+  widgetWindow.showInactive()
+  void updateWidgetBounds()
+}
 function startFullscreenWatch() {
+  clearTimeout(fullscreenRetry)
   if (!widgetWindow || widgetWindow.isDestroyed()) return
+  if (accountStore.getConfig().hideOnFullscreen !== true) {
+    TaskbarDocker.stopFullscreenWatcher()
+    restoreFromFullscreenHide()
+    return
+  }
   TaskbarDocker.startFullscreenWatcher(widgetWindow, (isFullscreen) => {
     if (!widgetWindow || widgetWindow.isDestroyed() || widgetManuallyHidden) return
     const cfg = accountStore.getConfig()
@@ -2075,12 +2096,11 @@ function startFullscreenWatch() {
         widgetHiddenForFullscreen = true
         widgetWindow.hide()
         hidePopup(true)
-      } else if (!isFullscreen && widgetHiddenForFullscreen) {
-        widgetHiddenForFullscreen = false
-        widgetWindow.show()
-        updateWidgetBounds()
-      }
+      } else if (!isFullscreen) restoreFromFullscreenHide()
     }
+  }, () => {
+    restoreFromFullscreenHide()
+    fullscreenRetry = setTimeout(startFullscreenWatch, 5000)
   })
 }
 

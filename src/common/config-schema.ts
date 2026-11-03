@@ -25,7 +25,7 @@ const RULES: Partial<Record<keyof WidgetConfig, Rule>> = {
   showWeeklyLimit: bool, colorByUsage: bool, showUsedPercent: bool, alwaysOnTop: bool, showCardBackground: bool,
   openAtLogin: bool, doubleClickToOpenPopup: bool, hideDisconnected: bool, webEnabled: bool, webRemote: bool, showResetTime: bool,
   showServiceName: bool, useAcrylic: bool, showPace: bool, sortLowFirst: bool, lockCards: bool, hideHeader: bool, snapEdges: bool, notifyEnabled: bool, notifyLow: bool,
-  notifyPace: bool, notifyReset: bool, notifyUnused: bool, trayShowNumber: bool, clickThrough: bool, rememberPerMonitor: bool,
+  notifyPace: bool, notifyReset: bool, notifyUnused: bool, trayShowNumber: bool, clickThrough: bool, hideOnFullscreen: bool, rememberPerMonitor: bool,
   placementMode: oneOf('docked', 'floating'),
   colorMode: oneOf('step', 'smooth'),
   barStops: v => Array.isArray(v) && v.length >= 2 && v.length <= 8 && v.every(x => x && typeof x.at === 'number' && Number.isFinite(x.at) && typeof x.color === 'string' && /^(brand|warn|danger|#[0-9a-f]{6})$/i.test(x.color))
