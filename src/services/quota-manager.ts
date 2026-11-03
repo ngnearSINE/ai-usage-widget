@@ -13,6 +13,7 @@ import { AccountStore } from './account-store.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { displayUsage, retainedUsage } from '../common/widget-layout.js'
 import { nextPollDelay } from '../common/poll-schedule.js'
+import { msg } from '../common/i18n.js'
 
 export class QuotaManager {
   private usages: Map<string, AccountUsage> = new Map()
@@ -44,7 +45,7 @@ export class QuotaManager {
         fs.mkdirSync(path.dirname(this.lastGoodFile!), { recursive: true })
         fs.writeFileSync(`${this.lastGoodFile}.tmp`, JSON.stringify(out), 'utf-8')
         fs.renameSync(`${this.lastGoodFile}.tmp`, this.lastGoodFile!)
-      } catch (err) { console.warn('[QuotaManager] 마지막 사용량을 저장하지 못했습니다:', err) }
+      } catch (err) { console.warn('[QuotaManager] 마지막 사용량을 저장하지 못했습니다:', err) } // i18n-ok
     }, 1000)
   }
 
@@ -158,7 +159,7 @@ export class QuotaManager {
         const orgs = await ClaudeOrgs.discover(cli === 'refreshed')
         this.accountStore.syncClaudeOrgs(orgs.map(o => ({ orgUuid: o.orgUuid, label: o.label, fromCli: o.tokens.some(t => t.source === 'cli') })), cliTokenExpired())
       } catch (err) {
-        console.warn('[QuotaManager] Claude 조직 확인 실패', err)
+        console.warn('[QuotaManager] Claude 조직 확인 실패', err) // i18n-ok
       }
       const accounts = this.accountStore.getAccounts().filter(a => a.enabled)
       const activeIds = new Set(accounts.map(a => a.id))
@@ -204,7 +205,7 @@ export class QuotaManager {
               usage = {
                 ...this.createInitialUsage(acc),
                 status: 'error',
-                errorMessage: `${acc.provider} 실시간 쿼터 조회를 지원하지 않습니다`
+                errorMessage: msg('{provider} 실시간 쿼터 조회를 지원하지 않습니다', { provider: acc.provider })
               }
             }
 

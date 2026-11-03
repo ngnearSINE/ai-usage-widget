@@ -4,6 +4,7 @@ import os from 'node:os'
 import https from 'node:https'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
+import { msg } from '../common/i18n.js'
 
 export class ClaudeLocalClient {
   private static cachedUsage?: AccountUsage
@@ -20,7 +21,7 @@ export class ClaudeLocalClient {
     const credsPath = path.join(homeDir, '.claude', '.credentials.json')
 
     if (!fs.existsSync(credsPath)) {
-      return this.getFallback(account, 'Claude 로그인 세션 파일 없음 (~/.claude)')
+      return this.getFallback(account, msg('Claude 로그인 세션 파일 없음 (~/.claude)'))
     }
 
     try {
@@ -29,7 +30,7 @@ export class ClaudeLocalClient {
       const oauth = creds.claudeAiOauth
 
       if (!oauth || !oauth.accessToken) {
-        return this.getFallback(account, 'Claude OAuth 토큰 누락')
+        return this.getFallback(account, msg('Claude OAuth 토큰 누락'))
       }
 
       const token = oauth.accessToken
@@ -37,7 +38,7 @@ export class ClaudeLocalClient {
 
       const usageData = await this.queryAnthropicUsage(token)
       if (!usageData || !usageData.five_hour) {
-        return this.getFallback(account, 'Anthropic 사용량 응답 오류')
+        return this.getFallback(account, msg('Anthropic 사용량 응답 오류'))
       }
 
       const fiveHour = usageData.five_hour
@@ -58,7 +59,7 @@ export class ClaudeLocalClient {
         provider: 'claude',
         iconLetter: 'C',
         brandColor: '#D97757',
-        tier: `${subscriptionType.toUpperCase()} (실시간 세션)`,
+        tier: msg('{plan} (실시간 세션)', { plan: subscriptionType.toUpperCase() }),
         dataSource: 'claude-cli',
         status: 'ready',
         primaryQuota: {

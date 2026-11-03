@@ -2,6 +2,8 @@
 
 PC에 맞는 파일 **하나**만 내려받으면 됩니다. 자세한 안내는 [README의 설치](https://github.com/ngnearSINE/ai-usage-widget#설치)와 [사용 설명서](https://github.com/ngnearSINE/ai-usage-widget/blob/main/docs/user-guide.md)에 있습니다.
 
+English: download just **one** file that fits your PC (the file names below). See [Installation in the README](https://github.com/ngnearSINE/ai-usage-widget/blob/main/README.en.md#installation) and the [user guide](https://github.com/ngnearSINE/ai-usage-widget/blob/main/docs/user-guide.en.md) for details.
+
 ### Windows (x64·arm64)
 
 - **설치 파일(추천, 자동 업데이트)**: `AI-Usage-Widget-Setup-{version}.exe`를 실행하면 바로 설치되고 시작됩니다. x64·arm64가 한 파일에 들어 있습니다.

@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { failedUsage, iso, jwtPayload, num, quotaFromUsed } from './usage-quota.js'
+import { msg } from '../common/i18n.js'
 
 /**
  * Gemini CLI 사용량. Gemini CLI가 로그인해 둔 OAuth 토큰(~/.gemini/oauth_creds.json)을 읽고,
@@ -16,10 +17,10 @@ const TIMEOUT_MS = 8000
 const BRAND = { name: 'Gemini CLI', letter: 'G', color: '#4E82EE' }
 
 export const GEMINI_TEXT = {
-  notLoggedIn: 'Gemini CLI 로그인을 찾지 못했어요. 터미널에서 gemini를 실행해 Google로 로그인해 주세요',
-  expired: 'Gemini CLI 로그인이 만료됐어요. 터미널에서 gemini를 한 번 실행하면 다시 연결돼요',
-  consumer: '개인 Google 계정(AI Pro·Ultra 포함)은 2026년 6월 18일부터 Gemini CLI 한도를 볼 수 없어요. Antigravity 카드로 확인해 주세요',
-  unavailable: 'Gemini 사용량 정보를 받지 못했어요',
+  notLoggedIn: msg('Gemini CLI 로그인을 찾지 못했어요. 터미널에서 gemini를 실행해 Google로 로그인해 주세요'),
+  expired: msg('Gemini CLI 로그인이 만료됐어요. 터미널에서 gemini를 한 번 실행하면 다시 연결돼요'),
+  consumer: msg('개인 Google 계정(AI Pro·Ultra 포함)은 2026년 6월 18일부터 Gemini CLI 한도를 볼 수 없어요. Antigravity 카드로 확인해 주세요'),
+  unavailable: msg('Gemini 사용량 정보를 받지 못했어요'),
 } as const
 
 export const geminiCredsPath = () => path.join(os.homedir(), '.gemini', 'oauth_creds.json')
@@ -93,10 +94,10 @@ export function geminiUsageFromQuota(account: AccountConfig, quota: any, tier: {
   const pro = buckets.filter((b: any) => id(b).includes('pro')), flash = buckets.filter((b: any) => id(b).includes('flash') && !id(b).includes('lite'))
   const group = pro.length ? pro : flash.length ? flash : buckets
   const low = group.reduce((m: any, b: any) => num(b.remainingFraction)! < num(m.remainingFraction)! ? b : m, group[0])
-  const family = pro.length ? 'Pro 모델' : flash.length ? 'Flash 모델' : '모델'
+  const tierText = pro.length ? msg('Gemini CLI · Pro 모델') : flash.length ? msg('Gemini CLI · Flash 모델') : msg('Gemini CLI · 모델')
   return {
     id: account.id, name: account.name || BRAND.name, provider: account.provider, iconLetter: BRAND.letter, brandColor: BRAND.color,
-    email: tier.email, plan: tier.plan, tier: `Gemini CLI · ${family}`,
+    email: tier.email, plan: tier.plan, tier: tierText,
     status: 'ready', primaryKind: 'daily', primaryQuota: quotaFromUsed((1 - num(low.remainingFraction)!) * 100, iso(low.resetTime)), updatedAt: new Date().toISOString(),
   }
 }
@@ -132,7 +133,7 @@ export class GeminiCliClient {
       if (!q.ok) { await q.body?.cancel().catch(() => {}); return failedUsage(account, BRAND, 'error', `${GEMINI_TEXT.unavailable} (HTTP ${q.status})`) }
       return geminiUsageFromQuota(account, await q.json(), { plan: tier.plan, email: typeof email === 'string' ? email : undefined })
     } catch (err: any) {
-      return failedUsage(account, BRAND, 'error', err?.name === 'TimeoutError' ? 'Gemini 응답 시간 초과' : err?.message || GEMINI_TEXT.unavailable)
+      return failedUsage(account, BRAND, 'error', err?.name === 'TimeoutError' ? msg('Gemini 응답 시간 초과') : err?.message || GEMINI_TEXT.unavailable)
     }
   }
 }

@@ -49,6 +49,7 @@ const DEFAULT_CONFIG: WidgetConfig = {
   notifyUnused: true,
   trayShowNumber: true,
   clickThrough: false,
+  hideOnFullscreen: false,
   shortcuts: { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' },
   rememberPerMonitor: true,
   layoutsByMonitor: {},

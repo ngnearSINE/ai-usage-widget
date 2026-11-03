@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import type { AppState, WebStatus } from '../common/types.js'
+import { getLang, msg, tr } from '../common/i18n.js'
 
 /**
  * 사용량을 브라우저로 보여 주는 작은 웹 서버. 페이지는 창과 같은 화면(view=web)이고 보기만 한다:
@@ -85,7 +86,7 @@ export class WebServer {
     server.on('error', (err: NodeJS.ErrnoException) => {
       if (this.server !== server) return
       this.server = null
-      this.status = { running: false, urls: [], error: err.code === 'EADDRINUSE' ? `포트 ${o.port}번을 다른 프로그램이 쓰고 있어요. 다른 포트로 바꿔 주세요.` : `웹 페이지를 열지 못했어요(${err.code || err.message}).` }
+      this.status = { running: false, urls: [], error: err.code === 'EADDRINUSE' ? msg('포트 {port}번을 다른 프로그램이 쓰고 있어요. 다른 포트로 바꿔 주세요.', { port: o.port }) : msg('웹 페이지를 열지 못했어요({reason}).', { reason: err.code || err.message }) }
       this.onStatus()
     })
     server.listen(o.port, o.remote ? '0.0.0.0' : '127.0.0.1', () => {
@@ -170,14 +171,15 @@ export class WebServer {
 
   private loginPage(res: http.ServerResponse, wrong: boolean) {
     res.writeHead(wrong ? 401 : 200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
-    res.end(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 사용량</title>
+    const title = tr('AI 사용량')
+    res.end(`<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;font:14px/1.5 "Segoe UI","Malgun Gothic",system-ui,sans-serif;background:#111217;color:#eeeef3}
 @media (prefers-color-scheme:light){body{background:#f6f6f9;color:#23232f}form{background:#fff!important;border-color:#0001!important}input{background:#f6f6f9!important;color:#23232f!important}}
 form{width:min(320px,calc(100vw - 32px));padding:24px;border:1px solid #fff2;border-radius:12px;background:#1c1d24;display:grid;gap:12px}
 h1{margin:0;font-size:17px}p{margin:0;font-size:12px;opacity:.7}.bad{color:#ff6b73;opacity:1}
 input{font:inherit;padding:9px 11px;border:1px solid #8cbbff66;border-radius:8px;background:#111217;color:#eeeef3}
 button{font:inherit;padding:9px;border:0;border-radius:8px;background:#8cbbff;color:#111217;font-weight:600;cursor:pointer}</style></head>
-<body><form method="post" action="/login"><h1>AI 사용량</h1><p>앱 설정에서 정한 접속 암호를 넣어 주세요.</p>${wrong ? '<p class="bad">암호가 맞지 않아요.</p>' : ''}
-<input type="password" name="password" autocomplete="current-password" aria-label="접속 암호" required autofocus><button>보기</button></form></body></html>`)
+<body><form method="post" action="/login"><h1>${title}</h1><p>${tr('앱 설정에서 정한 접속 암호를 넣어 주세요.')}</p>${wrong ? `<p class="bad">${tr('암호가 맞지 않아요.')}</p>` : ''}
+<input type="password" name="password" autocomplete="current-password" aria-label="${tr('접속 암호')}" required autofocus><button>${tr('보기')}</button></form></body></html>`)
   }
 }

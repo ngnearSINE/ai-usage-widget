@@ -5,6 +5,7 @@ import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
 import { exeName } from './platform-paths.js'
 import { grokNeedsRelogin, refreshGrokTokenIfExpired } from './grok-token-refresh.js'
+import { msg } from '../common/i18n.js'
 
 /**
  * Grok 사용량. Grok CLI가 로그인해 둔 토큰(~/.grok/auth.json)을 읽고,
@@ -17,11 +18,11 @@ const TIMEOUT_MS = 8000
 const BRAND = '#A1A1AA'
 
 export const GROK_TEXT = {
-  notLoggedIn: 'Grok CLI 로그인이 필요합니다 (grok login)',
-  expired: 'Grok 로그인 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 grok 실행)',
-  relogin: 'Grok 로그인 기간이 끝났어요. 터미널에서 grok login으로 다시 로그인해 주세요',
-  rejected: 'Grok이 로그인 토큰을 받아 주지 않았어요. 터미널에서 grok을 한 번 실행해 주세요',
-  unavailable: 'Grok 사용량 정보를 받지 못했습니다',
+  notLoggedIn: msg('Grok CLI 로그인이 필요합니다 (grok login)'),
+  expired: msg('Grok 로그인 토큰이 만료됐어요. 앱이 곧 자동으로 다시 연결해요(바로 하려면 터미널에서 grok 실행)'),
+  relogin: msg('Grok 로그인 기간이 끝났어요. 터미널에서 grok login으로 다시 로그인해 주세요'),
+  rejected: msg('Grok이 로그인 토큰을 받아 주지 않았어요. 터미널에서 grok을 한 번 실행해 주세요'),
+  unavailable: msg('Grok 사용량 정보를 받지 못했습니다'),
 } as const
 
 interface GrokAuth { key: string; expiresAt: number | null }
@@ -108,7 +109,7 @@ export class GrokCliClient {
       const [monthly, credits] = await Promise.all([get(BILLING_URL).catch(err => { if (err.auth) throw err; return null }), get(`${BILLING_URL}?format=credits`)])
       return grokUsageFromBilling(account, monthly, credits)
     } catch (err: any) {
-      return this.failed(account, 'error', err?.name === 'TimeoutError' ? 'Grok 응답 시간 초과' : err?.message || GROK_TEXT.unavailable)
+      return this.failed(account, 'error', err?.name === 'TimeoutError' ? msg('Grok 응답 시간 초과') : err?.message || GROK_TEXT.unavailable)
     }
   }
 

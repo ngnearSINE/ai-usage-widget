@@ -1,4 +1,5 @@
 import type { AccountUsage, WidgetConfig } from './types.js'
+import { tr } from './i18n.js'
 import { fmtDuration, paceWarning, PERIOD_LEN, serviceModel, unusedWeekly, windowsOf, type QuotaWindow } from './usage-model.js'
 
 /**
@@ -58,29 +59,31 @@ export function evaluateNotifications(usages: AccountUsage[], config: WidgetConf
         rec.sent.push(kind)
         if (enabled && !muted.has(key)) events.push({ key, accountId: u.id, kind, title, body })
       }
-      const name = `${u.name} ${w.label} 한도`
-      const resetText = w.resetMs === null ? '' : `리셋까지 ${fmtDuration(w.resetMs)}`
-      const paceText = w.runsOut && w.toEmptyMs !== null ? `지금 속도면 ${fmtDuration(w.toEmptyMs)} 뒤 소진 예상` : ''
+      // 알림 문구는 만드는 순간의 언어로 옮긴다.
+      const name = tr('{name} {window} 한도', { name: u.name, window: w.label })
+      const resetText = w.resetMs === null ? '' : tr('리셋까지 {time}', { time: fmtDuration(w.resetMs) })
+      const paceText = w.runsOut && w.toEmptyMs !== null ? tr('지금 속도면 {time} 뒤 소진 예상', { time: fmtDuration(w.toEmptyMs) }) : ''
+      const leftText = tr('남은 양 {n}%', { n: w.left })
       // 새 주기로 넘어왔고 지난 주기에 빠듯했으며 실제로 다시 채워졌다면 리셋 알림.
       if (!samePeriod && old?.tight && w.left > old.left && config.notifyReset === true) {
-        send('reset', `${name}가 새로 채워졌어요`, [`남은 양 ${w.left}%`, w.resetMs === null ? '' : `다음 리셋 ${fmtDuration(w.resetMs)} 뒤`].filter(Boolean).join(' · '))
+        send('reset', tr('{name}가 새로 채워졌어요', { name }), [leftText, w.resetMs === null ? '' : tr('다음 리셋 {time} 뒤', { time: fmtDuration(w.resetMs) })].filter(Boolean).join(' · '))
       }
       const lowOn = config.notifyLow !== false
       if (w.left <= crit && !rec.sent.includes('crit')) {
-        if (lowOn) send('crit', `${name} ${w.left}% 남음`, [resetText, paceText].filter(Boolean).join(' · ') || '여유가 거의 없어요')
+        if (lowOn) send('crit', tr('{name} {n}% 남음', { name, n: w.left }), [resetText, paceText].filter(Boolean).join(' · ') || tr('여유가 거의 없어요'))
         else rec.sent.push('crit')
         if (!rec.sent.includes('warn')) rec.sent.push('warn')
       } else if (w.left <= warn && !rec.sent.includes('warn')) {
-        if (lowOn) send('warn', `${name} ${w.left}% 남음`, [resetText, paceText].filter(Boolean).join(' · ') || '여유가 줄었어요')
+        if (lowOn) send('warn', tr('{name} {n}% 남음', { name, n: w.left }), [resetText, paceText].filter(Boolean).join(' · ') || tr('여유가 줄었어요'))
         else rec.sent.push('warn')
       }
       if (paceWarning(w) && !rec.sent.includes('pace') && !rec.sent.includes('warn')) {
-        if (config.notifyPace !== false) send('pace', `${name}, 리셋 전에 바닥날 수 있어요`, [paceText, resetText, `남은 양 ${w.left}%`].filter(Boolean).join(' · '))
+        if (config.notifyPace !== false) send('pace', tr('{name}, 리셋 전에 바닥날 수 있어요', { name }), [paceText, resetText, leftText].filter(Boolean).join(' · '))
         else rec.sent.push('pace')
       }
       // 주간 리셋이 임박했는데 많이 남았으면 한 번 안내한다.
       if (w.key === 'weekly' && unusedWeekly(m) === w && !rec.sent.includes('unused')) {
-        if (config.notifyUnused !== false) send('unused', `${u.name} 주간 여유 ${w.left}%가 곧 초기화돼요`, `리셋까지 ${fmtDuration(w.resetMs)} · 남은 여유를 쓰려면 지금이 좋아요`)
+        if (config.notifyUnused !== false) send('unused', tr('{name} 주간 여유 {n}%가 곧 초기화돼요', { name: u.name, n: w.left }), tr('리셋까지 {time} · 남은 여유를 쓰려면 지금이 좋아요', { time: fmtDuration(w.resetMs) }))
         else rec.sent.push('unused')
       }
       if (w.left <= warn) rec.tight = true

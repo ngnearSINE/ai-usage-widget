@@ -19,11 +19,11 @@ export class UsageHistory {
     this.dailyFile = path.join(path.dirname(file), 'usage-daily.json')
     if (seed) { this.store = seed; this.dailyStore = dailySeed || dailyFromHistory(seed); return }
     try { if (fs.existsSync(file)) this.store = JSON.parse(fs.readFileSync(file, 'utf-8')) || {} }
-    catch (err) { console.warn('[History] 사용 기록을 읽지 못해 새로 시작합니다:', err) }
+    catch (err) { console.warn('[History] 사용 기록을 읽지 못해 새로 시작합니다:', err) } // i18n-ok
     try {
       if (fs.existsSync(this.dailyFile)) this.dailyStore = JSON.parse(fs.readFileSync(this.dailyFile, 'utf-8')) || {}
       else { this.dailyStore = dailyFromHistory(this.store); this.save() }
-    } catch (err) { console.warn('[History] 날짜별 사용량을 읽지 못해 새로 시작합니다:', err) }
+    } catch (err) { console.warn('[History] 날짜별 사용량을 읽지 못해 새로 시작합니다:', err) } // i18n-ok
   }
 
   record(usages: AccountUsage[], now = Date.now()) {
@@ -66,6 +66,6 @@ export class UsageHistory {
       fs.renameSync(`${this.file}.tmp`, this.file)
       fs.writeFileSync(`${this.dailyFile}.tmp`, JSON.stringify(pruneDaily(this.dailyStore)), 'utf-8')
       fs.renameSync(`${this.dailyFile}.tmp`, this.dailyFile)
-    } catch (err) { console.warn('[History] 사용 기록을 저장하지 못했습니다:', err) }
+    } catch (err) { console.warn('[History] 사용 기록을 저장하지 못했습니다:', err) } // i18n-ok
   }
 }

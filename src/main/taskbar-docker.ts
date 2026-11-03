@@ -496,7 +496,7 @@ export class TaskbarDocker {
   /**
    * 전체화면(게임/영상) 감지를 위한 상주 워처 프로세스 (플로팅 모드 전용)
    */
-  public static startFullscreenWatcher(widgetWin: BrowserWindow, onChange: (isFullscreen: boolean) => void): void {
+  public static startFullscreenWatcher(widgetWin: BrowserWindow, onChange: (isFullscreen: boolean) => void, onExit?: () => void): void {
     this.stopFullscreenWatcher()
 
     const exe = this.getDockerPath()
@@ -521,6 +521,13 @@ export class TaskbarDocker {
       })
       this.fsWatchProcess.on('error', (err) => {
         console.warn('[TaskbarDocker] fswatch process error:', err)
+      })
+      // 멈추라고 하지 않았는데 끝났으면 알린다(숨긴 창이 그대로 남지 않도록).
+      const proc = this.fsWatchProcess
+      proc.on('exit', () => {
+        if (this.fsWatchProcess !== proc) return
+        this.fsWatchProcess = null
+        onExit?.()
       })
     } catch (err) {
       console.error('[TaskbarDocker] Failed to spawn fswatch:', err)

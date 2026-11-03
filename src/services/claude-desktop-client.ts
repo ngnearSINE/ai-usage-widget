@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
 import { findClaudeDataDirs, fetchClaudeDesktopLiveUsage, ClaudeRateLimitError } from './claude-desktop-oauth.js'
 import { formatCountdown } from '../common/time-utils.js'
+import { msg } from '../common/i18n.js'
 
 const MAX_SAMPLE_AGE_MS = 60 * 60 * 1000
 const LIVE_MIN_INTERVAL_MS = 2 * 60 * 1000
@@ -29,14 +30,14 @@ function isUsageSample(value: unknown): value is UsageSample {
 
 export function parseClaudeDesktopUsage(raw: unknown, account: AccountConfig, now = Date.now()): AccountUsage {
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { samples?: unknown }).samples)) {
-    throw new Error('Claude 앱 사용량 기록 형식이 올바르지 않습니다')
+    throw new Error(msg('Claude 앱 사용량 기록 형식이 올바르지 않습니다'))
   }
 
   const samples = (raw as { samples: unknown[] }).samples.filter(isUsageSample)
   const latest = samples.reduce<UsageSample | undefined>((best, sample) =>
     !best || sample.t > best.t ? sample : best, undefined)
   if (!latest || latest.t > now + 5 * 60 * 1000) {
-    throw new Error('Claude 앱 사용량 기록에 유효한 값이 없습니다')
+    throw new Error(msg('Claude 앱 사용량 기록에 유효한 값이 없습니다'))
   }
 
   const quota = (used: number): QuotaInfo => {
@@ -57,7 +58,7 @@ export function parseClaudeDesktopUsage(raw: unknown, account: AccountConfig, no
     provider: 'claude',
     iconLetter: 'C',
     brandColor: '#D97757',
-    tier: stale ? '앱 기록 (오래됨)' : '앱 기록',
+    tier: stale ? msg('앱 기록 (오래됨)') : msg('앱 기록'),
     dataSource: 'claude-desktop',
     status: stale ? 'stale' : 'ready',
     primaryQuota: quota(latest.u.fh),
@@ -119,7 +120,7 @@ export class ClaudeDesktopClient {
   public static fetchUsage(account: AccountConfig): AccountUsage {
     const historyPath = this.getUsageHistoryPath()
     if (!historyPath || !fs.existsSync(historyPath)) {
-      return this.error(account, 'Claude 앱 사용량 기록이 없습니다')
+      return this.error(account, msg('Claude 앱 사용량 기록이 없습니다'))
     }
 
     try {

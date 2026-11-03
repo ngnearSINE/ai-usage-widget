@@ -4,6 +4,7 @@ import path from 'node:path'
 import updaterPkg from 'electron-updater'
 import type { UpdateState } from '../common/types.js'
 import { inNightlyWindow, msUntilNightly } from './updater-time.js'
+import { msg } from '../common/i18n.js'
 
 /**
  * 자동 업데이트. GitHub Releases(ngnearSINE/ai-usage-widget)의 새 버전을 뒤에서 내려받고,
@@ -53,7 +54,7 @@ export class Updater {
       this.opts.onReady(info.version)
     })
     autoUpdater.on('error', err => {
-      const message = err?.message?.includes('net::') || err?.message?.includes('ENOTFOUND') ? '인터넷에 연결할 수 없어요' : '업데이트를 확인하지 못했어요'
+      const message = err?.message?.includes('net::') || err?.message?.includes('ENOTFOUND') ? msg('인터넷에 연결할 수 없어요') : msg('업데이트를 확인하지 못했어요')
       this.set({ status: 'error', message, checkedAt: new Date().toISOString() })
       if (this.manual) this.opts.onError?.(message)
     })

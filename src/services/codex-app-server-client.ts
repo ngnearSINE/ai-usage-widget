@@ -7,6 +7,7 @@ import { app } from 'electron'
 import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, ModelQuotaDetail } from '../common/types.js'
 import { findExecutable } from './platform-paths.js'
+import { msg } from '../common/i18n.js'
 
 interface PendingRequest {
   resolve: (value: any) => void
@@ -121,7 +122,7 @@ class CodexAppServerConn {
 
     const executable = CodexAppServerConn.findCodexExecutable()
     if (!executable) {
-      throw new Error(`Codex 실행 파일(${process.platform === 'win32' ? 'codex.exe' : 'codex'})을 찾을 수 없습니다.`)
+      throw new Error(msg('Codex 실행 파일({exe})을 찾을 수 없습니다.', { exe: process.platform === 'win32' ? 'codex.exe' : 'codex' }))
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -137,7 +138,7 @@ class CodexAppServerConn {
 
         if (!this.childProcess.stdin || !this.childProcess.stdout) {
           this.close()
-          return reject(new Error('Codex app-server stdio 파이프 열기 실패'))
+          return reject(new Error(msg('Codex app-server stdio 파이프 열기 실패')))
         }
 
         this.rl = readline.createInterface({
@@ -301,7 +302,7 @@ class CodexAppServerConn {
     const accountRes = await this.sendRequest('account/read', { refreshToken: false }, 3500)
     const accountInfo = accountRes?.account
     if (!accountInfo) {
-      throw new Error('Codex에 로그인되어 있지 않습니다.')
+      throw new Error(msg('Codex에 로그인되어 있지 않습니다.'))
     }
 
     const email = accountInfo.email || ''
@@ -313,7 +314,7 @@ class CodexAppServerConn {
     const rateLimits = limitsRes?.rateLimits || (limitsRes?.rateLimitsByLimitId && Object.values(limitsRes.rateLimitsByLimitId)[0])
 
     if (!rateLimits) {
-      throw new Error('Codex 레이트리밋 정보가 비어 있습니다.')
+      throw new Error(msg('Codex 레이트리밋 정보가 비어 있습니다.'))
     }
 
     const primaryLimit = rateLimits.primary
@@ -354,7 +355,7 @@ class CodexAppServerConn {
 
       models.push({
         modelId: 'codex-weekly',
-        displayName: 'Codex 주간 한도 (7일)',
+        displayName: msg('Codex 주간 한도 (7일)'),
         quota: {
           remainingFraction: weeklyLeft / 100,
           percentLeft: weeklyLeft,
@@ -382,7 +383,7 @@ class CodexAppServerConn {
 
       models.push({
         modelId: 'codex-5h',
-        displayName: 'Codex 세션 한도 (5시간)',
+        displayName: msg('Codex 세션 한도 (5시간)'),
         quota: {
           remainingFraction: sessionLeft / 100,
           percentLeft: sessionLeft,
@@ -396,7 +397,7 @@ class CodexAppServerConn {
       if (secondaryLimit && secondaryLimit.usedPercent !== undefined) {
         models.push({
           modelId: 'codex-weekly',
-          displayName: 'Codex 주간 한도 (7일)',
+          displayName: msg('Codex 주간 한도 (7일)'),
           quota: {
             remainingFraction: weeklyLeft / 100,
             percentLeft: weeklyLeft,
@@ -416,7 +417,7 @@ class CodexAppServerConn {
       iconLetter: 'X',
       brandColor: '#6366F1',
       email,
-      tier: `${planName} (공식 app-server)`,
+      tier: msg('{plan} (공식 app-server)', { plan: planName }),
       plan: planName,
       status: 'ready',
       isWeeklyOnly,

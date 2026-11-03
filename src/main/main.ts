@@ -11,7 +11,7 @@ import { calculatePopupPosition, calculateWidgetPosition, getTaskbarInfo } from 
 import { LocalAppDetector } from '../services/local-app-detector.js'
 import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
-import { detectLang, setLang, t } from '../common/i18n.js'
+import { LANG_NAMES, LANGUAGE_LABEL, locale, msg, resolveLang, setLang, tr, trText, type Lang, type LangSetting } from '../common/i18n.js'
 import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, snapToEdges, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
@@ -34,7 +34,17 @@ import { WebServer, DEFAULT_WEB_PORT, hashPassword } from './web-server.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-setLang(detectLang(app.getLocale()))
+/** 화면 언어: 설정이 '시스템 따라'면 Windows 표시 언어(첫 언어)가 한국어일 때만 한국어. */
+function systemLocales(): string[] {
+  try { const l = app.getPreferredSystemLanguages(); if (l.length) return l } catch { /* 이전 Electron */ }
+  return [app.getLocale()]
+}
+let currentLang: Lang = resolveLang(undefined, systemLocales())
+setLang(currentLang)
+function applyLang(setting: LangSetting | undefined) {
+  currentLang = resolveLang(setting, systemLocales())
+  setLang(currentLang)
+}
 
 function getPreloadPath(): string {
   const cjsPath = path.join(__dirname, 'preload.cjs')
@@ -56,7 +66,7 @@ if (isPreview) {
   app.setPath('userData', path.join(app.getPath('temp'), 'ai-usage-design-preview'))
 }
 // Windows 알림에 쓰는 앱 ID. 시작 메뉴 바로가기가 없는 로컬 빌드에서는 이 ID가 알림 머리에 그대로 보이므로 읽을 수 있는 이름으로 둔다.
-if (process.platform === 'win32') app.setAppUserModelId(isPreview ? 'AI 사용량 (미리보기)' : 'AI 사용량')
+if (process.platform === 'win32') app.setAppUserModelId(isPreview ? 'AI 사용량 (미리보기)' : 'AI 사용량') // i18n-ok: 알림 머리의 앱 ID(시작 때 한 번, 바꾸면 알림 묶음이 갈린다)
 let notifier: UsageNotifier | null = null
 let updater: Updater | null = null
 /** 집중 모드: 이 계정 하나만 보인다. 앱을 다시 켜면 풀린다(저장하지 않음). */
@@ -153,7 +163,11 @@ const DOUBLE_CLICK_WINDOW_MS = 400
 let dockClickTimer: ReturnType<typeof setTimeout> | undefined
 
 function guidePath(): string | null {
-  return [path.join(path.dirname(app.getPath('exe')), '사용 설명서.pdf'), path.join(app.getAppPath(), 'docs/user-guide.pdf')].find(p => fs.existsSync(p)) || null
+  // 언어에 맞는 설명서를 먼저, 없으면 다른 언어 설명서.
+  const exe = path.dirname(app.getPath('exe')), root = app.getAppPath()
+  const ko = [path.join(exe, '사용 설명서.pdf'), path.join(root, 'docs/user-guide.pdf')] // i18n-ok
+  const en = [path.join(exe, 'User Guide.pdf'), path.join(root, 'docs/user-guide.en.pdf')]
+  return (currentLang === 'en' ? [...en, ...ko] : [...ko, ...en]).find(p => fs.existsSync(p)) || null
 }
 let guideKnown: boolean | undefined
 
@@ -168,6 +182,7 @@ function getAppState(): AppState {
   })
   return {
     preview: isPreview,
+    lang: currentLang,
     acrylicSupported,
     dockSupported,
     launchers,
@@ -234,7 +249,7 @@ let tipSeq = 0
 function ensureTipWindow() {
   if (tipWindow && !tipWindow.isDestroyed()) return tipReady!
   tipWindow = new BrowserWindow({ width: 10, height: 10, frame: false, transparent: true, show: false, focusable: false, skipTaskbar: true,
-    resizable: false, hasShadow: false, alwaysOnTop: true, title: '설명', webPreferences: { nodeIntegration: false, contextIsolation: true } })
+    resizable: false, hasShadow: false, alwaysOnTop: true, title: tr('설명'), webPreferences: { nodeIntegration: false, contextIsolation: true } })
   tipWindow.setIgnoreMouseEvents(true)
   tipWindow.setAlwaysOnTop(true, 'screen-saver', 10000)
   tipReady = tipWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(TIP_HTML)).catch(() => {})
@@ -307,28 +322,28 @@ async function showCardMenu(sender: Electron.WebContents, id: string) {
   Menu.buildFromTemplate([
     { label: acc.name, enabled: false },
     // Esc는 집중 모드를 끌 때만 쓰이므로 켜져 있을 때만 보여 준다
-    { label: '집중 모드', type: 'checkbox', checked: focusId === id, ...(focusId === id ? { accelerator: 'Esc', registerAccelerator: false } : {}), click: () => setFocus(id) },
+    { label: tr('집중 모드'), type: 'checkbox', checked: focusId === id, ...(focusId === id ? { accelerator: 'Esc', registerAccelerator: false } : {}), click: () => setFocus(id) },
     { type: 'separator' },
-    { label: 'CLI 열기  (Ctrl+두 번 클릭)', enabled: !!cli, click: () => { openCli(acc) } },
-    { label: '앱 열기  (Shift+두 번 클릭)', enabled: !!app, click: () => { void openApp(acc) } },
+    { label: tr('CLI 열기  (Ctrl+두 번 클릭)'), enabled: !!cli, click: () => { openCli(acc) } },
+    { label: tr('앱 열기  (Shift+두 번 클릭)'), enabled: !!app, click: () => { void openApp(acc) } },
     { type: 'separator' },
-    { label: '이 서비스 통계', click: () => openStatsWindow(id) },
-    { label: '새로고침', click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
-    ...(url ? [{ label: '공식 사용량 페이지 열기', click: () => { void shell.openExternal(url) } }] : []),
+    { label: tr('이 서비스 통계'), click: () => openStatsWindow(id) },
+    { label: tr('새로고침'), click: () => { if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState()) } },
+    ...(url ? [{ label: tr('공식 사용량 페이지 열기'), click: () => { void shell.openExternal(url) } }] : []),
     { type: 'separator' },
-    { label: '큰 숫자 기준', submenu: ([['weekly', '주간'], ['5h', firstWindowLabel(usage?.primaryKind)], ['tight', '빠듯한 쪽']] as const).map(([k, label]) => ({
+    { label: tr('큰 숫자 기준'), submenu: ([['weekly', tr('주간')], ['5h', trText(firstWindowLabel(usage?.primaryKind))], ['tight', tr('빠듯한 쪽')]] as const).map(([k, label]) => ({
       label, type: 'radio' as const, checked: src === k, click: () => save({ valueSource: { ...accountStore.getConfig().valueSource, [id]: k } }) })) },
-    { label: '보여 줄 정보', submenu: DISPLAY_KEYS.map(([k, label]) => ({ label: k === 'showUsed' ? '쓴 양으로 표시' : k === 'showReset' ? '리셋까지 남은 시간' : label, type: 'checkbox' as const, checked: disp[k],
+    { label: tr('보여 줄 정보'), submenu: DISPLAY_KEYS.map(([k, label]) => ({ label: k === 'showUsed' ? tr('쓴 양으로 표시') : k === 'showReset' ? tr('리셋까지 남은 시간') : trText(label), type: 'checkbox' as const, checked: disp[k],
       click: (item: Electron.MenuItem) => save(setDisplay(accountStore.getConfig(), id, k, item.checked)) })) },
     { type: 'separator' },
-    { label: '앞으로 옮기기', enabled: index > 0, click: () => { accountStore.reorderAccount(id, 'up'); broadcastState() } },
-    { label: '뒤로 옮기기', enabled: index < accounts.length - 1, click: () => { accountStore.reorderAccount(id, 'down'); broadcastState() } },
-    { label: '카드 위치 고정', type: 'checkbox', checked: !!cfg.lockCards, click: item => save({ lockCards: item.checked }) },
+    { label: tr('앞으로 옮기기'), enabled: index > 0, click: () => { accountStore.reorderAccount(id, 'up'); broadcastState() } },
+    { label: tr('뒤로 옮기기'), enabled: index < accounts.length - 1, click: () => { accountStore.reorderAccount(id, 'down'); broadcastState() } },
+    { label: tr('카드 위치 고정'), type: 'checkbox', checked: !!cfg.lockCards, click: item => save({ lockCards: item.checked }) },
     { type: 'separator' },
-    { label: '작업 표시줄에서만 숨기기', type: 'checkbox', visible: dockSupported, checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
-    { label: '이 카드 숨기기', click: () => { accountStore.hideAccount(id, true); broadcastState() } },
+    { label: tr('작업 표시줄에서만 숨기기'), type: 'checkbox', visible: dockSupported, checked: !!acc.hiddenInDock, click: item => { accountStore.patchAccountDisplay(id, { hiddenInDock: item.checked }); broadcastState(); if (accountStore.getConfig().placementMode === 'docked') void updateWidgetBounds() } },
+    { label: tr('이 카드 숨기기'), click: () => { accountStore.hideAccount(id, true); broadcastState() } },
     { type: 'separator' },
-    { label: '서비스 설정…', click: () => openSettingsWindow('services') },
+    { label: tr('서비스 설정…'), click: () => openSettingsWindow('services') },
   ]).popup({ window: win })
 }
 
@@ -359,16 +374,12 @@ function setClickThrough(on: boolean) {
 }
 async function toggleWidgetVisibility() {
   if (!widgetWindow) return
-  if (widgetWindow.isVisible()) {
+  // 최소화된 창은 보이지 않으므로 숨긴 것으로 보고 다시 보인다.
+  if (widgetWindow.isVisible() && !widgetWindow.isMinimized()) {
     widgetManuallyHidden = true
     widgetWindow.hide()
     hidePopup(true)
-  } else {
-    widgetManuallyHidden = false
-    widgetHiddenForFullscreen = false
-    widgetWindow.show()
-    await updateWidgetBounds()
-  }
+  } else await showWidgetWindow()
 }
 /** 숨긴 창(또는 독)을 다시 보이고 창은 맨 앞으로 가져온다. 이미 보이면 숨기지 않는다. */
 async function showWidgetWindow() {
@@ -391,9 +402,9 @@ function registerShortcuts() {
   shortcutErrors = []
   const s = accountStore.getConfig().shortcuts || {}
   const actions: Array<[string | undefined, string, () => void]> = [
-    [s.toggle, '창·작업 표시줄 독 보이기/숨기기', () => { void toggleWidgetVisibility() }],
-    [s.lock, '클릭 통과 잠금', () => setClickThrough(!accountStore.getConfig().clickThrough)],
-    [s.cycle, '디자인 순환', cycleDesign],
+    [s.toggle, tr('창·작업 표시줄 독 보이기/숨기기'), () => { void toggleWidgetVisibility() }],
+    [s.lock, tr('클릭 통과 잠금'), () => setClickThrough(!accountStore.getConfig().clickThrough)],
+    [s.cycle, tr('디자인 순환'), cycleDesign],
   ]
   for (const [accel, label, run] of actions) {
     if (!accel) continue
@@ -465,7 +476,7 @@ function openAboutWindow() {
   const area = screen.getDisplayMatching(anchor).workArea, width = Math.min(area.width - 40, Math.round(460 * uiZoom())), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = aboutWindow = new SurfaceWindow({
     x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
-    show: false, title: 'AI 사용량 정보', resizable: false, maximizable: false, minimizable: false, autoHideMenuBar: true,
+    show: false, title: tr('AI 사용량 정보'), resizable: false, maximizable: false, minimizable: false, autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
   }, currentSurfaceKind())
   keepZoom(win)
@@ -477,7 +488,7 @@ function openAboutWindow() {
   else void win.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'about' } })
 }
 
-/** 사용량 통계 창. id를 주면 그 서비스를 앞에 보여 준다(카드 우클릭 '이 서비스 통계'). */
+/** 사용량 통계 창. id를 주면 그 서비스를 앞에 보여 준다(카드 우클릭 tr('이 서비스 통계')). */
 function openStatsWindow(id?: string) {
   if (statsWindow && !statsWindow.isDestroyed()) {
     if (id) statsWindow.webContents.send(IPC_CHANNELS.OPEN_STATS, id)
@@ -492,7 +503,7 @@ function openStatsWindow(id?: string) {
   const win = statsWindow = new SurfaceWindow({
     x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height,
     minWidth: Math.min(area.width - 40, Math.round(420 * uiZoom())), minHeight: Math.min(area.height - 40, Math.round(360 * uiZoom())),
-    show: false, title: 'AI 사용량 통계', autoHideMenuBar: true,
+    show: false, title: tr('AI 사용량 통계'), autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
   }, currentSurfaceKind())
   keepZoom(win)
@@ -521,7 +532,7 @@ function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Recta
   const width = Math.min(Math.round(1000 * uiZoom()), area.width - 40), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = settingsWindow = new SurfaceWindow({
     ...(bounds || { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height }),
-    minWidth: Math.min(area.width - 40, Math.round(760 * uiZoom())), minHeight: Math.min(area.height - 40, Math.round(520 * uiZoom())), show: false, title: 'AI 사용량 설정', resizable: true, maximizable: true, autoHideMenuBar: true,
+    minWidth: Math.min(area.width - 40, Math.round(760 * uiZoom())), minHeight: Math.min(area.height - 40, Math.round(520 * uiZoom())), show: false, title: tr('AI 사용량 설정'), resizable: true, maximizable: true, autoHideMenuBar: true,
     webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true }
   }, currentSurfaceKind())
   keepZoom(win)
@@ -743,11 +754,12 @@ function createWidgetWindow() {
     height: currentWidgetHeight,
     alwaysOnTop: isFloating && (config.alwaysOnTop !== false),
     skipTaskbar: true,
+    minimizable: false, // 사용자가 숨길 때만 사라지게: Windows의 '모든 창 최소화'에서 빠진다
     resizable: false, // 투명 HWND의 기본 리사이즈 충돌을 피하고 8방향 사용자 핸들로 조절한다.
     hasShadow: false,
     focusable: true, // 마우스 클릭 이벤트가 정상적으로 DOM에 전달되도록 true 유지
     show: false,
-    title: 'AI 사용량',
+    title: tr('AI 사용량'),
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -761,6 +773,12 @@ function createWidgetWindow() {
     widgetWindow.setAlwaysOnTop(true, 'floating')
   }
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 작업 표시줄 단추가 없어 최소화되면 되살릴 곳이 없다. 숨기기는 hide()로만 하므로 최소화는 곧바로 되돌린다(포커스는 가져오지 않음).
+  win.on('minimize', () => setImmediate(() => {
+    if (win.isDestroyed() || !win.isMinimized()) return
+    win.showInactive()
+    if (win.isMinimized()) win.restore()
+  }))
 
   widgetWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error('[WidgetWindow] Load failed:', code, desc, url)
@@ -855,7 +873,7 @@ function showDockPreview(visible: boolean, point?: {x:number;y:number}, preload 
   const { rect } = dockSlot(cursor, ghostWidth)
   if (!dockGhost || dockGhost.isDestroyed()) {
     dockGhost = new BrowserWindow({ width: rect.width, height: rect.height, frame: false, transparent: true, show: false, focusable: false, skipTaskbar: true,
-      alwaysOnTop: true, hasShadow: false, title: '도킹 미리보기', webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true } })
+      alwaysOnTop: true, hasShadow: false, title: tr('도킹 미리보기'), webPreferences: { preload: getPreloadPath(), nodeIntegration: false, contextIsolation: true } })
     dockGhost.on('page-title-updated', event => event.preventDefault())
     dockGhost.setIgnoreMouseEvents(true)
     dockGhost.setAlwaysOnTop(true, 'screen-saver', 9000)
@@ -910,7 +928,7 @@ async function setPlacement(mode: 'floating' | 'docked', floatBounds?: Electron.
     clearTimeout(dockRetryTimer); dockRepairPending = false
     TaskbarDocker.stopDockWatcher()
     const detached = await TaskbarDocker.undockWindow(widgetWindow)
-    if (!detached) throw new Error('작업표시줄에서 창을 분리하지 못했습니다.')
+    if (!detached) throw new Error(msg('작업표시줄에서 창을 분리하지 못했습니다.'))
     // 작업표시줄 자식에서 떼어 내면 Chromium이 마우스 입력을 더 받지 못하는 경우가 있다(실측: 위로 끌어 창으로 바꾼 뒤 제목줄·카드가 반응 없음).
     // 창을 한 번 숨겼다 다시 보이면 입력 경로가 되살아난다.
     widgetWindow.hide()
@@ -1239,7 +1257,7 @@ function createPopupWindow() {
     skipTaskbar: true,
     resizable: false, // 크기는 화면 안 손잡이로 바꾼다(투명 창은 Windows 기본 가장자리 끌기가 안 됨)
     show: false,
-    title: 'AI 사용량 · 상세',
+    title: tr('AI 사용량 · 상세'),
     webPreferences: {
       preload: getPreloadPath(),
       nodeIntegration: false,
@@ -1380,7 +1398,7 @@ async function toggleDockedFocus(point: Electron.Point) {
   try {
     const id = await widgetWindow.webContents.executeJavaScript(`(() => { const el = document.elementFromPoint(${x}, ${y}); return el?.closest('[data-account-id]')?.dataset.accountId || null })()`)
     if (typeof id === 'string' && id) setFocus(id)
-  } catch (err) { console.warn('[Main] 도킹 집중 모드 대상 확인 실패', err) }
+  } catch (err) { console.warn('[Main] 도킹 집중 모드 대상 확인 실패', err) } // i18n-ok
 }
 
 async function togglePopup() {
@@ -1436,7 +1454,7 @@ const windowsLoginItem = () => ({ path: `"${process.execPath}"`, args: ['--hidde
 function applyAutoLaunch(enable: boolean) {
   if (isPreview) return
   if (process.platform === 'linux') {
-    try { applyLinuxAutoLaunch(enable) } catch (err) { console.warn('[Main] 자동 시작 파일을 쓰지 못했습니다:', err) }
+    try { applyLinuxAutoLaunch(enable) } catch (err) { console.warn('[Main] 자동 시작 파일을 쓰지 못했습니다:', err) } // i18n-ok
     updateTrayMenu()
     return
   }
@@ -1469,31 +1487,31 @@ function updateTrayMenu() {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: t('trayToggleWidget'),
+      label: tr('창·작업 표시줄 독 표시/숨김'),
       click: () => { void toggleWidgetVisibility() }
     },
     {
-      label: `클릭 통과 잠금${config.shortcuts?.lock ? ` (${config.shortcuts.lock})` : ''}`,
+      label: config.shortcuts?.lock ? tr('클릭 통과 잠금 ({key})', { key: config.shortcuts.lock }) : tr('클릭 통과 잠금'),
       type: 'checkbox',
       checked: !!config.clickThrough,
       enabled: config.placementMode !== 'docked',
       click: (item) => setClickThrough(item.checked)
     },
     ...(dockSupported ? [{
-      label: t('trayOpenPopup'),
+      label: tr('위젯 열기'),
       click: () => {
         showPopup(true, true)
       }
     }] : []),
     {
-      label: '설정',
+      label: tr('설정'),
       click: () => openSettingsWindow('last')
     },
-    { label: '사용량 통계', click: () => openStatsWindow() },
-    { label: '정보·업데이트', click: () => openAboutWindow() },
+    { label: tr('사용량 통계'), click: () => openStatsWindow() },
+    { label: tr('정보·업데이트'), click: () => openAboutWindow() },
     { type: 'separator' },
     {
-      label: t('trayAutoLaunch'),
+      label: tr('Windows를 켤 때 함께 시작'),
       type: 'checkbox',
       checked: isAutoStart,
       click: (item) => {
@@ -1504,16 +1522,18 @@ function updateTrayMenu() {
       }
     },
     {
-      label: t('trayRefreshNow'),
+      label: tr('지금 새로고침'),
       click: () => {
         quotaManager.refreshAll().then(() => broadcastState())
       }
     },
     // 설치판에서만: 새 버전이 받아져 있으면 바로 설치, 아니면 확인
-    ...(updater?.state.status === 'ready' ? [{ label: `새 버전 ${updater.state.version} 설치하고 다시 시작`, click: () => { updater?.install() } }] : []),
+    ...(updater?.state.status === 'ready' ? [{ label: tr('새 버전 {version} 설치하고 다시 시작', { version: updater.state.version ?? '' }), click: () => { updater?.install() } }] : []),
+    { type: 'separator' },
+    { label: LANGUAGE_LABEL, submenu: languageMenu() },
     { type: 'separator' },
     {
-      label: t('trayQuit'),
+      label: tr('종료'),
       click: () => {
         app.quit()
       }
@@ -1523,10 +1543,38 @@ function updateTrayMenu() {
   tray.setContextMenu(contextMenu)
 }
 
+/** 언어 하위 메뉴(트레이). ☰ 메뉴는 화면 쪽에서 같은 항목을 만든다. */
+function languageMenu(): Electron.MenuItemConstructorOptions[] {
+  const setting = accountStore.getConfig().language ?? 'system'
+  const pick = (language: LangSetting) => { void setLanguage(language) }
+  return [
+    { label: tr('시스템 따라'), type: 'radio', checked: setting === 'system', click: () => pick('system') },
+    { type: 'separator' },
+    ...(['ko', 'en'] as const).map((l): Electron.MenuItemConstructorOptions => ({ label: LANG_NAMES[l], type: 'radio', checked: setting === l, click: () => pick(l) })),
+  ]
+}
+/** 언어를 바꾸고 모든 창·트레이에 바로 반영한다. */
+async function setLanguage(language: LangSetting) {
+  accountStore.saveConfig({ ...accountStore.getConfig(), language })
+  applyLang(language)
+  relabelForLanguage()
+  updateTrayMenu()
+  broadcastState()
+}
+/** 언어를 바꾼 뒤: 열려 있는 창의 제목과 단축키 오류 목록(단축키 이름)을 새 언어로 다시 정한다. */
+function relabelForLanguage() {
+  const titles: Array<[BrowserWindow | null | undefined, string]> = [
+    [widgetWindow, tr('AI 사용량')], [popupWindow, tr('AI 사용량 · 상세')], [aboutWindow, tr('AI 사용량 정보')],
+    [statsWindow, tr('AI 사용량 통계')], [settingsWindow, tr('AI 사용량 설정')], [dockGhost, tr('도킹 미리보기')], [tipWindow, tr('설명')],
+  ]
+  for (const [win, title] of titles) if (win && !win.isDestroyed()) win.setTitle(title)
+  registerShortcuts()
+}
+
 function createTray() {
   const iconCanvas = getTrayIconImage()
   tray = new Tray(iconCanvas)
-  tray.setToolTip(t('trayTooltip'))
+  tray.setToolTip(tr('AI 토큰 사용량 위젯'))
 
   updateTrayMenu()
 
@@ -1584,6 +1632,8 @@ function setupIpcHandlers() {
     if (patch.hideHeader === false && nextConfig.placementMode === 'floating' && !focusId) growToFitCards()
     if (patch.appearance !== undefined || patch.useAcrylic !== undefined || patch.opacity !== undefined) applySurface()
     if (patch.clickThrough !== undefined) { applyClickThrough(); updateTrayMenu() }
+    if (patch.hideOnFullscreen !== undefined) startFullscreenWatch()
+    if (patch.language !== undefined) { applyLang(nextConfig.language); relabelForLanguage(); updateTrayMenu() }
     if (patch.design !== undefined || patch.rememberPerMonitor === true) rememberLayout()
     if (patch.shortcuts !== undefined) { registerShortcuts(); updateTrayMenu() }
     if (patch.webEnabled !== undefined || patch.webRemote !== undefined || patch.webPort !== undefined) applyWeb()
@@ -1610,7 +1660,7 @@ function setupIpcHandlers() {
     const m = acc?.customMock
     const newAcc: AccountConfig = {
       id: `custom-${Date.now()}`,
-      name: text(acc?.name, '직접 입력', 60),
+      name: text(acc?.name, tr('직접 입력'), 60),
       provider: 'custom',
       enabled: true,
       customMock: m ? {
@@ -1766,7 +1816,7 @@ function setupIpcHandlers() {
     if (!tray || tray.isDestroyed() || event.sender !== widgetWindow?.webContents) return
     const image = typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png;base64,') ? nativeImage.createFromDataURL(dataUrl) : null
     tray.setImage(image && !image.isEmpty() ? image : getTrayIconImage())
-    tray.setToolTip(typeof tooltip === 'string' && tooltip ? tooltip.slice(0, 120) : t('trayTooltip'))
+    tray.setToolTip(typeof tooltip === 'string' && tooltip ? tooltip.slice(0, 120) : tr('AI 토큰 사용량 위젯'))
   })
   ipcMain.handle(IPC_CHANNELS.GET_HISTORY, (_event, id: string, from: number, to: number, max: number) =>
     history?.range(String(id), Number(from) || 0, Number(to) || Date.now(), Math.max(10, Math.min(500, Number(max) || 200))) ?? [])
@@ -1777,25 +1827,32 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.EXPORT_SETTINGS, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) || undefined
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const r = await dialog.showSaveDialog(win!, { title: '설정 내보내기', defaultPath: `ai-usage-settings-${stamp}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
+    const r = await dialog.showSaveDialog(win!, { title: tr('설정 내보내기'), defaultPath: `ai-usage-settings-${stamp}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
     if (r.canceled || !r.filePath) return { ok: false }
     const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, webPasswordHash: _p, ...config } = accountStore.getConfig()
     fs.writeFileSync(r.filePath, JSON.stringify({ app: 'ai-usage-widget', version: app.getVersion(), exportedAt: new Date().toISOString(), config, accounts: accountStore.getAccounts() }, null, 2), 'utf-8')
-    return { ok: true, message: '설정을 파일로 내보냈어요.' }
+    return { ok: true, message: tr('설정을 파일로 내보냈어요.') }
   })
+  /** 불러오기 확인 창의 설명: 언제 내보냈는지와 카드 수에 따라 문장을 고른다. */
+  const importDetail = (exportedAt: unknown, cards: number) => {
+    const t = typeof exportedAt === 'string' && exportedAt ? new Date(exportedAt).toLocaleString(locale()) : ''
+    return t
+      ? cards ? tr('{time}에 내보낸 설정과 카드 {n}개로 지금 설정을 바꿔요.', { time: t, n: cards }) : tr('{time}에 내보낸 설정으로 지금 설정을 바꿔요.', { time: t })
+      : cards ? tr('내보낸 설정과 카드 {n}개로 지금 설정을 바꿔요.', { n: cards }) : tr('내보낸 설정으로 지금 설정을 바꿔요.')
+  }
   ipcMain.handle(IPC_CHANNELS.IMPORT_SETTINGS, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) || undefined
-    const r = await dialog.showOpenDialog(win!, { title: '설정 불러오기', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+    const r = await dialog.showOpenDialog(win!, { title: tr('설정 불러오기'), properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
     if (r.canceled || !r.filePaths[0]) return { ok: false }
     let data: any
-    try { data = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf-8')) } catch { return { ok: false, message: '읽을 수 없는 파일이에요.' } }
-    if (data?.app !== 'ai-usage-widget' || typeof data.config !== 'object') return { ok: false, message: '이 앱에서 내보낸 설정 파일이 아니에요.' }
+    try { data = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf-8')) } catch { return { ok: false, message: tr('읽을 수 없는 파일이에요.') } }
+    if (data?.app !== 'ai-usage-widget' || typeof data.config !== 'object') return { ok: false, message: tr('이 앱에서 내보낸 설정 파일이 아니에요.') }
     const accounts = Array.isArray(data.accounts) ? data.accounts.filter((a: any) => a && typeof a.id === 'string' && typeof a.name === 'string' && typeof a.provider === 'string')
       .map((a: any) => ({ id: a.id.slice(0, 120), name: a.name.slice(0, 80), provider: a.provider, enabled: a.enabled !== false, ...(typeof a.orgUuid === 'string' ? { orgUuid: a.orgUuid } : {}), ...(typeof a.homeDir === 'string' ? { homeDir: a.homeDir } : {}),
         ...(a.hidden === true ? { hidden: true } : {}), ...(a.hiddenInDock === true ? { hiddenInDock: true } : {}), ...(a.showScoped === false ? { showScoped: false } : {}), ...(ownColor(a.barColor) ? { barColor: a.barColor } : {}),
         ...(a.customMock && typeof a.customMock === 'object' ? { customMock: a.customMock } : {}), ...(a.isLocalIde === true ? { isLocalIde: true } : {}) })) : []
-    const ok = await dialog.showMessageBox(win!, { type: 'question', buttons: ['불러오기', '취소'], defaultId: 0, cancelId: 1, title: '설정 불러오기',
-      message: '이 파일의 설정으로 바꿀까요?', detail: `${data.exportedAt ? new Date(data.exportedAt).toLocaleString('ko-KR') + '에 ' : ''}내보낸 설정${accounts.length ? `과 카드 ${accounts.length}개` : ''}로 지금 설정을 바꿔요.` })
+    const ok = await dialog.showMessageBox(win!, { type: 'question', buttons: [tr('불러오기'), tr('취소')], defaultId: 0, cancelId: 1, title: tr('설정 불러오기'),
+      message: tr('이 파일의 설정으로 바꿀까요?'), detail: importDetail(data.exportedAt, accounts.length) })
     if (ok.response !== 0) return { ok: false }
     const prev = accountStore.getConfig()
     const next = { ...prev, ...sanitizeConfigPatch(data.config), placementMode: prev.placementMode }
@@ -1804,7 +1861,7 @@ function setupIpcHandlers() {
     if (prev.openAtLogin !== next.openAtLogin) applyAutoLaunch(Boolean(next.openAtLogin))
     registerShortcuts(); applySurface(); applyWindowTopmost(next); updateTrayMenu(); broadcastState()
     if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
-    return { ok: true, message: '설정을 불러왔어요.' }
+    return { ok: true, message: tr('설정을 불러왔어요.') }
   })
   ipcMain.handle(IPC_CHANNELS.OPEN_ABOUT, () => openAboutWindow())
   ipcMain.handle(IPC_CHANNELS.OPEN_STATS, (_event, id: unknown) => openStatsWindow(typeof id === 'string' ? id : undefined))
@@ -1840,39 +1897,39 @@ function setupIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.PICK_FILE, async (event, kind: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender) || undefined
     const filters = process.platform === 'win32'
-      ? [{ name: kind === 'cli' ? '실행 파일' : '프로그램·바로 가기', extensions: kind === 'cli' ? ['exe', 'cmd', 'bat'] : ['exe', 'lnk', 'url'] }, { name: '모든 파일', extensions: ['*'] }]
-      : [{ name: '모든 파일', extensions: ['*'] }]
-    const r = await dialog.showOpenDialog(win!, { title: kind === 'cli' ? 'Ctrl+두 번 클릭으로 실행할 CLI 고르기' : 'Shift+두 번 클릭으로 실행할 앱 고르기', properties: ['openFile'], filters })
+      ? [{ name: kind === 'cli' ? tr('실행 파일') : tr('프로그램·바로 가기'), extensions: kind === 'cli' ? ['exe', 'cmd', 'bat'] : ['exe', 'lnk', 'url'] }, { name: tr('모든 파일'), extensions: ['*'] }]
+      : [{ name: tr('모든 파일'), extensions: ['*'] }]
+    const r = await dialog.showOpenDialog(win!, { title: kind === 'cli' ? tr('Ctrl+두 번 클릭으로 실행할 CLI 고르기') : tr('Shift+두 번 클릭으로 실행할 앱 고르기'), properties: ['openFile'], filters })
     return r.canceled ? null : r.filePaths[0] || null
   })
   ipcMain.handle(IPC_CHANNELS.PICK_FOLDER, async (event, title?: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender) || undefined
-    const r = await dialog.showOpenDialog(win!, { title: typeof title === 'string' && title ? title.slice(0, 80) : '로그인 폴더 고르기', properties: ['openDirectory', 'createDirectory'] })
+    const r = await dialog.showOpenDialog(win!, { title: typeof title === 'string' && title ? title.slice(0, 80) : tr('로그인 폴더 고르기'), properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : r.filePaths[0] || null
   })
   // 두 번째 계정: Codex·Grok·Claude Code CLI의 다른 로그인 폴더. 그 폴더에 로그인 파일이 있어야 추가한다.
   ipcMain.handle(IPC_CHANNELS.ADD_HOME_ACCOUNT, (_event, provider: unknown, homeDir: unknown, name: unknown) => {
-    if (provider !== 'codex' && provider !== 'xai' && provider !== 'claude') return { ok: false, message: '지원하지 않는 서비스예요.' }
-    if (typeof homeDir !== 'string' || !path.isAbsolute(homeDir) || !fs.existsSync(homeDir) || !fs.statSync(homeDir).isDirectory()) return { ok: false, message: '폴더를 찾을 수 없어요.' }
+    if (provider !== 'codex' && provider !== 'xai' && provider !== 'claude') return { ok: false, message: tr('지원하지 않는 서비스예요.') }
+    if (typeof homeDir !== 'string' || !path.isAbsolute(homeDir) || !fs.existsSync(homeDir) || !fs.statSync(homeDir).isDirectory()) return { ok: false, message: tr('폴더를 찾을 수 없어요.') }
     const svc = { codex: { file: 'auth.json', env: 'CODEX_HOME', cmd: 'codex login', title: 'Codex' }, xai: { file: 'auth.json', env: 'GROK_HOME', cmd: 'grok login', title: 'Grok' },
-      claude: { file: '.credentials.json', env: 'CLAUDE_CONFIG_DIR', cmd: 'claude 로그인', title: 'Claude' } }[provider]
+      claude: { file: '.credentials.json', env: 'CLAUDE_CONFIG_DIR', cmd: tr('claude 로그인'), title: 'Claude' } }[provider]
     if (!fs.existsSync(path.join(homeDir, svc.file))) {
-      return { ok: false, message: `이 폴더에 로그인 정보가 없어요. 터미널에서 ${svc.env}를 이 폴더로 두고 ${svc.cmd}을 먼저 해 주세요.` }
+      return { ok: false, message: tr('이 폴더에 로그인 정보가 없어요. 터미널에서 {env}를 이 폴더로 두고 {cmd}을 먼저 해 주세요.', { env: svc.env, cmd: svc.cmd }) }
     }
     const same = accountStore.getAccounts().find(a => a.provider === provider && path.resolve(a.homeDir || '') === path.resolve(homeDir))
-    if (same) return { ok: false, message: `이미 '${same.name}' 카드로 추가돼 있어요.` }
+    if (same) return { ok: false, message: tr("이미 '{name}' 카드로 추가돼 있어요.", { name: same.name }) }
     const label = typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : `${svc.title} · ${path.basename(homeDir)}`
     accountStore.addAccount({ id: `${provider}-home-${Date.now()}`, name: label, provider, enabled: true, homeDir })
     broadcastState()
     if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
-    return { ok: true, message: `'${label}' 카드를 추가했어요.`, state: getAppState() }
+    return { ok: true, message: tr("'{name}' 카드를 추가했어요.", { name: label }), state: getAppState() }
   })
   // Ctrl+1~5 크기: 위젯 창(자유 창)과 작업 표시줄 팝업. 왼쪽 위를 그대로 두고 화면 안으로 맞춘다.
   ipcMain.handle(IPC_CHANNELS.SIZE_PRESET, (event, n: number) => {
     const i = Math.round(Number(n)) - 1
     if (!(i >= 0 && i < 5)) return null
     const win = BrowserWindow.fromWebContents(event.sender)
-    const labels = ['아주 작게', '작게', '보통', '크게', '아주 크게']
+    const labels = [tr('아주 작게'), tr('작게'), tr('보통'), tr('크게'), tr('아주 크게')]
     if (win && win === widgetWindow && accountStore.getConfig().placementMode === 'floating') {
       const st = getAppState(), cards = st.focus ? 1 : Math.max(1, visibleUsages(st.usages, st.accounts, st.config).length), gap = Math.max(4, Math.min(16, st.config.cardGap ?? 6))
       const sizes: Array<[number, number]> = [[220, 0], [320, 240], [480, 360], [700, 560], [980, 700]]
@@ -1901,8 +1958,10 @@ function setupIpcHandlers() {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || !Array.isArray(items) || items.length > 40) { resolve(null); return }
     let chosen: string | null = null
-    const template = items.map((it): Electron.MenuItemConstructorOptions => it === '-' || !it || typeof it !== 'object'
+    const build = (list: unknown[], depth: number): Electron.MenuItemConstructorOptions[] => list.slice(0, 40).map((it: any): Electron.MenuItemConstructorOptions => it === '-' || !it || typeof it !== 'object'
       ? { type: 'separator' }
+      : Array.isArray(it.sub) && depth < 2
+      ? { label: String(it.label).slice(0, 80), submenu: build(it.sub, depth + 1) }
       : {
           label: String(it.label).slice(0, 80),
           ...(typeof it.on === 'boolean' ? { type: 'radio' as const, checked: it.on } : {}),
@@ -1910,6 +1969,7 @@ function setupIpcHandlers() {
           ...(typeof it.accel === 'string' ? { accelerator: it.accel, registerAccelerator: false } : {}),
           click: () => { chosen = String(it.key) },
         })
+    const template = build(items, 0)
     // 화면 좌표(CSS 픽셀)를 창 좌표로: 스케일(확대 비율)을 곱한다.
     const z = event.sender.getZoomFactor(), x = Math.round(Number(at?.x) * z), y = Math.round(Number(at?.y) * z)
     Menu.buildFromTemplate(template).popup({ window: win, ...(Number.isFinite(x) && Number.isFinite(y) ? { x, y } : {}), callback: () => setImmediate(() => resolve(chosen)) })
@@ -1932,6 +1992,7 @@ function setupIpcHandlers() {
 
 app.whenReady().then(() => {
   accountStore = new AccountStore()
+  applyLang(accountStore.getConfig().language)
   // 지난번에 집중 모드로 보던 카드가 아직 있으면 이어서 그 카드만 보여 준다.
   const savedFocus = accountStore.getConfig().focusId
   focusId = savedFocus && accountStore.getAccounts().some(a => a.id === savedFocus) ? savedFocus : null
@@ -1946,7 +2007,7 @@ app.whenReady().then(() => {
   updater = new Updater({
     preview: isPreview,
     onChange: () => { broadcastState(); updateTrayMenu() },
-    onReady: version => notifier?.notice(`새 버전 ${version}이 준비됐어요`, accountStore.getConfig().autoUpdate === false ? '창·위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.' : `${accountStore.getConfig().updateHour ?? 3}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.`, () => openAboutWindow()),
+    onReady: version => notifier?.notice(tr('새 버전 {version}이 준비됐어요', { version }), accountStore.getConfig().autoUpdate === false ? tr('창·위젯 제목줄의 ‘업데이트’를 누르면 설치하고 다시 시작해요.') : tr('{hour}시에 설치돼요. 제목줄의 ‘업데이트’로 지금 설치할 수도 있어요.', { hour: accountStore.getConfig().updateHour ?? 3 }), () => openAboutWindow()),
   })
   updater.schedule(accountStore.getConfig().autoUpdate !== false, accountStore.getConfig().updateHour ?? 3)
   notifier = new UsageNotifier(path.join(app.getPath('userData'), 'notify-state.json'), appIcon, () => {
@@ -2007,9 +2068,26 @@ app.whenReady().then(() => {
   screen.on('display-removed', onScreenChange)
 })
 
-/** 전체 화면 앱이 뜨면 자유 창 위젯을 숨긴다. 위젯과 같은 모니터인지 보려고 창 핸들을 넘기므로 위젯 창을 새로 만들면 다시 건다. */
+/**
+ * 전체 화면 앱이 뜨면 자유 창 위젯을 숨긴다(설정 '전체 화면 앱이 뜨면 숨기기', 기본 끔). 위젯과 같은 모니터인지 보려고 창 핸들을 넘기므로
+ * 위젯 창을 새로 만들면 다시 건다. 감시 프로그램이 끝나면 숨긴 창부터 되살리고 잠시 뒤 다시 건다(숨긴 채로 남지 않게).
+ */
+let fullscreenRetry: ReturnType<typeof setTimeout> | undefined
+function restoreFromFullscreenHide() {
+  if (!widgetHiddenForFullscreen) return
+  widgetHiddenForFullscreen = false
+  if (!widgetWindow || widgetWindow.isDestroyed() || widgetManuallyHidden) return
+  widgetWindow.showInactive()
+  void updateWidgetBounds()
+}
 function startFullscreenWatch() {
+  clearTimeout(fullscreenRetry)
   if (!widgetWindow || widgetWindow.isDestroyed()) return
+  if (accountStore.getConfig().hideOnFullscreen !== true) {
+    TaskbarDocker.stopFullscreenWatcher()
+    restoreFromFullscreenHide()
+    return
+  }
   TaskbarDocker.startFullscreenWatcher(widgetWindow, (isFullscreen) => {
     if (!widgetWindow || widgetWindow.isDestroyed() || widgetManuallyHidden) return
     const cfg = accountStore.getConfig()
@@ -2018,12 +2096,11 @@ function startFullscreenWatch() {
         widgetHiddenForFullscreen = true
         widgetWindow.hide()
         hidePopup(true)
-      } else if (!isFullscreen && widgetHiddenForFullscreen) {
-        widgetHiddenForFullscreen = false
-        widgetWindow.show()
-        updateWidgetBounds()
-      }
+      } else if (!isFullscreen) restoreFromFullscreenHide()
     }
+  }, () => {
+    restoreFromFullscreenHide()
+    fullscreenRetry = setTimeout(startFullscreenWatch, 5000)
   })
 }
 

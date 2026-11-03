@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { AccountConfig, AccountUsage } from '../common/types.js'
 import { failedUsage, iso, jwtPayload, num, quotaFromUsed } from './usage-quota.js'
+import { msg } from '../common/i18n.js'
 
 /**
  * Cursor 사용량. Cursor 앱이 로그인해 둔 토큰(state.vscdb의 cursorAuth/accessToken)을 읽기만 하고,
@@ -14,9 +15,9 @@ const TIMEOUT_MS = 8000
 const BRAND = { name: 'Cursor', letter: 'C', color: '#9CA3AF' }
 
 export const CURSOR_TEXT = {
-  notLoggedIn: 'Cursor 앱 로그인을 찾지 못했어요. Cursor 앱에 로그인해 주세요',
-  expired: 'Cursor 로그인이 만료됐어요. Cursor 앱을 한 번 열면 다시 연결돼요',
-  unavailable: 'Cursor 사용량 정보를 받지 못했어요',
+  notLoggedIn: msg('Cursor 앱 로그인을 찾지 못했어요. Cursor 앱에 로그인해 주세요'),
+  expired: msg('Cursor 로그인이 만료됐어요. Cursor 앱을 한 번 열면 다시 연결돼요'),
+  unavailable: msg('Cursor 사용량 정보를 받지 못했어요'),
 } as const
 
 /** Cursor 앱의 전역 상태 DB 폴더. */
@@ -57,12 +58,12 @@ export function cursorUsageFromSummary(account: AccountConfig, j: any): AccountU
   const percent = j?.isUnlimited ? 0
     : num(plan?.totalPercentUsed) ?? (auto !== null && api !== null ? (auto + api) / 2 : api ?? auto) ?? ratio(plan) ?? ratio(overall) ?? ratio(pooled)
   if (percent === null) throw new Error(CURSOR_TEXT.unavailable)
-  const extra = onDemand?.enabled && num(onDemand.used) ? ` · 추가 사용 $${(num(onDemand.used)! / 100).toFixed(2)}` : ''
+  const extra = onDemand?.enabled && num(onDemand.used) ? (num(onDemand.used)! / 100).toFixed(2) : ''
   const kind = String(j?.membershipType || '')
   return {
     id: account.id, name: account.name || BRAND.name, provider: account.provider, iconLetter: BRAND.letter, brandColor: BRAND.color,
     plan: PLAN[kind] || (kind ? kind.replace(/^\w/, c => c.toUpperCase()) : undefined),
-    tier: `Cursor${j?.isUnlimited ? ' · 무제한' : ''}${extra}`,
+    tier: extra ? (j?.isUnlimited ? msg('Cursor · 무제한 · 추가 사용 ${amount}', { amount: extra }) : msg('Cursor · 추가 사용 ${amount}', { amount: extra })) : j?.isUnlimited ? msg('Cursor · 무제한') : 'Cursor',
     status: 'ready', primaryKind: 'monthly', primaryQuota: quotaFromUsed(percent, iso(j?.billingCycleEnd)), updatedAt: new Date().toISOString(),
   }
 }
@@ -84,7 +85,7 @@ export class CursorClient {
       if (!res.ok) { await res.body?.cancel().catch(() => {}); return failedUsage(account, BRAND, 'error', `${CURSOR_TEXT.unavailable} (HTTP ${res.status})`) }
       return cursorUsageFromSummary(account, await res.json())
     } catch (err: any) {
-      return failedUsage(account, BRAND, 'error', err?.name === 'TimeoutError' ? 'Cursor 응답 시간 초과' : err?.message || CURSOR_TEXT.unavailable)
+      return failedUsage(account, BRAND, 'error', err?.name === 'TimeoutError' ? msg('Cursor 응답 시간 초과') : err?.message || CURSOR_TEXT.unavailable)
     }
   }
 }
