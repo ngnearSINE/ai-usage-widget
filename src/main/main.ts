@@ -627,6 +627,8 @@ function applyWindowTopmost(config: WidgetConfig) {
     const isAlwaysTop = config.alwaysOnTop !== false
     if (isAlwaysTop) {
       widgetWindow.setAlwaysOnTop(true, 'floating')
+      // 스스로 항상 위로 뜨는 전체 화면 앱이 나중에 앞으로 오면 위젯이 그 뒤로 깔린다. 보조 프로그램이 지켜보다 다시 올린다.
+      TaskbarDocker.startStayTop(widgetWindow, config)
     } else {
       widgetWindow.setAlwaysOnTop(false)
       TaskbarDocker.stopStayTop()

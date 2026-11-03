@@ -466,10 +466,16 @@ export class TaskbarDocker {
     console.log(`[TaskbarDocker] Starting floating staytop for HWND ${hwnd}...`)
 
     try {
-      this.stayTopProcess = spawn(exe, ['staytop', hwnd, '600'], {
+      const proc = this.stayTopProcess = spawn(exe, ['staytop', hwnd, '250'], {
         detached: false,
         stdio: 'ignore',
         windowsHide: true
+      })
+      // 멈추라고 하지 않았는데 끝났으면 잠시 뒤 다시 건다(항상 위 지키기가 조용히 꺼지지 않도록).
+      proc.on('exit', () => {
+        if (this.stayTopProcess !== proc) return
+        this.stayTopProcess = null
+        setTimeout(() => { if (!this.stayTopProcess && !win.isDestroyed()) this.startStayTop(win, config) }, 5000)
       })
 
       this.stayTopProcess.on('error', (err) => {

@@ -88,6 +88,19 @@ namespace FluentFlyoutDocker
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool IsWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        const uint GW_HWNDPREV = 3;
+        const int WS_EX_TOPMOST = 0x00000008;
+        const int DWMWA_CLOAKED = 14;
+
         [DllImport("user32.dll", SetLastError = true)]
         static extern IntPtr OpenWindowStation(string lpszWinSta, bool fInherit, uint dwDesiredAccess);
 
@@ -266,6 +279,38 @@ namespace FluentFlyoutDocker
             }
 
             return taskbars[0];
+        }
+
+        static readonly string[] SystemSurfaces = { "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+            "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow", "ForegroundStaging", "MultitaskingViewFrame", "TaskSwitcherWnd" };
+
+        // 위젯이 항상 위를 잃었거나, 위젯 위에 다른 프로세스의 전체 화면 창이 겹쳐 있으면 true.
+        static bool NeedsRaise(IntPtr widget, uint selfPid)
+        {
+            if ((GetWindowLong(widget, GWL_EXSTYLE) & WS_EX_TOPMOST) == 0) return true;
+            RECT w;
+            if (!GetWindowRect(widget, out w)) return false;
+            IntPtr h = GetWindow(widget, GW_HWNDPREV);
+            for (int i = 0; h != IntPtr.Zero && i < 1000; i++, h = GetWindow(h, GW_HWNDPREV))
+            {
+                if (!IsWindowVisible(h)) continue;
+                uint pid;
+                GetWindowThreadProcessId(h, out pid);
+                if (pid == selfPid) continue;
+                int cloaked;
+                if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, out cloaked, 4) == 0 && cloaked != 0) continue;
+                StringBuilder cls = new StringBuilder(256);
+                GetClassName(h, cls, cls.Capacity);
+                if (Array.IndexOf(SystemSurfaces, cls.ToString()) >= 0) continue;
+                RECT r;
+                if (!GetWindowRect(h, out r)) continue;
+                if (r.Right <= w.Left || r.Left >= w.Right || r.Bottom <= w.Top || r.Top >= w.Bottom) continue;
+                MONITORINFO mi = new MONITORINFO();
+                mi.cbSize = (uint)Marshal.SizeOf(typeof(MONITORINFO));
+                if (!GetMonitorInfo(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), ref mi)) continue;
+                if (r.Left <= mi.rcMonitor.Left && r.Top <= mi.rcMonitor.Top && r.Right >= mi.rcMonitor.Right && r.Bottom >= mi.rcMonitor.Bottom) return true;
+            }
+            return false;
         }
 
         static bool IsForegroundFullscreen(IntPtr widgetHwnd)
@@ -761,10 +806,15 @@ namespace FluentFlyoutDocker
 
                 SetWindowPos(childHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                 Emit("STAYTOP_STARTED");
+                uint selfPid;
+                GetWindowThreadProcessId(childHwnd, out selfPid);
 
+                // 다른 앱의 전체 화면 창(스스로 항상 위로 뜨는 영상·게임 등)이 위젯을 덮을 때만 다시 맨 앞으로 올린다.
+                // 늘 올리면 시작 메뉴·작업 보기 같은 시스템 화면이나 이 앱의 메뉴·설명 창까지 덮으므로 그런 창은 건너뛴다.
                 while (IsWindow(childHwnd))
                 {
-                    SetWindowPos(childHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                    if (IsWindowVisible(childHwnd) && NeedsRaise(childHwnd, selfPid))
+                        SetWindowPos(childHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                     Thread.Sleep(interval);
                 }
 
