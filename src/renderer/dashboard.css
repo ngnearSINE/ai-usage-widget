@@ -889,3 +889,7 @@ body.is-web-view [data-src] { pointer-events:none; }
 /* 구역 제목 오른쪽에 바로 붙은 켜기·끄기 */
 .section-switch { position:relative; cursor:pointer; }
 .section-switch .switch { top:50%; transform:translateY(-50%); }
+
+/* 트레이 더블 클릭: 창 전체가 한 번 은은하게 빛나 위치를 알린다(창 모양 그대로, 클릭은 막지 않는다). */
+body.locating::after { content:''; position:fixed; inset:0; z-index:2147483647; pointer-events:none; border-radius:var(--window-radius); background:color-mix(in srgb,var(--accent) 22%,transparent); box-shadow:inset 0 0 0 2px var(--accent), inset 0 0 32px color-mix(in srgb,var(--accent) 70%,transparent); animation:locate-glow 1.4s cubic-bezier(.4,0,.2,1) both; }
+@keyframes locate-glow { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }

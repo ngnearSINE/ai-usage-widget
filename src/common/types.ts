@@ -145,6 +145,7 @@ export interface WidgetConfig {
   trayShowNumber?: boolean // 트레이 아이콘에 가장 빠듯한 남은 % 표시 (기본 켬)
   clickThrough?: boolean // 클릭 통과 잠금: 위젯 위 클릭이 뒤 창으로 간다 (자유 창 전용)
   hideOnFullscreen?: boolean // 같은 모니터에 전체 화면 앱이 뜨면 자유 창을 숨김 (기본 끔)
+  locateOnTrayDoubleClick?: boolean // 트레이 아이콘을 두 번 누르면 창 전체를 한 번 반짝여 위치를 알림 (기본 켬)
   shortcuts?: { toggle?: string; lock?: string; cycle?: string } // 전역 단축키(빈 문자열 = 끔)
   rememberPerMonitor?: boolean // 모니터 구성마다 위치·크기·디자인 기억 (기본 켬)
   layoutsByMonitor?: Record<string, { windowBounds?: { x: number; y: number; width: number; height: number }; design?: WidgetConfig['design'] }>

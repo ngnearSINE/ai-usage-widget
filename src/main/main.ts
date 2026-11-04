@@ -1588,8 +1588,21 @@ function createTray() {
     lastTrayClick = now
     // 트레이로 숨겼으면 다시 보인다. 창 모드는 창을, 독 모드는 위젯을 연다.
     if (widgetManuallyHidden || !dockSupported || accountStore.getConfig().placementMode !== 'docked') void showWidgetWindow()
-    else void togglePopup()
+    else { popupToggledByTrayClick = now; void togglePopup() }
   })
+  // Windows는 더블 클릭 앞에 클릭을 먼저 보낸다. 독 모드에서 그 클릭이 위젯을 열었으면 도로 닫고 위치만 알린다.
+  tray.on('double-click', () => {
+    if (Date.now() - popupToggledByTrayClick < 800) { popupToggledByTrayClick = 0; void togglePopup() }
+    void locateWidget()
+  })
+}
+let popupToggledByTrayClick = 0
+
+/** 창을 (숨겨 있으면) 다시 보이고, 설정이 켜져 있으면 창 전체를 한 번 은은하게 반짝여 어디 있는지 알린다. */
+async function locateWidget() {
+  await showWidgetWindow()
+  if (accountStore.getConfig().locateOnTrayDoubleClick === false || !widgetWindow || widgetWindow.isDestroyed()) return
+  widgetWindow.webContents.send(IPC_CHANNELS.LOCATE_WIDGET)
 }
 
 function setupIpcHandlers() {

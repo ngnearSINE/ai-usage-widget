@@ -50,6 +50,7 @@ const DEFAULT_CONFIG: WidgetConfig = {
   trayShowNumber: true,
   clickThrough: false,
   hideOnFullscreen: false,
+  locateOnTrayDoubleClick: true,
   shortcuts: { toggle: 'Ctrl+Alt+U', lock: 'Ctrl+Alt+L', cycle: 'Ctrl+Alt+D' },
   rememberPerMonitor: true,
   layoutsByMonitor: {},

@@ -184,7 +184,7 @@ Open Settings with the settings button (slider icon) in the window or widget tit
 | Tab | What it does |
 |---|---|
 | **Design** | Six designs, theme (light, dark, system), **background** (acrylic on/off + opacity), bar color, accent color, service icons (brand color or single color), scale and card spacing, motion |
-| **Display** | **Language**, big-number basis, warning and danger levels (remaining %), **Bar color by usage** (switch next to the heading turns it on and off; step or smooth; color-stop gradient; background tint using the same stops), put services with less room first, **What to show table** (show as used, projected time and reset time per service; the top row sets all services at once. Turning off **Projected time** removes the pace tick, speed chip, "runs out in ○ (est.)" and pace warnings, leaving only what's left. Turning off **Reset time** removes the time until reset and the reset time), Always on top, Hide while a full-screen app is open, Dock to taskbar |
+| **Display** | **Language**, big-number basis, warning and danger levels (remaining %), **Bar color by usage** (switch next to the heading turns it on and off; step or smooth; color-stop gradient; background tint using the same stops), put services with less room first, **What to show table** (show as used, projected time and reset time per service; the top row sets all services at once. Turning off **Projected time** removes the pace tick, speed chip, "runs out in ○ (est.)" and pace warnings, leaving only what's left. Turning off **Reset time** removes the time until reset and the reset time), Always on top, Hide while a full-screen app is open, Show where the window is on tray double-click, Dock to taskbar |
 | **Services** | List of services (switches turn checking on and off). Click a service for its name, **Show in** (everywhere, window, widget only, hidden), **Normal color** (service color, green, custom), model-specific limits like Fable, order, and removing it from the list. Below: find and add sign-ins on this PC, add a card where you type the numbers yourself, and **Add an account from another login folder** (Codex, Grok, Claude) |
 | **Alerts** | Windows notifications on/off, what to notify about, turn off per service or limit, test notification, **quiet hours** |
 | **General** | Start with Windows, how often to check usage, number on the tray icon, Click-through lock, shortcuts, **Web page view**, open About & updates, user guide. **Advanced**: layout per monitor setup, taskbar dock fine-tuning, **settings backup and restore** |
@@ -213,7 +213,7 @@ When **Background color** is "None" (default), it follows the theme (light or da
 
 ## 9. Tray icon and shortcuts
 
-Clicking the tray icon (single or double click) shows the window and brings it to the front in window mode, or opens and closes the widget in taskbar dock mode. If you've hidden it to the tray, it shows the hidden window or dock again. Right-click it to open the menu.
+Clicking the tray icon once shows the window and brings it to the front in window mode, or opens and closes the widget in taskbar dock mode. If you've hidden it to the tray, it shows the hidden window or dock again. **Double-click** it to show the window (the dock, in dock mode) and make the whole window glow softly once so you can spot where it is. You can turn the glow off with **Show where the window is on tray double-click** in Settings → Display → Window (on by default). Right-click it to open the menu.
 
 - Show/hide window or taskbar dock
 - Click-through lock
