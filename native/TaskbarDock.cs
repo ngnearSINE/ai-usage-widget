@@ -293,7 +293,15 @@ namespace FluentFlyoutDocker
             IntPtr h = GetWindow(widget, GW_HWNDPREV);
             for (int i = 0; h != IntPtr.Zero && i < 1000; i++, h = GetWindow(h, GW_HWNDPREV))
             {
+                // 대부분의 창은 겹치지 않거나 모니터를 다 덮지 않으므로 값싼 검사부터 한다(0.25초마다 돈다).
                 if (!IsWindowVisible(h)) continue;
+                RECT r;
+                if (!GetWindowRect(h, out r)) continue;
+                if (r.Right <= w.Left || r.Left >= w.Right || r.Bottom <= w.Top || r.Top >= w.Bottom) continue;
+                MONITORINFO mi = new MONITORINFO();
+                mi.cbSize = (uint)Marshal.SizeOf(typeof(MONITORINFO));
+                if (!GetMonitorInfo(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), ref mi)) continue;
+                if (r.Left > mi.rcMonitor.Left || r.Top > mi.rcMonitor.Top || r.Right < mi.rcMonitor.Right || r.Bottom < mi.rcMonitor.Bottom) continue;
                 uint pid;
                 GetWindowThreadProcessId(h, out pid);
                 if (pid == selfPid) continue;
@@ -301,14 +309,7 @@ namespace FluentFlyoutDocker
                 if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, out cloaked, 4) == 0 && cloaked != 0) continue;
                 StringBuilder cls = new StringBuilder(256);
                 GetClassName(h, cls, cls.Capacity);
-                if (Array.IndexOf(SystemSurfaces, cls.ToString()) >= 0) continue;
-                RECT r;
-                if (!GetWindowRect(h, out r)) continue;
-                if (r.Right <= w.Left || r.Left >= w.Right || r.Bottom <= w.Top || r.Top >= w.Bottom) continue;
-                MONITORINFO mi = new MONITORINFO();
-                mi.cbSize = (uint)Marshal.SizeOf(typeof(MONITORINFO));
-                if (!GetMonitorInfo(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), ref mi)) continue;
-                if (r.Left <= mi.rcMonitor.Left && r.Top <= mi.rcMonitor.Top && r.Right >= mi.rcMonitor.Right && r.Bottom >= mi.rcMonitor.Bottom) return true;
+                if (Array.IndexOf(SystemSurfaces, cls.ToString()) < 0) return true;
             }
             return false;
         }
