@@ -627,6 +627,7 @@ function applyWindowTopmost(config: WidgetConfig) {
     const isAlwaysTop = config.alwaysOnTop !== false
     if (isAlwaysTop) {
       widgetWindow.setAlwaysOnTop(true, 'floating')
+      TaskbarDocker.startStayTop(widgetWindow, config)
     } else {
       widgetWindow.setAlwaysOnTop(false)
       TaskbarDocker.stopStayTop()
@@ -2070,9 +2071,8 @@ app.whenReady().then(() => {
 
 /**
  * 전체 화면 앱이 뜨면 자유 창 위젯을 숨긴다(설정 '전체 화면 앱이 뜨면 숨기기', 기본 끔). 위젯과 같은 모니터인지 보려고 창 핸들을 넘기므로
- * 위젯 창을 새로 만들면 다시 건다. 감시 프로그램이 끝나면 숨긴 창부터 되살리고 잠시 뒤 다시 건다(숨긴 채로 남지 않게).
+ * 위젯 창을 새로 만들면 다시 건다. 감시 프로그램이 뜻밖에 끝나면 숨긴 창부터 되살린다(숨긴 채로 남지 않게, 재시작은 TaskbarDocker가 한다).
  */
-let fullscreenRetry: ReturnType<typeof setTimeout> | undefined
 function restoreFromFullscreenHide() {
   if (!widgetHiddenForFullscreen) return
   widgetHiddenForFullscreen = false
@@ -2081,7 +2081,6 @@ function restoreFromFullscreenHide() {
   void updateWidgetBounds()
 }
 function startFullscreenWatch() {
-  clearTimeout(fullscreenRetry)
   if (!widgetWindow || widgetWindow.isDestroyed()) return
   if (accountStore.getConfig().hideOnFullscreen !== true) {
     TaskbarDocker.stopFullscreenWatcher()
@@ -2098,10 +2097,7 @@ function startFullscreenWatch() {
         hidePopup(true)
       } else if (!isFullscreen) restoreFromFullscreenHide()
     }
-  }, () => {
-    restoreFromFullscreenHide()
-    fullscreenRetry = setTimeout(startFullscreenWatch, 5000)
-  })
+  }, restoreFromFullscreenHide)
 }
 
 app.on('window-all-closed', () => {

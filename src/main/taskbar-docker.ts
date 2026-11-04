@@ -109,6 +109,69 @@ class NativeHelper {
   }
 }
 
+type DaemonOptions = {
+  onLine?: (line: string) => void
+  /** 멈추라고 하지 않았는데 끝났을 때(충돌 등). */
+  onExit?: () => void
+  /** 멈추라고 하지 않았는데 끝나면 이만큼 뒤 같은 인자로 다시 띄운다. keepAlive가 false를 돌려주면 띄우지 않는다. */
+  restartMs?: number
+  keepAlive?: () => boolean
+}
+
+/**
+ * 계속 도는 보조 프로그램 하나(staytop·fswatch·watch). 같은 인자로 다시 부르면 살아 있는 프로세스를 그대로 쓰고,
+ * stop() 뒤에 도착한 출력·종료 알림·예약된 재시작은 모두 버린다.
+ */
+class HelperDaemon {
+  private proc: ChildProcess | null = null
+  private key = ''
+  private retry: ReturnType<typeof setTimeout> | undefined
+
+  constructor(private name: string, private exe: () => string) {}
+
+  start(args: string[], opts: DaemonOptions = {}): void {
+    const key = args.join(' ')
+    if (this.proc && this.proc.exitCode === null && this.key === key) return
+    this.stop()
+    const exe = this.exe()
+    if (!fs.existsSync(exe)) return
+    let proc: ChildProcess
+    try {
+      proc = spawn(exe, args, { windowsHide: true, stdio: ['ignore', opts.onLine ? 'pipe' : 'ignore', 'ignore'] })
+    } catch (err) {
+      console.error(`[TaskbarDocker] Failed to spawn ${this.name}:`, err)
+      return
+    }
+    this.proc = proc
+    this.key = key
+    let buffer = ''
+    proc.stdout?.on('data', chunk => {
+      buffer += chunk.toString()
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+      for (const line of lines) if (this.proc === proc) opts.onLine!(line.trim())
+    })
+    proc.on('error', err => console.warn(`[TaskbarDocker] ${this.name} process error:`, err))
+    proc.on('exit', () => {
+      if (this.proc !== proc) return
+      console.warn(`[TaskbarDocker] ${this.name} exited unexpectedly`)
+      this.proc = null
+      this.key = ''
+      opts.onExit?.()
+      if (opts.restartMs === undefined || this.proc) return
+      this.retry = setTimeout(() => { if (!this.proc && opts.keepAlive?.() !== false) this.start(args, opts) }, opts.restartMs)
+    })
+  }
+
+  stop(): void {
+    clearTimeout(this.retry)
+    const proc = this.proc
+    this.proc = null
+    this.key = ''
+    try { proc?.kill() } catch {}
+  }
+}
+
 export interface DockResult {
   success: boolean
   taskbarHwnd?: string
@@ -122,10 +185,9 @@ export interface DockResult {
 
 export class TaskbarDocker {
   private static dockerExePath: string | null = null
-  private static stayTopProcess: ChildProcess | null = null
-  private static fsWatchProcess: ChildProcess | null = null
-  private static dockWatchProcess: ChildProcess | null = null
-  private static dockWatchKey = ''
+  private static stayTop = new HelperDaemon('staytop', () => TaskbarDocker.getDockerPath())
+  private static fsWatch = new HelperDaemon('fswatch', () => TaskbarDocker.getDockerPath())
+  private static dockWatch = new HelperDaemon('watch', () => TaskbarDocker.getDockerPath())
   private static lastTaskbarHwnd: string | null = null
   // Chromium이 child 창 client에서 빼는 프레임 높이. 한 번 재면 다음 도킹부터 바로 보상해 dock을 두 번 실행하지 않는다.
   private static dockInset = 0
@@ -322,72 +384,26 @@ export class TaskbarDocker {
 
   /**
    * 도킹 모드 전용 상주 워처: 단일 TaskbarDock.exe watch 프로세스가 클릭과 도킹 유실을 stdout으로 통지
-   * (주기적 프로세스 생성은 Windows AppStarting 커서를 유발하므로 금지)
+   * (주기적 프로세스 생성은 Windows AppStarting 커서를 유발하므로 금지). 같은 위젯·작업표시줄로 다시 붙이면(크기 변경 등) 살아 있는 워처를 그대로 쓴다.
    */
   public static startDockWatcher(win: BrowserWindow, onClick: () => void, onDockLost: () => void, onDrag?: () => void): void {
     if (!win || win.isDestroyed() || !this.lastTaskbarHwnd) return this.stopDockWatcher()
-
-    // 같은 위젯/작업표시줄로 재도킹(크기 변경 등)이면 살아 있는 워처를 그대로 재사용
-    const hwnd = this.getHwnd(win)
-    const key = `${hwnd}:${this.lastTaskbarHwnd}`
-    if (this.dockWatchProcess && this.dockWatchProcess.exitCode === null && this.dockWatchKey === key) return
-    this.stopDockWatcher()
-
-    const exe = this.getDockerPath()
-    if (!fs.existsSync(exe)) return
-
-    this.dockWatchKey = key
-    console.log(`[TaskbarDocker] Starting dock watcher for HWND ${hwnd} (taskbar ${this.lastTaskbarHwnd})...`)
-
-    try {
-      const proc = spawn(exe, ['watch', hwnd, this.lastTaskbarHwnd], { windowsHide: true })
-      this.dockWatchProcess = proc
-      let buffer = ''
-
-      proc.stdout?.on('data', (chunk) => {
-        buffer += chunk.toString()
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const msg = line.trim()
-          if (this.dockWatchProcess !== proc) continue // 방금 멈춘 이전 워처의 남은 신호
-          if (msg === 'CLICK') {
-            console.log('[TaskbarDocker] Native click detected on docked HWND, toggling popup')
-            onClick()
-          } else if (msg === 'DRAG_START') {
-            onDrag?.()
-          } else if (msg === 'DOCK_LOST') {
-            console.warn('[TaskbarDocker] Dock lost. Triggering re-dock repair...')
-            this.dockWatchProcess = null
-            onDockLost()
-          }
+    this.dockWatch.start(['watch', this.getHwnd(win), this.lastTaskbarHwnd], {
+      onLine: msg => {
+        if (msg === 'CLICK') onClick()
+        else if (msg === 'DRAG_START') onDrag?.()
+        else if (msg === 'DOCK_LOST') {
+          console.warn('[TaskbarDocker] Dock lost. Triggering re-dock repair...')
+          this.dockWatch.stop()
+          onDockLost()
         }
-      })
-
-      proc.on('error', (err) => {
-        console.warn('[TaskbarDocker] watch process error:', err)
-      })
+      },
       // 우리가 멈춘 게 아닌데 끝났다면(충돌 등) 클릭·끌기를 더 받지 못하므로 다시 붙이는 경로로 보낸다.
-      proc.on('exit', () => {
-        if (this.dockWatchProcess !== proc) return
-        console.warn('[TaskbarDocker] Dock watcher exited unexpectedly')
-        this.dockWatchProcess = null
-        onDockLost()
-      })
-    } catch (err) {
-      console.error('[TaskbarDocker] Failed to spawn watch:', err)
-    }
+      onExit: onDockLost
+    })
   }
 
-  public static stopDockWatcher(): void {
-    if (this.dockWatchProcess) {
-      try {
-        this.dockWatchProcess.kill()
-      } catch {}
-      this.dockWatchProcess = null
-    }
-  }
+  public static stopDockWatcher(): void { this.dockWatch.stop() }
 
   /** 마우스 버튼을 놓을 때까지 포인터 좌표(DIP)를 보낸다. 반환값의 stop()은 이후 좌표를 무시한다. */
   public static watchPointer(onMove: (p: { x: number; y: number }) => void, onEnd: (p?: { x: number; y: number }) => void): { stop(): void } | null {
@@ -444,104 +460,32 @@ export class TaskbarDocker {
   }
 
   /**
-   * 플로팅 모드 전용: staytop 프로세스 기동 (도킹 모드에서는 절대 실행하지 않음)
+   * 플로팅 모드 전용 '항상 위' 지키기(도킹 모드에서는 절대 실행하지 않음). 스스로 항상 위로 뜨는 전체 화면 앱이 나중에 앞으로 오면
+   * 위젯이 그 뒤로 깔리므로 보조 프로그램이 지켜보다 다시 올린다. 같은 창이면 다시 불러도 프로세스를 새로 띄우지 않고,
+   * 멈추라고 하지 않았는데 끝나면 잠시 뒤 다시 건다. 창이 닫히면 보조 프로그램도 스스로 끝난다.
    */
   public static startStayTop(win: BrowserWindow, config?: WidgetConfig): void {
-    if (!win || win.isDestroyed()) return
-    this.stopStayTop()
-
-    // docked 모드인 경우 실행 거부
-    if (config?.placementMode === 'docked') {
-      console.log('[TaskbarDocker] Skipping staytop: widget is in native docked mode')
-      return
-    }
-
-    const exe = this.getDockerPath()
-    if (!fs.existsSync(exe)) {
-      console.warn('[TaskbarDocker] Docker executable not found for staytop:', exe)
-      return
-    }
-
-    const hwnd = this.getHwnd(win)
-    console.log(`[TaskbarDocker] Starting floating staytop for HWND ${hwnd}...`)
-
-    try {
-      this.stayTopProcess = spawn(exe, ['staytop', hwnd, '600'], {
-        detached: false,
-        stdio: 'ignore',
-        windowsHide: true
-      })
-
-      this.stayTopProcess.on('error', (err) => {
-        console.warn('[TaskbarDocker] staytop process error:', err)
-      })
-
-      win.once('closed', () => {
-        this.stopStayTop()
-      })
-    } catch (err) {
-      console.error('[TaskbarDocker] Failed to spawn staytop:', err)
-    }
+    if (!win || win.isDestroyed() || config?.placementMode === 'docked') return this.stopStayTop()
+    this.stayTop.start(['staytop', this.getHwnd(win), '250'], { restartMs: 5000, keepAlive: () => !win.isDestroyed() })
   }
 
-  public static stopStayTop(): void {
-    if (this.stayTopProcess) {
-      try {
-        this.stayTopProcess.kill()
-      } catch {}
-      this.stayTopProcess = null
-    }
-  }
+  public static stopStayTop(): void { this.stayTop.stop() }
 
   /**
-   * 전체화면(게임/영상) 감지를 위한 상주 워처 프로세스 (플로팅 모드 전용)
+   * 전체화면(게임/영상) 감지를 위한 상주 워처 프로세스 (플로팅 모드 전용). 줄마다 1(전체 화면)·0을 알린다.
+   * 멈추라고 하지 않았는데 끝나면 onExit를 부르고(숨긴 창이 그대로 남지 않도록) 잠시 뒤 다시 건다.
    */
   public static startFullscreenWatcher(widgetWin: BrowserWindow, onChange: (isFullscreen: boolean) => void, onExit?: () => void): void {
-    this.stopFullscreenWatcher()
-
-    const exe = this.getDockerPath()
-    if (!fs.existsSync(exe)) {
-      console.warn('[TaskbarDocker] Docker executable not found for fswatch:', exe)
-      return
-    }
-
-    try {
-      const hwnd = (widgetWin && !widgetWin.isDestroyed()) ? this.getHwnd(widgetWin) : '0'
-      this.fsWatchProcess = spawn(exe, ['fswatch', '1000', hwnd], { windowsHide: true })
-      let buffer = ''
-      this.fsWatchProcess.stdout?.on('data', (chunk) => {
-        buffer += chunk.toString()
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (line === '1' || line === '0') {
-            onChange(line === '1')
-          }
-        }
-      })
-      this.fsWatchProcess.on('error', (err) => {
-        console.warn('[TaskbarDocker] fswatch process error:', err)
-      })
-      // 멈추라고 하지 않았는데 끝났으면 알린다(숨긴 창이 그대로 남지 않도록).
-      const proc = this.fsWatchProcess
-      proc.on('exit', () => {
-        if (this.fsWatchProcess !== proc) return
-        this.fsWatchProcess = null
-        onExit?.()
-      })
-    } catch (err) {
-      console.error('[TaskbarDocker] Failed to spawn fswatch:', err)
-    }
+    if (!widgetWin || widgetWin.isDestroyed()) return this.stopFullscreenWatcher()
+    this.fsWatch.start(['fswatch', '1000', this.getHwnd(widgetWin)], {
+      onLine: line => { if (line === '1' || line === '0') onChange(line === '1') },
+      onExit,
+      restartMs: 5000,
+      keepAlive: () => !widgetWin.isDestroyed()
+    })
   }
 
-  public static stopFullscreenWatcher(): void {
-    if (this.fsWatchProcess) {
-      try {
-        this.fsWatchProcess.kill()
-      } catch {}
-      this.fsWatchProcess = null
-    }
-  }
+  public static stopFullscreenWatcher(): void { this.fsWatch.stop() }
 
   /**
    * 화면 및 작업표시줄 기준 절대 좌표 계산 (플로팅 모드용)
