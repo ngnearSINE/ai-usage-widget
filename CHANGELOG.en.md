@@ -4,6 +4,11 @@ What's new in each version of AI Usage Widget. When the app is set to English, t
 
 Korean notes: [CHANGELOG.md](CHANGELOG.md)
 
+## 1.7.1
+
+- **Stays on top of full-screen apps**: with Always on top turned on, the window no longer slips behind another app's full-screen view such as a video or game. If a full-screen app covers it, it comes straight back to the front without taking focus from that app. It doesn't cover Windows screens such as Start or Task View. (Games running in exclusive full-screen mode take over the display, so no window can appear above them.)
+- **Turning off Always on top takes effect right away**: fixed a case where it could briefly act as if it were still on just after you turned it off.
+
 ## 1.7.0
 
 - **English support**: the app now comes in English. On first launch it starts in English unless the Windows display language is Korean (on Linux it follows the system language). Switch anytime from **언어 / Language** in the ☰ menu, the tray menu or at the top of Settings → Display; every window changes right away, no restart needed. An English README and an English user guide (PDF) are included.
