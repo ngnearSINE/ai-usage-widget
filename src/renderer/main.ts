@@ -87,6 +87,17 @@ if (viewType === 'popup') {
 }
 
 let lastWidgetHtml = ''
+
+/** 트레이 더블 클릭: 창 전체를 한 번 은은하게 반짝여 위치를 알린다. 연달아 오면 처음부터 다시 반짝인다. */
+let locateTimer: ReturnType<typeof setTimeout> | undefined
+function flashLocate() {
+  const b = document.body
+  b.classList.remove('locating')
+  void b.offsetWidth // 애니메이션을 처음부터 다시 시작
+  b.classList.add('locating')
+  clearTimeout(locateTimer)
+  locateTimer = setTimeout(() => b.classList.remove('locating'), 1500)
+}
 let lastSentWidth = 0
 let lastSentHeight = 0
 
@@ -328,6 +339,7 @@ if (!(window as any).api) {
     ],
     popupReady: () => {},
     onPopupOpened: () => {},
+    onLocate: () => {},
     onStateChange: (fn: (s: AppState) => void) => {
       listeners.push(fn)
     }
@@ -391,6 +403,7 @@ async function init() {
       if (syncLang(nextState)) lastWidgetHtml = ''
       renderWidget(nextState)
     })
+    window.api.onLocate(flashLocate)
   }
 }
 

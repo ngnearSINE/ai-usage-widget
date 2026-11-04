@@ -51,5 +51,6 @@ export const IPC_CHANNELS = {
   WINDOW_CONTROL: 'window:control',
   DETECT_LOCAL_APPS: 'app:detect-local-apps',
   POPUP_OPENED: 'popup:opened',
-  POPUP_READY: 'window:popup-ready'
+  POPUP_READY: 'window:popup-ready',
+  LOCATE_WIDGET: 'window:locate-widget'
 } as const

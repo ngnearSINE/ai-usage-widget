@@ -288,6 +288,7 @@ function displayTab(c: WidgetConfig) {
     + section(tr('보여 줄 정보'), displayTable(c), tr('맨 윗줄은 모든 서비스에 한 번에'))
     + section(tr('창'), toggle('alwaysOnTop', tr('항상 위에 표시'), tr('다른 창에 가려지지 않아요.'), c.alwaysOnTop !== false)
       + toggle('hideOnFullscreen', tr('전체 화면 앱이 뜨면 숨기기'), tr('같은 모니터에 게임·영상 같은 전체 화면 앱이 뜨면 창을 숨겼다가 끝나면 다시 보여요. 끄면 직접 숨길 때만 사라져요. (작업 표시줄에 붙인 상태에서는 쓰지 않아요)'), c.hideOnFullscreen === true)
+      + toggle('locateOnTrayDoubleClick', tr('트레이 아이콘을 두 번 누르면 위치 알려 주기'), tr('창 전체가 한 번 은은하게 반짝여 어디 있는지 알려 줘요. 숨겨 둔 창은 다시 보여요.'), c.locateOnTrayDoubleClick !== false)
       + toggle('snapEdges', tr('화면 가장자리에 붙기'), tr('창이나 위젯을 끌어 화면 가장자리 가까이 가면 자석처럼 붙어요. 아래쪽은 작업 표시줄 바로 위에 붙고, 더 내리면 작업 표시줄에 붙어요.'), c.snapEdges !== false)
       + (state.dockSupported === false ? '' : `<button class="secondary-button" data-action="dock">${icon('dock')}${tr('작업 표시줄에 붙이기')}</button>${hint(tr('창 제목줄을 화면 아래 작업 표시줄로 끌어도 붙어요.'))}`))
 }

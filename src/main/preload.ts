@@ -69,6 +69,12 @@ export const api = {
     ipcRenderer.on(IPC_CHANNELS.POPUP_OPENED, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.POPUP_OPENED, handler)
   },
+  /** 트레이 더블 클릭: 위젯 창 전체를 한 번 반짝여 위치를 알린다. */
+  onLocate: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IPC_CHANNELS.LOCATE_WIDGET, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.LOCATE_WIDGET, handler)
+  },
   onStateChange: (callback: (state: AppState) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: AppState) => callback(state)
     ipcRenderer.on(IPC_CHANNELS.STATE_CHANGED, handler)
