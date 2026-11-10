@@ -4,6 +4,11 @@ What's new in each version of AI Usage Widget. When the app is set to English, t
 
 Korean notes: [CHANGELOG.md](CHANGELOG.md)
 
+## 1.8.1
+
+- **Ubuntu (Linux) files are included again**: in 1.8.0 a build-time test failed only on Linux, so only the Windows files were published. This version has both Windows and Ubuntu files. Features are the same as 1.8.0 (automatic discovery of Claude and Cursor profiles started with another data folder, adding an account from a folder, multiple Cursor accounts, double-click the tray icon to find the window, and more — see 1.8.0 below).
+- Data folders read from command lines are now recognized the same way for Windows and Unix paths, whatever the operating system.
+
 ## 1.8.0
 
 - **Apps started with extra accounts are found automatically**: if you run the Claude desktop app or Cursor with a separate data folder (`--user-data-dir`) per account, those profiles show up as cards with nothing to set up. Same-name folders next to the default one (such as `Claude-Account2`) are found right away; a profile elsewhere is found within 2 minutes while the app runs with it, and stays checked after the app closes. Profiles are recognized by the sign-in inside the folder, not its name, so profiles made by any launcher or shortcut work. The same account shares one card.
