@@ -74,3 +74,18 @@ test('추정 값으로는 알리지 않는다', () => {
   const u = { ...usage(5, t0 + 2 * H), isEstimated: true }
   assert.deepEqual(kinds(evaluateNotifications([u], cfg(), {}, t0)), [])
 })
+
+test('위험 알림에 같은 서비스에서 지금 쓸 수 있는 계정을 알리고, 이메일 가리기를 따른다', () => {
+  const reset = t0 + 4 * H
+  const other: AccountUsage = { ...usage(70, reset, 90), id: 'team', name: 'Claude 팀 · cmesrobotics' }
+  const me: AccountUsage = { ...usage(5, reset), name: 'Claude 개인 · superrogin' }
+  const r = evaluateNotifications([me, other], cfg(), {}, t0)
+  const crit = r.events.find(e => e.kind === 'crit')!
+  assert.match(crit.body, /Claude 팀 · cmesrobotics에 여유 70%가 있어요/)
+  const masked = evaluateNotifications([me, other], cfg({ maskEmail: true }), {}, t0).events.find(e => e.kind === 'crit')!
+  assert.match(masked.title, /Claude 개인 · s···/)
+  assert.match(masked.body, /Claude 팀 · c···에 여유 70%/)
+  // 계정 묶기를 끄면 안내하지 않는다
+  const off = evaluateNotifications([me, other], cfg({ groupAccounts: false }), {}, t0).events.find(e => e.kind === 'crit')!
+  assert.doesNotMatch(off.body, /여유 70%가 있어요/)
+})

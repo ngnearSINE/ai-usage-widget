@@ -555,7 +555,7 @@ function openSettingsWindow(tab: SettingsTab = 'design', bounds?: Electron.Recta
   hidePopup(true)
   const anchor = widgetWindow && !widgetWindow.isDestroyed() ? widgetWindow.getBounds() : screen.getPrimaryDisplay().bounds
   const area = screen.getDisplayMatching(anchor).workArea
-  const width = Math.min(Math.round(1000 * uiZoom()), area.width - 40), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
+  const width = Math.min(Math.round(1120 * uiZoom()), area.width - 40), height = Math.min(Math.round(680 * uiZoom()), area.height - 40) // 스케일만큼 키워 배치를 그대로
   const win = settingsWindow = new SurfaceWindow({
     ...(bounds || { x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + (area.height - height) / 2), width, height }),
     minWidth: Math.min(area.width - 40, Math.round(760 * uiZoom())), minHeight: Math.min(area.height - 40, Math.round(520 * uiZoom())), show: false, title: tr('AI 사용량 설정'), resizable: true, maximizable: true, autoHideMenuBar: true,
@@ -2104,6 +2104,8 @@ function setupIpcHandlers() {
 
 app.whenReady().then(() => {
   accountStore = new AccountStore()
+  // 미리보기: 예시 데이터의 계정(같은 서비스 두 번째 계정 등)이 목록에 없으면 넣는다(임시 설정 폴더라 실제 설정과 섞이지 않는다).
+  if (isPreview) for (const u of previewUsages()) if (!accountStore.getAccounts().some(a => a.id === u.id)) accountStore.addAccount({ id: u.id, name: u.name, provider: u.provider, enabled: true })
   applyLang(accountStore.getConfig().language)
   // 지난번에 집중 모드로 보던 카드가 아직 있으면 이어서 그 카드만 보여 준다.
   const savedFocus = accountStore.getConfig().focusId

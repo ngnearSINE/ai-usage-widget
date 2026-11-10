@@ -1,4 +1,6 @@
 import type { AccountUsage, WidgetConfig } from './types.js'
+import { nextAccount } from './account-groups.js'
+import { maskText } from './privacy.js'
 import { tr } from './i18n.js'
 import { fmtDuration, paceWarning, PERIOD_LEN, serviceModel, unusedWeekly, windowsOf, type QuotaWindow } from './usage-model.js'
 
@@ -46,7 +48,10 @@ export function evaluateNotifications(usages: AccountUsage[], config: WidgetConf
   const enabled = config.notifyEnabled !== false
   const warn = Math.max(1, Math.min(60, config.warnPercent ?? 20)), crit = Math.max(0, Math.min(warn, config.critPercent ?? 10))
   const muted = new Set(config.notifyMuted || [])
-  for (const u of usages) {
+  const mask = config.maskEmail === true, grouped = config.groupAccounts !== false
+  for (const u0 of usages) {
+    // 알림에 보이는 이름도 '이메일 가리기'를 따른다(판정에는 영향 없음).
+    const u = mask ? { ...u0, name: maskText(u0.name, true) } : u0
     const m = serviceModel(u, now)
     // 조회 실패·갱신 지연·추정 값으로는 알리지 않는다(지난 값이나 어림값이 알림을 만들지 않게).
     if (u.status !== 'ready' || u.isEstimated) continue
@@ -64,13 +69,16 @@ export function evaluateNotifications(usages: AccountUsage[], config: WidgetConf
       const resetText = w.resetMs === null ? '' : tr('리셋까지 {time}', { time: fmtDuration(w.resetMs) })
       const paceText = w.runsOut && w.toEmptyMs !== null ? tr('지금 속도면 {time} 뒤 소진 예상', { time: fmtDuration(w.toEmptyMs) }) : ''
       const leftText = tr('남은 양 {n}%', { n: w.left })
+      // 위험 기준 아래로 내려가면 같은 서비스에서 지금 쓸 수 있는 계정을 함께 알린다(계정을 묶어 보는 설정일 때).
+      const alt = grouped ? nextAccount(usages, u.id, now) : null
+      const altText = alt ? tr('{name}에 여유 {n}%가 있어요', { name: maskText(alt.name, mask), n: alt.left }) : ''
       // 새 주기로 넘어왔고 지난 주기에 빠듯했으며 실제로 다시 채워졌다면 리셋 알림.
       if (!samePeriod && old?.tight && w.left > old.left && config.notifyReset === true) {
         send('reset', tr('{name}가 새로 채워졌어요', { name }), [leftText, w.resetMs === null ? '' : tr('다음 리셋 {time} 뒤', { time: fmtDuration(w.resetMs) })].filter(Boolean).join(' · '))
       }
       const lowOn = config.notifyLow !== false
       if (w.left <= crit && !rec.sent.includes('crit')) {
-        if (lowOn) send('crit', tr('{name} {n}% 남음', { name, n: w.left }), [resetText, paceText].filter(Boolean).join(' · ') || tr('여유가 거의 없어요'))
+        if (lowOn) send('crit', tr('{name} {n}% 남음', { name, n: w.left }), [resetText, altText || paceText].filter(Boolean).join(' · ') || tr('여유가 거의 없어요'))
         else rec.sent.push('crit')
         if (!rec.sent.includes('warn')) rec.sent.push('warn')
       } else if (w.left <= warn && !rec.sent.includes('warn')) {

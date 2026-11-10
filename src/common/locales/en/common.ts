@@ -170,4 +170,7 @@ export const EN_COMMON: Record<string, string> = {
   '구독 요금과는 다르고, 긴 문맥 할증 같은 세부 요금은 빠져 있어요.': 'This differs from subscription fees and excludes details like long-context surcharges.',
   '가격표: LiteLLM ({date} 받음).': 'Prices: LiteLLM (fetched {date}).',
   '가격표: LiteLLM.': 'Prices: LiteLLM.',
+
+  // 알림: 다음 계정
+  '{name}에 여유 {n}%가 있어요': '{name} has {n}% left',
 }
