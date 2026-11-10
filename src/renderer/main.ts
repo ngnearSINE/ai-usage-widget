@@ -8,6 +8,7 @@ import { renderAbout } from './components/about-view.js'
 import { renderStats, focusStats } from './components/stats-view.js'
 import { visibleUsages } from '../common/widget-layout.js'
 import { lowestLeft, serviceModel } from '../common/usage-model.js'
+import { maskText } from '../common/privacy.js'
 
 /** 트레이 아이콘에 가장 빠듯한 남은 %를 그린다. 메인 프로세스에는 캔버스가 없어 위젯 화면이 그려서 보낸다. */
 let lastTrayKey = ''
@@ -15,7 +16,7 @@ function updateTrayIcon(state: AppState) {
   const c = state.config
   const list = visibleUsages(state.usages, state.accounts, c).filter(u => ['ready', 'stale'].includes(u.status)).map(u => ({ u, m: serviceModel(u) }))
   const tight = list.sort((a, b) => lowestLeft(a.m) - lowestLeft(b.m))[0]
-  const tooltip = list.length ? tr('AI 사용량 · {list}', { list: list.map(({ u, m }) => `${u.name} ${lowestLeft(m)}%`).join(' · ') }) : tr('AI 사용량')
+  const tooltip = list.length ? tr('AI 사용량 · {list}', { list: list.map(({ u, m }) => `${maskText(u.name, c.maskEmail === true)} ${lowestLeft(m)}%`).join(' · ') }) : tr('AI 사용량')
   if (c.trayShowNumber === false || !tight) {
     if (lastTrayKey !== 'default') { lastTrayKey = 'default'; window.api.setTrayImage?.(null, tooltip) }
     return

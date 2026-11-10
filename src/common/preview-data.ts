@@ -1,5 +1,5 @@
 import type { AccountUsage, QuotaInfo } from './types.js'
-import { tr } from './i18n.js'
+import { msg, tr } from './i18n.js'
 import { fmtDuration } from './usage-model.js'
 
 // 남은 시간 글자는 지금 언어로(fmtDuration).
@@ -34,5 +34,7 @@ export function previewUsages(now = Date.now(), values = FIXED): AccountUsage[] 
     { id:'local-codex',name:'Codex',provider:'codex',iconLetter:'X',brandColor:'#a99bff',status:'ready',tier,plan:'Plus',primaryQuota:quota(x1,110*M,now),weeklyQuota:quota(x2,4*D+20*H,now),updatedAt },
     // 월간 크레딧이 있는 Grok 계정의 모습(첫 칸이 5시간이 아니라 월간).
     { id:'local-grok',name:'Grok',provider:'xai',iconLetter:'G',brandColor:'#A1A1AA',status:'ready',tier,primaryKind:'monthly',primaryQuota:quota(g1,12*D+6*H,now),weeklyQuota:quota(g2,2*D+11*H,now),updatedAt },
+    // 같은 서비스의 두 번째 계정(묶음·추천·소진 안내가 보이게): 5시간 한도를 다 쓴 개인 계정. 이름은 실제 조직 카드와 같은 모양.
+    { id:'preview-claude-personal',name:`Claude ${msg('개인')} · alex`,provider:'claude',iconLetter:'C',brandColor:'#dda98a',status:'ready',tier,plan:'Max 5x',primaryQuota:quota(0,1*H+25*M,now),weeklyQuota:quota(46,1*D+18*H,now),updatedAt },
   ]
 }

@@ -8,16 +8,23 @@ import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext } from './usage-views.js'
 import { applyAppearance, escapeText, icon, updateHourSelect, heatPlacement } from './dashboard.js'
 import { updateMarkup } from '../dom-update.js'
+import { clusterByGroup } from '../../common/account-groups.js'
 import { DEFAULT_BAR_STOPS, normalizeStops, stopColor, type BarStop } from '../../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, displaySummary, setDisplay, setDisplayAll, type DisplayKey } from '../../common/display-options.js'
 import { LANG_NAMES, LANGUAGE_LABEL, locale, msg, tr, trText } from '../../common/i18n.js'
 
 /**
- * 설정 창: 왼쪽 미리보기(실제 위젯과 같은 렌더러·배치), 오른쪽 조절 항목.
- * 슬라이더는 끄는 동안 미리보기에만, 놓으면 저장해 위젯에도 반영. 드물게 쓰는 항목은 탭마다 '고급' 접기에 둔다.
+ * 설정 창: 왼쪽 세로 메뉴, 가운데 조절 항목, 오른쪽 미리보기(실제 위젯과 같은 렌더러·배치).
+ * 미리보기는 모양이 바뀌는 디자인·표시에서만 보이고 접을 수 있다(좁은 창에서는 자동으로 접힌다).
+ * 슬라이더는 끄는 동안 미리보기에만, 놓으면 저장해 위젯에도 반영. 드물게 쓰는 항목은 분류마다 '고급' 접기에 둔다.
  */
 type Tab = 'design' | 'display' | 'services' | 'alerts' | 'general'
 const TABS: Array<[Tab, string]> = [['design', msg('디자인')], ['display', msg('표시')], ['services', msg('서비스')], ['alerts', msg('알림')], ['general', msg('일반')]]
+// 메뉴 아이콘과 한 줄 설명(msg — 그릴 때 trText)
+const TAB_META: Record<Tab, [string, string]> = { design: ['brush', msg('모양·테마·배경')], display: ['eye', msg('숫자·기준·계정 묶음')], services: ['app', msg('계정·폴더·추가')], alerts: ['bell', msg('언제 알릴지')], general: ['sliders', msg('시작·단축키·웹')] }
+/** 미리보기가 쓸모 있는 분류(모양이 바뀌는 곳) */
+const PREVIEW_TABS: Tab[] = ['design', 'display']
+const previewHidden = () => { try { return localStorage.getItem('settings.preview') === 'off' } catch { return false } }
 // 예전 탭 이름으로 열어도 옮겨 간 곳으로 간다.
 const TAB_ALIAS: Record<string, Tab> = { accounts: 'services', convenience: 'general', api: 'general', history: 'design' }
 const lastTab = () => { try { return localStorage.getItem('settings.tab') } catch { return null } }
@@ -81,8 +88,10 @@ export function initSettings(container: HTMLElement, initial: AppState, initialT
   // 키보드로 탭 이동(←/→)
   root.addEventListener('keydown', e => {
     const t = (e.target as HTMLElement).closest<HTMLElement>('[role=tab]')
-    if (!t || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
-    const i = TABS.findIndex(x => x[0] === tab), n = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length][0]
+    if (!t || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
+    e.preventDefault()
+    const fwd = e.key === 'ArrowRight' || e.key === 'ArrowDown'
+    const i = TABS.findIndex(x => x[0] === tab), n = TABS[(i + (fwd ? 1 : TABS.length - 1)) % TABS.length][0]
     tab = n; renderSettings(state, true)
     root.querySelector<HTMLElement>(`[role=tab][data-tab="${n}"]`)?.focus()
   })
@@ -113,17 +122,18 @@ export function renderSettings(next: AppState, force = false) {
   const scroll = body0?.getAttribute('data-for') === tab ? body0.scrollTop : 0
   updateMarkup(root, `<div class="dashboard settings-root">
     <header class="s-titlebar"><span class="app-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="app-title">${tr('AI 사용량 설정')}</span><span class="s-saved">${icon('check')} ${tr('바꾸면 바로 저장돼요')}</span><div class="s-winbtns"><button data-win="minimize" title="${tr('최소화')}" aria-label="${tr('최소화')}"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button><button data-win="maximize" title="${tr('최대화')}" aria-label="${tr('최대화')}"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button><button data-win="close" class="close" title="${tr('닫기')}" aria-label="${tr('닫기')}"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button></div></header>
-    <div class="s-main">
+    <div class="s-main ${PREVIEW_TABS.includes(tab) && !previewHidden() ? 'with-preview' : ''}">
+      <nav class="s-nav" role="tablist" aria-orientation="vertical" aria-label="${tr('설정 분류')}">${TABS.map(([k, label]) => `<button role="tab" data-tab="${k}" aria-selected="${tab === k}" tabindex="${tab === k ? 0 : -1}" title="${trText(label)}">${icon(TAB_META[k][0])}<span><b>${trText(label)}</b><small>${trText(TAB_META[k][1])}</small></span></button>`).join('')}</nav>
+      <aside class="s-panel">
+        <div class="s-panel-head"><h1>${trText(TABS.find(t => t[0] === tab)![1])}</h1>${PREVIEW_TABS.includes(tab) ? `<button class="ghost-button s-pv-toggle" data-preview-toggle aria-pressed="${!previewHidden()}">${icon(previewHidden() ? 'eye' : 'hidden')}${previewHidden() ? tr('미리보기 보기') : tr('미리보기 숨기기')}</button>` : ''}</div>
+        <div class="s-body" data-body data-for="${tab}" role="tabpanel"></div>
+      </aside>
       <section class="s-preview" aria-label="${tr('미리보기')}">
         <div class="s-preview-bar"><div class="segmented s-sizes" role="group" aria-label="${tr('미리보기 크기')}">${SIZES.map(([k, label]) => `<button data-size="${k}" aria-pressed="${size === k}">${trText(label)}</button>`).join('')}</div>
           <div class="segmented s-sample" role="group" aria-label="${tr('미리보기 데이터')}"><button data-sample="real" aria-pressed="${usePreviewSample() ? 'false' : 'true'}" title="${tr('지금 내 사용량으로 보기')}">${tr('실제')}</button><button data-sample="sample" aria-pressed="${usePreviewSample()}" title="${tr('예시 데이터로 보기')}">${tr('예시')}</button></div></div>
         <div class="s-stage" data-stage><div class="s-stage-inner" data-stage-inner></div></div>
         <p class="s-caption" data-caption></p>
       </section>
-      <aside class="s-panel">
-        <nav class="s-tabs" role="tablist" aria-label="${tr('설정 분류')}">${TABS.map(([k, label]) => `<button role="tab" data-tab="${k}" aria-selected="${tab === k}" tabindex="${tab === k ? 0 : -1}">${trText(label)}</button>`).join('')}</nav>
-        <div class="s-body" data-body data-for="${tab}" role="tabpanel"></div>
-      </aside>
     </div>
     <div class="toast" role="status" aria-live="polite"></div>
   </div>`)
@@ -154,7 +164,7 @@ function previewSize(): [number, number] {
 }
 function renderPreview() {
   const stage = root?.querySelector<HTMLElement>('[data-stage]'), inner = root?.querySelector<HTMLElement>('[data-stage-inner]')
-  if (!stage || !inner || !state) return
+  if (!stage || !inner || !state || !stage.clientWidth) return
   const cfg = config(), [W, H] = previewSize()
   // 스케일을 바꿔도 창이 같은 비율로 커지므로 배치(W×H CSS 픽셀)는 그대로이고 크기만 바뀐다.
   // 설정 창은 아직 저장된 스케일(saved)로 그려지므로, 끄는 동안의 스케일(zoom)과의 비율만큼 키우거나 줄여 보여 준다.
@@ -163,8 +173,9 @@ function renderPreview() {
   const accounts = usePreviewSample() ? usages.map(u => ({ id: u.id, name: u.name, provider: u.provider, enabled: true })) : state.accounts
   let list = visibleUsages(usages, accounts, cfg)
   if (cfg.sortLowFirst) list = [...list].sort((a, b) => lowestLeft(serviceModel(a)) - lowestLeft(serviceModel(b)))
+  if (cfg.groupAccounts !== false) list = clusterByGroup(list)
   const design = (DESIGNS.some(d => d[0] === cfg.design) ? cfg.design : 'rich') as DesignId
-  const gap = number(cfg.cardGap, 4, 16, 6), x = viewContext(cfg, usePreviewSample() ? sampleHistory() : state.history)
+  const gap = number(cfg.cardGap, 4, 16, 6), x = viewContext(cfg, usePreviewSample() ? sampleHistory() : state.history, list)
   // 위젯과 같은 계산: 제목줄 36px, 카드 영역 안쪽 여백 6px.
   const gw = W - 12, gh = H - 36 - 12
   let grid = '', note = ''
@@ -276,7 +287,9 @@ function displayTab(c: WidgetConfig) {
   const warn = c.warnPercent ?? 20
   const src = new Set(Object.values(c.valueSource || {}))
   const common: ValueSource | '' = src.size === 1 ? [...src][0] as ValueSource : src.size === 0 ? 'weekly' : ''
-  return section(LANGUAGE_LABEL, segment('language', c.language || 'system', [['system', tr('시스템 따라')], ['ko', LANG_NAMES.ko], ['en', LANG_NAMES.en]], LANGUAGE_LABEL)
+  const accounts = section(tr('여러 계정'), toggle('groupAccounts', tr('같은 서비스 계정 묶기와 추천'), tr('같은 서비스의 계정을 나란히 놓고, 지금 쓰기 좋은 계정(남은 양이 가장 많거나 곧 초기화될 여유가 있는 계정)에 표시해요. 다 쓴 계정에는 넘어갈 계정을 알려 줘요.'), c.groupAccounts !== false)
+    + toggle('maskEmail', tr('이메일 가리기'), tr('화면을 공유하거나 녹화할 때 카드 이름·설명·알림의 이메일과 계정 표식을 줄여 보여요. 저장된 이름은 그대로예요.'), c.maskEmail === true))
+  return accounts + section(LANGUAGE_LABEL, segment('language', c.language || 'system', [['system', tr('시스템 따라')], ['ko', LANG_NAMES.ko], ['en', LANG_NAMES.en]], LANGUAGE_LABEL)
       + hint(tr('시스템 따라: Windows 표시 언어가 한국어면 한국어, 아니면 영어')))
     + section(tr('큰 숫자'), `<div class="segmented" role="group" aria-label="${tr('큰 숫자 기준')}">${(Object.keys(SOURCE_LABEL) as ValueSource[]).map(k => `<button data-source-all="${k}" aria-pressed="${common === k}">${trText(SOURCE_LABEL[k])}</button>`).join('')}</div>${hint(tr('카드에 크게 보일 한도예요. 카드마다 다르게 하려면 카드의 기준 버튼(주간 ▾)을 누르세요.') + (common ? '' : ' ' + tr('지금은 카드마다 다르게 설정되어 있어요.')))}`)
     + section(tr('주의·위험 기준'), slider('warnPercent', tr('주의(남은 양)'), 5, 50, warn, '%') + slider('critPercent', tr('위험(남은 양)'), 0, warn, Math.min(warn, c.critPercent ?? 10), '%')
@@ -623,6 +636,10 @@ const run = (p: Promise<unknown>, fail: string) => { void p.catch(() => notify(f
 
 function bindEvents() {
   root.querySelectorAll<HTMLElement>('[data-tab]').forEach(el => el.onclick = () => { tab = el.dataset.tab as Tab; renderSettings(state, true) })
+  root.querySelectorAll<HTMLElement>('[data-preview-toggle]').forEach(el => el.onclick = () => {
+    try { localStorage.setItem('settings.preview', previewHidden() ? 'on' : 'off') } catch { /* 기억 못 해도 이번에는 바뀐다 */ }
+    renderSettings(state, true)
+  })
   root.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.onclick = () => { size = el.dataset.size as SizeKey; renderSettings(state, true) })
   root.querySelectorAll<HTMLElement>('[data-sample]').forEach(el => el.onclick = () => { sample = el.dataset.sample as 'real' | 'sample'; renderSettings(state, true) })
   const body = root.querySelector<HTMLElement>('[data-body]')!

@@ -133,6 +133,8 @@ export interface WidgetConfig {
   profileExcluded?: string[] // 찾았지만 조회하지 않을 앱 프로필 폴더
   profileLearned?: ProfileLearned[] // 실행 중인 앱·깊게 찾기로 알게 된 데이터 폴더(앱을 꺼도 계속 조회)
   profileScanProcesses?: boolean // 실행 중인 앱의 --user-data-dir로 프로필 찾기(기본 켬)
+  groupAccounts?: boolean // 같은 서비스 계정을 붙여 놓고 '지금 쓰기 좋은 계정'을 표시(기본 켬)
+  maskEmail?: boolean // 화면 공유용: 카드 이름·설명·알림의 이메일과 계정 표식 가리기(기본 끔)
   design?: 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
   valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
   warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)

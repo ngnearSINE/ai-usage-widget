@@ -380,4 +380,18 @@ export const EN_SETTINGS: Record<string, string> = {
   '바꾸지 못했어요.': 'Couldn’t change it.',
   '빼지 못했어요.': 'Couldn’t remove it.',
   '찾지 못했어요.': 'Search failed.',
+
+  // 추가 문구
+  '같은 서비스 계정 묶기와 추천': 'Group same-service accounts and recommend',
+  '같은 서비스의 계정을 나란히 놓고, 지금 쓰기 좋은 계정(남은 양이 가장 많거나 곧 초기화될 여유가 있는 계정)에 표시해요. 다 쓴 계정에는 넘어갈 계정을 알려 줘요.': 'Places accounts of the same service side by side and marks the best one to use now (most left, or headroom that resets soon). A used-up account shows which account to switch to.',
+  '계정·폴더·추가': 'Accounts, folders, adding',
+  '모양·테마·배경': 'Look, theme, background',
+  '미리보기 보기': 'Show preview',
+  '미리보기 숨기기': 'Hide preview',
+  '숫자·기준·계정 묶음': 'Numbers, thresholds, grouping',
+  '시작·단축키·웹': 'Startup, shortcuts, web',
+  '언제 알릴지': 'When to notify',
+  '여러 계정': 'Multiple accounts',
+  '화면을 공유하거나 녹화할 때 카드 이름·설명·알림의 이메일과 계정 표식을 줄여 보여요. 저장된 이름은 그대로예요.': 'When sharing or recording your screen, shortens emails and account tags in card names, tooltips and notifications. Saved names stay as they are.',
+  '이메일 가리기': 'Hide emails',
 }

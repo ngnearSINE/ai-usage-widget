@@ -9,6 +9,10 @@ import { chooseLayout, DESIGNS, firstWindowLabel, lowestLeft, serviceModel, seve
 import { renderAiIcon } from './ai-icons.js'
 import { renderCard, viewContext, isOutOfDate, PENDING_TIP } from './usage-views.js'
 import { updateMarkup } from '../dom-update.js'
+import { clusterByGroup } from '../../common/account-groups.js'
+import { maskText } from '../../common/privacy.js'
+import { buildCommands, type Command } from '../commands.js'
+import { closeOverlay, openHelp, openPalette, paletteOpen } from './palette.js'
 
 const paths: Record<string, string> = {
   sliders: '<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
@@ -37,6 +41,7 @@ const paths: Record<string, string> = {
   trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>',
   taskbar: '<rect x="3" y="15" width="18" height="5" rx="1.5"/><path d="M7 17.5h2M11 17.5h2"/><path d="M12 4v7M9 8l3 3 3-3"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m14 6 4 4"/>',
+  brush: '<path d="M14.5 4.5 19.5 9.5 10 19H5v-5z"/><path d="m12.5 6.5 5 5"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 }
 export const icon = (name: string) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.grid}</svg>`
@@ -121,7 +126,7 @@ function miniSummary(u: AccountUsage, config: WidgetConfig) {
   }).join('')}</div></div>`
 }
 export function renderDockedUsage(u: AccountUsage, config: WidgetConfig) {
-  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText(u.pending ? `${u.name}\n${trText(PENDING_TIP)}` : isOutOfDate(u) ? `${u.name}\n${trText(staleTip(u, Date.now(), u.status === 'stale'))}` : u.name)}">${u.pending ? '<span class="stale-mark dock pending" aria-hidden="true"><i></i><i></i><i></i></span>' : isOutOfDate(u) ? '<span class="stale-mark dock" aria-hidden="true">!</span>' : ''}${miniSummary(u, config)}</div>`
+  return `<div class="docked-service" data-account-id="${escapeText(u.id)}" style="--brand:${u.barColor || color(u.brandColor)}" title="${escapeText((n => u.pending ? `${n}\n${trText(PENDING_TIP)}` : isOutOfDate(u) ? `${n}\n${trText(staleTip(u, Date.now(), u.status === 'stale'))}` : n)(maskText(u.name, config.maskEmail === true)))}">${u.pending ? '<span class="stale-mark dock pending" aria-hidden="true"><i></i><i></i><i></i></span>' : isOutOfDate(u) ? '<span class="stale-mark dock" aria-hidden="true">!</span>' : ''}${miniSummary(u, config)}</div>`
 }
 
 /** 트레이·다른 창에서 '디자인 설정'을 열 때. 설정은 별도 설정 창에서 한다. */
@@ -133,9 +138,9 @@ function shownUsages(state: AppState) {
   if (state.focus && list.some(u => u.id === state.focus)) return list.filter(u => u.id === state.focus)
   if (previewOrder) { const at = new Map(previewOrder.map((id, i) => [id, i])); return [...list].sort((a, b) => (at.get(a.id) ?? 999) - (at.get(b.id) ?? 999)) }
   // 여유가 적은 순 정렬은 연결된 서비스끼리만, 연결 안 된 카드는 뒤로.
-  return state.config.sortLowFirst
-    ? [...list].sort((a, b) => lowestLeft(serviceModel(a)) - lowestLeft(serviceModel(b)))
-    : list
+  if (state.config.sortLowFirst) list = [...list].sort((a, b) => lowestLeft(serviceModel(a)) - lowestLeft(serviceModel(b)))
+  // 같은 서비스의 여러 계정은 붙여 놓는다(묶음은 그 서비스가 처음 나온 자리에).
+  return state.config.groupAccounts !== false ? clusterByGroup(list) : list
 }
 
 /* ---------- 카드 순서 끌기 ----------
@@ -269,7 +274,8 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
 function layoutCards() {
   const gridHost = host?.querySelector<HTMLElement>('[data-grid-host]')
   if (!gridHost || !lastState) return
-  const state = lastState, design = designOf(state.config), x = viewContext(state.config, state.history)
+  const state = lastState, design = designOf(state.config)
+  const x = viewContext(state.config, state.history, visibleUsages(state.usages, state.accounts, state.config))
   const all = shownUsages(state)
   const gap = number(state.config.cardGap, 4, 16, 6)
   // clientWidth/Height에는 안쪽 여백이 포함되므로 빼고 계산한다.
@@ -304,7 +310,7 @@ function layoutCards() {
   if (refreshBtn) refreshBtn.title = Number.isFinite(last) ? tr('새로고침 · 마지막 갱신 {last} · 다음 {next}', { last: hm(last), next: hm(last + (state.config.refreshIntervalSec || 60) * 1000) }) : tr('새로고침')
   const status = host.querySelector<HTMLElement>('[data-status]')
   const lock = state.config.clickThrough ? `<span class="lock-badge" title="${tr('클릭 통과 잠금 중')}">${icon('lock')}${tr('잠김')}${state.config.shortcuts?.lock ? ` · ${tr('{key}로 풀기', { key: escapeText(state.config.shortcuts.lock) })}` : ''}</span> · ` : ''
-  const focusName = state.focus ? state.accounts.find(a => a.id === state.focus)?.name : ''
+  const focusName = state.focus ? maskText(state.accounts.find(a => a.id === state.focus)?.name || '', state.config.maskEmail === true) : ''
   if (status && focusName) { status.innerHTML = `<button class="focus-chip" data-focus-off title="${popup ? tr('집중 모드 끄기 (카드 더블클릭)') : tr('집중 모드 끄기 (Esc · 카드 더블클릭)')}">${tr('집중: {name}', { name: escapeText(focusName) })} <span aria-hidden="true">✕</span></button>`; tickClock(true); return }
   if (status) status.innerHTML = lock + (pages > 1
     ? `<button class="pager" data-page="-1" aria-label="${tr('이전 서비스')}">‹</button><span>${pageIndex + 1}/${pages}</span><button class="pager" data-page="1" aria-label="${tr('다음 서비스')}">›</button>${warnN ? ` · <span class="w">${tr('{n}개 주의', { n: warnN })}</span>` : ''}`
@@ -366,7 +372,7 @@ function openMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuIte
 /** CLI·앱 열기(못 찾으면 안내). */
 async function openTool(kind: 'cli' | 'app', id: string) {
   const ok = await window.api.openServiceTool(kind, id).catch(() => false)
-  const name = lastState?.accounts.find(a => a.id === id)?.name || tr('이 서비스')
+  const name = maskText(lastState?.accounts.find(a => a.id === id)?.name || tr('이 서비스'), lastState?.config.maskEmail === true)
   notify(kind === 'cli'
     ? ok ? tr('{name} CLI를 터미널에서 여는 중이에요.', { name }) : tr('이 PC에서 {name} CLI를 찾지 못했어요.', { name })
     : ok ? tr('{name} 앱을 여는 중이에요.', { name }) : tr('이 PC에서 {name} 앱을 찾지 못했어요.', { name }))
@@ -393,31 +399,32 @@ function toggleHideHeader() {
   void update({ hideHeader: on }); notify(on ? tr('제목줄을 숨겼어요. 위쪽 가장자리에 마우스를 올리면 나타나요.') : tr('제목줄을 늘 보여 줘요.'))
 }
 
-/** 제목줄 메뉴(☰ 단추, 제목줄 우클릭): 디자인, 켜고 끄는 보기 설정, 창 열기, 숨기기·종료. */
-function mainMenu(): MenuItem[] {
-  const c = lastState.config, current = designOf(c), pinned = c.alwaysOnTop !== false
-  return [...DESIGNS.map(([key, label], i) => ({ key, label: trText(label), accel: `Ctrl+${i + 1}`, on: current === key, run: () => { void update({ design: key }) } })), '-',
-    { key: 'pin', label: tr('항상 위'), check: pinned, run: () => { void update({ alwaysOnTop: !pinned }); notify(!pinned ? tr('항상 위에 표시해요.') : tr('다른 창 뒤로 갈 수 있어요.')) } },
-    { key: 'lock-cards', label: tr('카드 위치 고정'), accel: 'Shift+`', check: !!c.lockCards, run: toggleLockCards },
-    { key: 'hide-header', label: tr('제목줄 항상 숨기기'), accel: '`', check: !!c.hideHeader, run: toggleHideHeader },
-    '-',
-    { key: 'settings', label: tr('설정'), run: () => { void window.api.openSettings('last') } },
-    { key: 'stats', label: tr('사용량 통계'), run: () => { void window.api.openStats() } },
-    { key: 'about', label: tr('정보·업데이트'), run: () => { void window.api.openAbout?.() } },
-    languageMenu(c),
-    { key: 'hide', label: tr('트레이로 숨기기'), run: () => { void window.api.hideWidget() } },
-    '-',
-    { key: 'quit', label: tr('종료'), run: () => { void window.api.quitApp() } }]
+/** 창의 모든 명령(☰ 메뉴·명령 팔레트·도움말이 같이 쓴다). 열 때마다 지금 상태로 새로 만든다. */
+function commands(): Command[] {
+  return buildCommands({ state: lastState, update: p => { void update(p) }, notify, openTool: (k, id) => { void openTool(k, id) }, toggleLockCards, toggleHideHeader, openPalette: showPalette, openHelp: showHelp })
+}
+function showPalette() { if (!web) openPalette(commands) }
+function showHelp() {
+  if (web) return
+  const sc = lastState.config.shortcuts || {}
+  const global = ([[sc.toggle, tr('창·작업 표시줄 독 보이기·숨기기')], [sc.lock, tr('클릭 통과 잠금·풀기')], [sc.cycle, tr('다음 디자인')]] as Array<[string | undefined, string]>)
+    .filter((r): r is [string, string] => !!r[0])
+  openHelp(commands, global)
 }
 
-/** 언어 하위 메뉴(트레이 메뉴와 같은 항목). 고르면 모든 창이 바로 그 언어로 바뀐다. */
-function languageMenu(c: WidgetConfig): MenuItem {
-  const setting = c.language ?? 'system'
-  const pick = (language: 'system' | 'ko' | 'en') => () => { void update({ language }) }
-  return { key: 'language', label: LANGUAGE_LABEL, sub: [
-    { key: 'lang-system', label: tr('시스템 따라'), on: setting === 'system', run: pick('system') }, '-',
-    { key: 'lang-ko', label: LANG_NAMES.ko, on: setting === 'ko', run: pick('ko') },
-    { key: 'lang-en', label: LANG_NAMES.en, on: setting === 'en', run: pick('en') }] }
+/** 제목줄 메뉴(☰ 단추, 제목줄 우클릭): 명령 목록에서 디자인·창 설정·열기·언어·숨기기·종료를 골라 보인다. */
+function mainMenu(): MenuItem[] {
+  const all = new Map(commands().map(c => [c.id, c]))
+  const item = (id: string): MenuItem => { const c = all.get(id)!; return { key: c.id, label: c.title, accel: c.accel, on: c.on, check: c.check, run: c.run } }
+  const lang = (id: string, label: string): MenuItem => { const c = all.get(id)!; return { key: c.id, label, on: c.on, run: c.run } }
+  return [...DESIGNS.map(([key]) => item(`design-${key}`)), '-',
+    item('pin'), item('lock-cards'), item('hide-header'), item('group-accounts'), item('mask-email'),
+    '-',
+    item('palette'), item('settings'), item('stats'), item('about'),
+    { key: 'language', label: LANGUAGE_LABEL, sub: [lang('lang-system', tr('시스템 따라')), '-', lang('lang-ko', LANG_NAMES.ko), lang('lang-en', LANG_NAMES.en)] },
+    item('hide'),
+    '-',
+    item('quit')]
 }
 
 /** 카드·메뉴처럼 배치 때마다 다시 그려지는 요소는 컨테이너에 한 번만 위임해 처리한다. */
@@ -445,13 +452,15 @@ function bindDelegated(container: HTMLElement) {
       return
     }
     if (t.closest('[data-focus-off]')) { void window.api.setFocus(null); return }
+    const hand = t.closest<HTMLElement>('[data-open-cli]')
+    if (hand) { e.stopPropagation(); void openTool('cli', hand.dataset.openCli!); return }
     if (t.closest('[data-update-install]')) { void window.api.installUpdate(); return }
     const pg = t.closest<HTMLElement>('[data-page]')
     if (pg) { pageIndex = (pageIndex + Number(pg.dataset.page) + pageCount) % pageCount; layoutCards(); return }
   })
   // Esc: 창은 집중 모드를 끄고, 위젯은 닫는다(열린 메뉴는 Windows가 먼저 닫는다).
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return
+    if (e.key !== 'Escape' || paletteOpen()) return
     if (popup) { void window.api.unlockPopup(); void window.api.hidePopup() }
     else if (lastState?.focus) void window.api.setFocus(null)
   })
@@ -483,7 +492,9 @@ function bindDelegated(container: HTMLElement) {
   })
   // 숫자키 1~5로 크기, Ctrl+1~6으로 디자인 바꾸기, `로 제목줄 항상 숨기기, ~(Shift+`)로 카드 위치 고정(글자 입력 중이 아닐 때)
   document.addEventListener('keydown', e => {
-    if (web || (e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.repeat) return
+    if (web || paletteOpen() || (e.target as HTMLElement).closest?.('input,textarea') || e.altKey || e.metaKey || e.repeat) return
+    if (e.ctrlKey && e.code === 'KeyK') { e.preventDefault(); showPalette(); return }
+    if (e.key === '?') { e.preventDefault(); showHelp(); return }
     if (e.code === 'Backquote' && !e.ctrlKey) { e.preventDefault(); if (e.shiftKey) toggleLockCards(); else toggleHideHeader(); return }
     if (e.shiftKey) return
     const m = /^Digit([1-9])$/.exec(e.code)
@@ -503,7 +514,7 @@ function bindEvents(container: HTMLElement, state: AppState) {
     switch (el.dataset.action) {
       case 'refresh': try { await window.api.refreshQuota() } catch { notify(tr('새로고침에 실패했어요.')) }; break
       case 'hide': await window.api.hideWidget(); break
-      case 'close': void window.api.unlockPopup(); await window.api.hidePopup(); break
+      case 'close': closeOverlay(); void window.api.unlockPopup(); await window.api.hidePopup(); break
       case 'pin': { const on = lastState.config.alwaysOnTop === false; await update({ alwaysOnTop: on }); notify(on ? tr('항상 위에 표시해요.') : tr('다른 창 뒤로 갈 수 있어요.')); break }
     }
   })
