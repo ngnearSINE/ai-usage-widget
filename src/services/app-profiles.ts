@@ -141,7 +141,8 @@ export function parseUserDataDirs(cmdline: string): string[] {
     else if (quotedFlag) { const end = cmdline.indexOf('"', j); value = cmdline.slice(j, end < 0 ? undefined : end) }
     else { const m = /^[^\s"]+/.exec(cmdline.slice(j)); value = m ? m[0] : '' }
     value = value.trim()
-    if (value && path.isAbsolute(value)) out.push(value)
+    // 명령줄을 읽는 OS와 상관없이 Windows·Unix 절대 경로를 모두 받는다(상대 경로만 버린다).
+    if (value && (path.win32.isAbsolute(value) || path.posix.isAbsolute(value))) out.push(value)
   }
   return out
 }
