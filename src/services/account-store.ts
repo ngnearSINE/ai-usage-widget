@@ -7,6 +7,7 @@ import { GrokCliClient } from './grok-cli-client.js'
 import { mergeClaudeAccounts } from './claude-account-migration.js'
 import { moveAccountBefore } from '../common/widget-layout.js'
 import { syncClaudeOrgAccounts, type ClaudeOrgSeen } from '../common/claude-org-sync.js'
+import { syncIdentityAccounts, type FoundIdentity } from '../common/profile-account-sync.js'
 
 const DEFAULT_CONFIG: WidgetConfig = {
   theme: '1a',
@@ -259,8 +260,8 @@ export class AccountStore {
   public resetToDefaultAccounts(): void {
     this.accounts = createDefaultAccounts()
     this.saveAccounts(this.accounts)
-    // 기본으로 되돌리면 지웠던 Claude 조직 카드도 다시 찾아 넣는다.
-    this.saveConfig({ ...this.config, claudeOrgsSeen: [] })
+    // 기본으로 되돌리면 지웠던 Claude 조직·Cursor 사용자 카드도 다시 찾아 넣는다.
+    this.saveConfig({ ...this.config, claudeOrgsSeen: [], cursorUsersSeen: [] })
   }
 
   public removeAccount(id: string): void {
@@ -304,6 +305,22 @@ export class AccountStore {
     if (!r.changed) return false
     this.saveAccounts(r.accounts)
     this.saveConfig({ ...this.config, claudeOrgsSeen: r.seen })
+    return true
+  }
+
+  /** 사용자가 폴더를 직접 추가하면 그 폴더의 조직·사용자는 예전에 지웠더라도 다시 카드로 넣는다. */
+  public forgetSeen(field: 'claudeOrgsSeen' | 'cursorUsersSeen', keys: string[]): void {
+    if (!keys.length) return
+    const drop = new Set(keys)
+    this.saveConfig({ ...this.config, [field]: (this.config[field] || []).filter(o => !drop.has(o)) })
+  }
+
+  /** 앱 프로필 폴더에서 찾은 Cursor 사용자를 계정 목록에 맞춘다(규칙은 syncIdentityAccounts). 바뀌었으면 true. */
+  public syncCursorUsers(found: FoundIdentity[]): boolean {
+    const r = syncIdentityAccounts(this.accounts, this.config.cursorUsersSeen || [], found, { provider: 'cursor', field: 'cursorUser', idPrefix: 'cursor' })
+    if (!r.changed) return false
+    this.saveAccounts(r.accounts)
+    this.saveConfig({ ...this.config, cursorUsersSeen: r.seen })
     return true
   }
 

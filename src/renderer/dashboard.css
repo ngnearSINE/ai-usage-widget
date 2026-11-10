@@ -669,6 +669,14 @@ body.is-web-view [data-src] { pointer-events:none; }
 .field-inline { display:flex; gap:6px; }
 .field-inline .text-input { flex:1; min-width:0; }
 .settings-root .setting-hint code { font-family:Consolas,monospace; font-size:10.5px; padding:1px 4px; border-radius:4px; background:var(--soft); color:var(--ink); }
+.settings-root .setting-hint.good { color:var(--good); }
+.settings-root .setting-hint.warn { color:var(--warn); }
+/* 앱 프로필 폴더: 경로는 앞쪽을 줄여 끝(폴더 이름)이 보이게 */
+.path-line { display:block; font-size:11px; color:var(--muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; direction:rtl; text-align:left; }
+.path-line bdi { direction:ltr; unicode-bidi:isolate; }
+.profile-folder-icon { width:22px; height:22px; flex:none; display:grid; place-items:center; color:var(--muted); }
+.profile-folder-icon svg { width:17px; height:17px; }
+.profile-source { font-size:10.5px; font-weight:500; color:var(--muted); margin-left:4px; }
 
 /* ---------- 경고 배경: 테두리는 중립, 배경에 노랑→빨강 그라데이션 ---------- */
 @property --glow { syntax:'<number>'; inherits:true; initial-value:0; }

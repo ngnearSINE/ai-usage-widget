@@ -25,7 +25,7 @@ export function rateLimitWait(retryAfterMs: number, strikes: number): number {
   return Math.max(retryAfterMs, Math.min(MAX_BACKOFF_MS, USAGE_MIN_INTERVAL_MS * 2 ** strikes))
 }
 
-export interface ClaudeToken { token: string; expiresAt: number | null; source: 'cli' | 'desktop'; scopes: string[] }
+export interface ClaudeToken { token: string; expiresAt: number | null; source: 'cli' | 'desktop'; scopes: string[]; dir?: string } // dir: 데스크톱 앱 프로필 폴더
 export interface ClaudeProfile { orgUuid: string; orgName: string; orgType: string; rateTier?: string; email: string }
 export interface ClaudeOrg extends ClaudeProfile { label: string; kind: string; tokens: ClaudeToken[] }
 
@@ -123,7 +123,7 @@ export class ClaudeOrgs {
     const tokens: ClaudeToken[] = []
     const cli = readCliToken()
     if (cli) tokens.push(cli)
-    for (const t of await readClaudeDesktopTokens()) tokens.push({ token: t.token, expiresAt: t.expiresAt, source: 'desktop', scopes: t.scopes })
+    for (const t of await readClaudeDesktopTokens()) tokens.push({ token: t.token, expiresAt: t.expiresAt, source: 'desktop', scopes: t.scopes, dir: t.dir })
     const found: Array<{ token: ClaudeToken; profile: ClaudeProfile }> = []
     await Promise.all(tokens.map(async token => {
       const profile = await this.profileOf(token.token)

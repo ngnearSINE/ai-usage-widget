@@ -1,4 +1,4 @@
-import type { AccountConfig, AppState, WidgetConfig, HeatSide } from '../../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, HeatSide, FolderInspection, ProfileApp, ProfileInfo, ProfileSource } from '../../common/types.js'
 import { visibleUsages, DEFAULT_WINDOW_SIZE } from '../../common/widget-layout.js'
 import { chooseLayout, DESIGNS, firstWindowLabel, lowestLeft, serviceModel, severity, SOURCE_LABEL, type DesignId, type ValueSource } from '../../common/usage-model.js'
 import { previewSpread, previewUsages } from '../../common/preview-data.js'
@@ -45,7 +45,11 @@ let detecting = false
 let addingCustom = false
 let addingHome = false
 type HomeProvider = 'codex' | 'xai' | 'claude'
-const homeDraft = { provider: 'codex' as HomeProvider, dir: '', name: '' }
+const homeDraft = { provider: 'codex' as HomeProvider, dir: '', name: '', inspection: null as FolderInspection | null, checking: false }
+let deepScanning = false
+// 앱 프로필(다른 데이터 폴더): 앱 이름과 찾은 곳 이름(msg — 그릴 때 trText)
+const PROFILE_APP: Record<ProfileApp, string> = { claude: msg('Claude 앱'), cursor: 'Cursor' }
+const PROFILE_SOURCE: Record<ProfileSource, string> = { default: msg('기본 위치'), sibling: msg('같은 이름 폴더'), running: msg('실행 중에 찾음'), deep: msg('깊게 찾기'), added: msg('직접 추가') }
 // 서비스마다 로그인 폴더를 정하는 환경 변수와 로그인 명령, 이름 예시(example은 msg — 그릴 때 trText)
 const HOME_SERVICES: Record<HomeProvider, { title: string; env: string; login: string; example: string }> = {
   codex: { title: 'Codex', env: 'CODEX_HOME', login: 'codex login', example: msg('{name} 회사', { name: 'Codex' }) },
@@ -374,19 +378,56 @@ function servicesTab(s: AppState) {
       <div class="field-row"><label class="field"><span>${tr('5시간 남은 양(%)')}</span><input type="number" class="text-input" data-custom="p5" min="0" max="100" value="${escapeText(customDraft.p5)}"></label><label class="field"><span>${tr('주간 남은 양(%)')}</span><input type="number" class="text-input" data-custom="pw" min="0" max="100" value="${escapeText(customDraft.pw)}"></label><label class="field narrow"><span>${tr('색')}</span><input type="color" class="color-input" data-custom="color" value="${hex(customDraft.color)}"></label></div>
       <div class="svc-actions"><button class="primary-button" data-custom-save>${tr('추가')}</button><button class="ghost-button" data-custom-cancel>${tr('취소')}</button></div>
     </div>` : `<button class="secondary-button" data-custom-open>${icon('plus')}${tr('숫자를 직접 넣는 카드 추가')}</button>`
-  const hs = HOME_SERVICES[homeDraft.provider]
-  const home = addingHome ? `<div class="custom-form">
-      <div class="field"><span>${tr('서비스')}</span><div class="segmented" role="group" aria-label="${tr('서비스')}">${(Object.keys(HOME_SERVICES) as HomeProvider[]).map(v => `<button data-home-provider="${v}" aria-pressed="${homeDraft.provider === v}">${HOME_SERVICES[v].title}</button>`).join('')}</div></div>
-      <div class="field"><span>${tr('로그인 폴더')}</span><div class="field-inline"><input type="text" class="text-input" data-home-dir readonly placeholder="${tr('폴더를 고르세요')}" value="${escapeText(homeDraft.dir)}"><button class="ghost-button" data-home-pick>${tr('폴더 고르기')}</button></div></div>
-      <label class="field"><span>${tr('이름(선택)')}</span><input type="text" class="text-input" data-home-name maxlength="60" placeholder="${tr('예: {example}', { example: trText(hs.example) })}" value="${escapeText(homeDraft.name)}"></label>
-      ${hint(tr('먼저 그 폴더로 로그인해 두세요. 명령 프롬프트에서 {set} 다음에 {login} 명령으로 로그인하면 돼요. 평소 쓰는 계정과 따로 로그인돼요.', { set: `<code>set ${hs.env}=${tr('폴더 경로')}</code>`, login: `<code>${hs.login}</code>` }))}
-      <div class="svc-actions"><button class="primary-button" data-home-save>${tr('추가')}</button><button class="ghost-button" data-home-cancel>${tr('취소')}</button></div>
-    </div>` : `<button class="secondary-button" data-home-open>${icon('plus')}${tr('다른 로그인 폴더의 계정 추가 (Codex·Grok·Claude)')}</button>`
+  const home = addingHome ? homeForm() : `<button class="secondary-button" data-home-open>${icon('plus')}${tr('폴더로 계정 추가 (앱 프로필·CLI 로그인 폴더)')}</button>`
   return section(tr('서비스'), `<div class="svc-list">${rows || hint(tr('아직 서비스가 없어요. 아래에서 추가하세요.'))}</div>`, tr('눌러서 이름·보일 곳·순서를 바꿔요'))
     + hint(tr('스위치를 끄면 그 서비스의 사용량을 조회하지 않아요. 창이나 위젯에서 카드를 끌어 순서를 바꿀 수도 있어요.'))
     + toggle('hideDisconnected', tr('연결 안 된 서비스 숨기기'), tr('한 번도 연결된 적 없는 카드를 화면에서 빼요. 한 번이라도 연결됐던 카드는 끊겨도 마지막 값과 ! 표시로 계속 보여 줘요.'), !!s.config.hideDisconnected)
     + section(tr('서비스 추가'), `<div class="found-list">${detecting ? hint(tr('이 PC의 로그인을 찾는 중…')) : found || hint(tr('찾은 앱이 없어요. Claude·Codex·Antigravity·Grok·Cursor·GitHub Copilot·Gemini CLI에 로그인한 뒤 다시 찾아 보세요.'))}</div>${home}${custom}`, `<button class="link-button" data-redetect ${detecting ? 'disabled' : ''}>${tr('다시 찾기')}</button>`)
+    + advanced('profiles', profilesPanel(s), tr('앱 프로필 폴더'))
     + advanced('services', `<button class="secondary-button danger" data-reset-defaults>${tr('기본 서비스 목록으로 되돌리기')}</button>${hint(tr('직접 추가하거나 뺀 카드를 지우고, 이 PC에서 찾은 서비스로 목록을 새로 만들어요.'))}`)
+}
+
+/** 폴더로 계정 추가: 고른 폴더를 먼저 살펴보고, 무엇인지에 맞는 추가 방법만 보여 준다. */
+function homeForm() {
+  const ins = homeDraft.inspection, dir = escapeText(homeDraft.dir)
+  const folder = `<div class="field"><span>${tr('폴더')}</span><div class="field-inline"><input type="text" class="text-input" data-home-dir readonly placeholder="${tr('폴더를 고르세요')}" value="${dir}" title="${dir}"><button class="ghost-button" data-home-pick>${homeDraft.dir ? tr('다른 폴더') : tr('폴더 고르기')}</button></div></div>`
+  const actions = (canAdd: boolean) => `<div class="svc-actions">${canAdd ? `<button class="primary-button" data-home-save>${tr('추가')}</button>` : ''}<button class="ghost-button" data-home-cancel>${tr('취소')}</button></div>`
+  const cliHint = (p: HomeProvider) => { const h = HOME_SERVICES[p]; return tr('명령 프롬프트에서 {set} 다음에 {login} 명령으로 로그인하면 그 폴더에 따로 로그인돼요.', { set: `<code>set ${h.env}=${tr('폴더 경로')}</code>`, login: `<code>${h.login}</code>` }) }
+  let body = ''
+  if (homeDraft.checking) body = hint(tr('폴더를 살펴보는 중…'))
+  else if (!ins) body = hint(tr('앱 프로필 폴더(다른 데이터 폴더로 띄운 Claude·Cursor), 여러 프로필을 담은 상위 폴더, Codex·Grok·Claude Code의 다른 로그인 폴더를 고를 수 있어요. 무엇인지는 앱이 알아봐요.'))
+  else if (ins.kind === 'cli') {
+    if (!ins.providers.includes(homeDraft.provider)) homeDraft.provider = ins.providers[0]
+    const hs = HOME_SERVICES[homeDraft.provider]
+    body = `${hint(tr('{service} 로그인 폴더예요.', { service: hs.title }), 'good')}
+      ${ins.providers.length > 1 ? `<div class="field"><span>${tr('서비스')}</span><div class="segmented" role="group" aria-label="${tr('서비스')}">${ins.providers.map(v => `<button data-home-provider="${v}" aria-pressed="${homeDraft.provider === v}">${HOME_SERVICES[v].title}</button>`).join('')}</div></div>` : ''}
+      <label class="field"><span>${tr('이름(선택)')}</span><input type="text" class="text-input" data-home-name maxlength="60" placeholder="${tr('예: {example}', { example: trText(hs.example) })}" value="${escapeText(homeDraft.name)}"></label>`
+  } else if (ins.kind === 'profile') {
+    body = hint(tr('{app} 프로필 폴더예요. 로그인한 계정을 카드로 보여 줘요.', { app: trText(PROFILE_APP[ins.app]) }), 'good')
+  } else if (ins.kind === 'parent') {
+    const parts = (Object.entries(ins.apps) as Array<[ProfileApp, number]>).map(([app, n]) => tr('{app} {n}개', { app: trText(PROFILE_APP[app]), n }))
+    body = hint(tr('앱 프로필이 들어 있어요({list}). 이 폴더를 계속 살펴서 나중에 생기는 프로필도 찾아요.', { list: parts.join(' · ') }), 'good')
+  } else {
+    body = hint(tr('이 폴더에서 로그인 정보를 찾지 못했어요.'), 'warn')
+      + hint(tr('앱 프로필이면 그 프로필로 앱을 열어 로그인한 뒤 다시 골라 주세요. 실행 중인 앱은 자동으로 찾기도 해요.'))
+      + hint(tr('CLI 로그인 폴더로 쓰려면: {how}', { how: cliHint(homeDraft.provider) }))
+  }
+  return `<div class="custom-form">${folder}${body}${actions(!!ins && ins.kind !== 'none' && !homeDraft.checking)}</div>`
+}
+
+/** 고급: 찾은 앱 프로필 폴더 목록(조회 켜기·끄기), 직접 추가한 폴더, 실행 중인 앱 살피기, 깊게 찾기. */
+function profilesPanel(s: AppState) {
+  const list = s.profiles || [], added = s.config.profileFolders || []
+  const row = (p: ProfileInfo) => {
+    const app = trText(PROFILE_APP[p.app]), dir = escapeText(p.dir)
+    return `<div class="found-row">${renderAiIcon(p.app, app, s.config.iconStyle, 22)}<span class="svc-text"><b>${app} <span class="profile-source">${trText(PROFILE_SOURCE[p.source])}</span></b><span class="path-line" title="${dir}"><bdi>${dir}</bdi></span></span><label class="mini-toggle" title="${p.excluded ? tr('조회 안 함') : tr('조회 중')}"><input type="checkbox" class="switch" data-profile-use="${dir}" aria-label="${tr('{dir} 조회', { dir })}" ${p.excluded ? '' : 'checked'}><span class="switch-track" aria-hidden="true"></span></label></div>`
+  }
+  const addedRows = added.map(d => { const dir = escapeText(d); return `<div class="found-row"><span class="profile-folder-icon">${icon('folder')}</span><span class="svc-text"><b>${tr('직접 추가한 폴더')}</b><span class="path-line" title="${dir}"><bdi>${dir}</bdi></span></span><button class="text-btn danger" data-profile-remove="${dir}">${tr('빼기')}</button></div>` }).join('')
+  return hint(tr('여러 계정을 쓰려고 다른 데이터 폴더(--user-data-dir)로 띄운 Claude·Cursor 앱도 찾아서 조회해요. 같은 계정은 카드 하나로 묶어요.'))
+    + `<div class="found-list">${list.length ? list.map(row).join('') : hint(tr('아직 찾은 앱 프로필이 없어요.'))}${addedRows}</div>`
+    + toggle('profileScanProcesses', tr('실행 중인 앱에서 프로필 찾기'), tr('다른 데이터 폴더로 띄운 앱을 2분마다 살펴 기억해요. 앱을 꺼도 계속 조회해요.'), s.config.profileScanProcesses !== false)
+    + `<div class="svc-actions"><button class="secondary-button" data-profile-deep ${deepScanning ? 'disabled' : ''}>${deepScanning ? tr('찾는 중…') : tr('깊게 찾기')}</button></div>`
+    + hint(tr('깊게 찾기는 사용자 폴더 전체를 훑어요. 몇 초에서 20초쯤 걸려요.'))
 }
 
 function alertsTab(s: AppState) {
@@ -746,21 +787,52 @@ function bindEvents() {
     renderSettings(state, true)
     run(window.api.addCustomAccount({ name, provider: 'custom', customMock: { primaryPercent: 100 - pct('p5'), primaryReset: '', weeklyPercent: 100 - pct('pw'), weeklyReset: '', iconLetter: name.charAt(0).toUpperCase(), brandColor: val('color') } }), tr('추가하지 못했어요.'))
   })
-  // 다른 로그인 폴더의 계정
-  onClickOf('[data-home-open]', () => { addingHome = true; renderSettings(state, true) })
-  onClickOf('[data-home-cancel]', () => { addingHome = false; renderSettings(state, true) })
+  // 폴더로 계정 추가: 폴더를 고르면 바로 무엇인지 살펴본다.
+  const pickHome = async () => {
+    const dir = await window.api.pickFolder(tr('계정 폴더 고르기'))
+    if (!dir) return
+    Object.assign(homeDraft, { dir, inspection: null, checking: true })
+    addingHome = true
+    renderSettings(state, true)
+    try { homeDraft.inspection = await window.api.inspectFolder(dir) } catch { homeDraft.inspection = { kind: 'none' } }
+    homeDraft.checking = false
+    renderSettings(state, true)
+  }
+  onClickOf('[data-home-open]', () => { void pickHome() })
+  onClickOf('[data-home-pick]', () => { void pickHome() })
+  onClickOf('[data-home-cancel]', () => { addingHome = false; Object.assign(homeDraft, { dir: '', name: '', inspection: null }); renderSettings(state, true) })
   body.querySelectorAll<HTMLElement>('[data-home-provider]').forEach(el => el.onclick = () => { homeDraft.provider = el.dataset.homeProvider as HomeProvider; renderSettings(state, true) })
-  onClickOf('[data-home-pick]', async () => { const dir = await window.api.pickFolder(); if (dir) { homeDraft.dir = dir; renderSettings(state, true) } })
   const homeName = body.querySelector<HTMLInputElement>('[data-home-name]')
   if (homeName) homeName.oninput = () => { homeDraft.name = homeName.value }
   onClickOf('[data-home-save]', async () => {
-    if (!homeDraft.dir) { notify(tr('로그인 폴더를 골라 주세요.')); return }
+    const ins = homeDraft.inspection
+    if (!homeDraft.dir || !ins || ins.kind === 'none') { notify(tr('폴더를 골라 주세요.')); return }
     ;(document.activeElement as HTMLElement | null)?.blur()
+    const btn = body.querySelector<HTMLButtonElement>('[data-home-save]')
+    if (btn) { btn.disabled = true; btn.textContent = tr('추가하는 중…') }
     try {
-      const r = await window.api.addHomeAccount(homeDraft.provider, homeDraft.dir, homeDraft.name)
+      const r = ins.kind === 'cli' ? await window.api.addHomeAccount(homeDraft.provider, homeDraft.dir, homeDraft.name) : await window.api.addProfileFolder(homeDraft.dir)
       if (r.message) notify(trText(r.message))
-      if (r.ok) { addingHome = false; Object.assign(homeDraft, { dir: '', name: '' }); renderSettings(r.state || state, true) }
-    } catch { notify(tr('추가하지 못했어요.')) }
+      if (r.ok) { addingHome = false; Object.assign(homeDraft, { dir: '', name: '', inspection: null }) }
+      renderSettings(r.state || state, true)
+    } catch { notify(tr('추가하지 못했어요.')); renderSettings(state, true) }
+  })
+  // 앱 프로필 폴더(고급)
+  body.querySelectorAll<HTMLInputElement>('[data-profile-use]').forEach(el => el.onchange = () => {
+    run(window.api.excludeProfile(el.dataset.profileUse!, !el.checked), tr('바꾸지 못했어요.'))
+  })
+  body.querySelectorAll<HTMLElement>('[data-profile-remove]').forEach(el => el.onclick = () => {
+    run(window.api.removeProfileFolder(el.dataset.profileRemove!), tr('빼지 못했어요.'))
+  })
+  onClickOf('[data-profile-deep]', async () => {
+    deepScanning = true
+    renderSettings(state, true)
+    try {
+      const r = await window.api.deepScanProfiles()
+      if (r.message) notify(trText(r.message))
+      deepScanning = false
+      renderSettings(r.state || state, true)
+    } catch { deepScanning = false; notify(tr('찾지 못했어요.')); renderSettings(state, true) }
   })
   onClickOf('[data-reset-defaults]', () => {
     if (!confirm(tr('서비스 목록을 기본으로 되돌릴까요?\n직접 추가한 카드와 바꾼 이름이 사라져요.'))) return

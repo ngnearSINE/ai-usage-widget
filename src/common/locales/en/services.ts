@@ -140,4 +140,7 @@ export const EN_SERVICES: Record<string, string> = {
   'Gemini CLI 로그인 감지됨': 'Gemini CLI sign-in found',
 
   '{provider} 실시간 쿼터 조회를 지원하지 않습니다': '{provider} doesn’t support live quota lookup',
+
+  // Cursor 프로필
+  '이 Cursor 계정이 로그인한 프로필 폴더를 찾지 못했어요. 그 프로필로 Cursor를 한 번 열어 주세요': 'Couldn’t find the profile folder this Cursor account signed in from. Open Cursor with that profile once',
 }

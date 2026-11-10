@@ -4,7 +4,8 @@ import { AntigravityCliClient } from './antigravity-cli-client.js'
 import { fetchClaudeUsage } from './claude-usage-client.js'
 import { CodexLocalClient } from './codex-local-client.js'
 import { GrokCliClient } from './grok-cli-client.js'
-import { CursorClient } from './cursor-client.js'
+import { CursorClient, cursorUserLabel, cursorUsers } from './cursor-client.js'
+import { AppProfiles } from './app-profiles.js'
 import { CopilotClient } from './copilot-client.js'
 import { GeminiCliClient } from './gemini-cli-client.js'
 import { ClaudeOrgs, cliTokenExpired } from './claude-orgs.js'
@@ -25,6 +26,10 @@ export class QuotaManager {
   private onStateChangeListeners: Array<(usages: AccountUsage[]) => void> = []
   // 서비스 하나를 받을 때마다 부르는 가벼운 알림(화면만 바로 갱신). 기록·알림은 전체 조회가 끝난 뒤 한 번.
   private onProgressListeners: Array<() => void> = []
+
+  // 지난번 Claude 프로필 폴더 목록. 바뀌면(새 프로필 발견·제외) 조직을 바로 다시 찾는다.
+  private claudeDirsKey = ''
+  private forceProfiles = false
 
   constructor(private accountStore: AccountStore, private readonly lastGoodFile?: string) {
     if (!lastGoodFile) return
@@ -147,19 +152,55 @@ export class QuotaManager {
     }
   }
 
+  /**
+   * 설정의 프로필 값을 AppProfiles에 맞추고, 실행 중인 앱에서 새 프로필 폴더를 찾아 기억한다.
+   * Claude 프로필 폴더 목록이 바뀌었으면 true(조직을 바로 다시 찾게).
+   */
+  private async refreshProfiles(): Promise<boolean> {
+    const c = this.accountStore.getConfig()
+    AppProfiles.configure({ added: c.profileFolders || [], excluded: c.profileExcluded || [], learned: c.profileLearned || [], scanProcesses: c.profileScanProcesses !== false })
+    const force = this.forceProfiles
+    this.forceProfiles = false
+    const learned = await AppProfiles.refresh(force)
+    if (learned) this.accountStore.saveConfig({ ...this.accountStore.getConfig(), profileLearned: learned })
+    const key = AppProfiles.dirs('claude').join('|')
+    const changed = key !== this.claudeDirsKey
+    this.claudeDirsKey = key
+    return changed
+  }
+
+  /** 프로필을 지금 다시 찾는다(폴더 추가·제외·다시 찾기). 실행 중인 앱도 바로 다시 살핀다. */
+  public async rescanProfiles(): Promise<void> {
+    this.forceProfiles = true
+    await this.refreshProfiles()
+  }
+
   public async refreshAll(): Promise<AccountUsage[]> {
     if (this.isRefreshing) return this.getUsages()
     this.isRefreshing = true
 
     try {
+      // 앱 프로필 폴더(다른 --user-data-dir)를 찾는다. 실패해도 기본 폴더로 계속한다.
+      let claudeChanged = false
+      try {
+        claudeChanged = await this.refreshProfiles()
+      } catch (err) {
+        console.warn('[QuotaManager] 앱 프로필 찾기 실패', err) // i18n-ok
+      }
       // Claude 조직(팀/개인)을 찾아 계정 목록에 맞춘다. 실패해도 나머지 조회는 계속한다.
       try {
         // Claude CLI 토큰이 만료되고 10분이 지나도록 아무도 갱신하지 않았으면 대신 갱신한다(쓰는 중인 토큰은 건드리지 않음).
         const cli = await refreshCliTokenIfExpired().catch(() => 'failed' as const)
-        const orgs = await ClaudeOrgs.discover(cli === 'refreshed')
+        const orgs = await ClaudeOrgs.discover(cli === 'refreshed' || claudeChanged)
         this.accountStore.syncClaudeOrgs(orgs.map(o => ({ orgUuid: o.orgUuid, label: o.label, fromCli: o.tokens.some(t => t.source === 'cli') })), cliTokenExpired())
       } catch (err) {
         console.warn('[QuotaManager] Claude 조직 확인 실패', err) // i18n-ok
+      }
+      // 여러 Cursor 프로필에 로그인한 사용자를 카드로 맞춘다(Cursor 카드를 쓰는 사용자만, 상태 DB가 커서 그때만 읽는다).
+      try {
+        if (this.accountStore.getAccounts().some(a => a.provider === 'cursor')) this.accountStore.syncCursorUsers(cursorUsers().map(u => ({ key: u.userId, label: cursorUserLabel(u), primary: u.primary })))
+      } catch (err) {
+        console.warn('[QuotaManager] Cursor 사용자 확인 실패', err) // i18n-ok
       }
       const accounts = this.accountStore.getAccounts().filter(a => a.enabled)
       const activeIds = new Set(accounts.map(a => a.id))
