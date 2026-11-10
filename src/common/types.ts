@@ -56,6 +56,7 @@ export interface AccountConfig {
   hidden?: boolean
   isLocalIde?: boolean
   orgUuid?: string // Claude 조직(팀/개인). 있으면 그 조직 토큰으로 조회한다
+  cursorUser?: string // Cursor 사용자 ID. 있으면 그 사용자가 로그인한 프로필 폴더의 토큰으로 조회한다
   showScoped?: boolean // 모델 전용 한도(Fable 등) 보기. 기본 켬
   hiddenInDock?: boolean // 작업표시줄 도킹 화면에서만 숨김. 위젯 창에는 보인다
   launchCli?: string // Ctrl+두 번 클릭으로 실행할 CLI(직접 지정, 비우면 자동으로 찾음)
@@ -127,6 +128,11 @@ export interface WidgetConfig {
   useAcrylic?: boolean // 배경 뒤를 흐리게(아크릴). 끄면 흐림 없이 비친다 (기본 켬)
   grokOffered?: boolean // 기존 계정 목록에 Grok을 한 번 추가했는지
   claudeOrgsSeen?: string[] // 이미 카드로 추가했던 Claude 조직(지운 뒤 다시 넣지 않도록)
+  cursorUsersSeen?: string[] // 이미 카드로 추가했던 Cursor 사용자(지운 뒤 다시 넣지 않도록)
+  profileFolders?: string[] // 사용자가 추가한 앱 프로필 폴더(프로필 자체 또는 프로필을 담은 상위 폴더)
+  profileExcluded?: string[] // 찾았지만 조회하지 않을 앱 프로필 폴더
+  profileLearned?: ProfileLearned[] // 실행 중인 앱·깊게 찾기로 알게 된 데이터 폴더(앱을 꺼도 계속 조회)
+  profileScanProcesses?: boolean // 실행 중인 앱의 --user-data-dir로 프로필 찾기(기본 켬)
   design?: 'rich' | 'numeral' | 'bars' | 'rings' | 'timeline' | 'battery'
   valueSource?: Record<string, 'weekly' | '5h' | 'tight'> // 계정별 큰 숫자 기준 (기본 주간)
   warnPercent?: number // 남은 양이 이 값 이하이면 주의 (기본 20)
@@ -188,4 +194,21 @@ export interface AppState {
   history?: Record<string, HistoryPoint[]> // 최근 24시간(카드 추이선용, 줄여서 보냄)
   shortcutErrors?: string[] // 등록하지 못한 단축키(다른 앱이 사용 중 등)
   web?: WebStatus & { hasPassword: boolean } // 웹 페이지로 보기 상태(설정 화면 표시용)
+  profiles?: ProfileInfo[] // 찾은 앱 프로필 폴더(설정 화면 표시용, 웹으로는 보내지 않는다)
 }
+
+/** 데이터 폴더를 따로 둘 수 있는 데스크톱 앱(프로필 폴더를 찾는 대상) */
+export type ProfileApp = 'claude' | 'cursor'
+/** 프로필 폴더를 어디서 찾았나: 기본 위치·같은 이름 옆 폴더·실행 중인 앱·깊게 찾기·직접 추가 */
+export type ProfileSource = 'default' | 'sibling' | 'running' | 'deep' | 'added'
+export interface ProfileLearned { dir: string; via: 'running' | 'deep'; seenAt: string }
+export interface ProfileInfo { app: ProfileApp; dir: string; source: ProfileSource; excluded: boolean }
+/**
+ * '폴더로 계정 추가'에서 고른 폴더가 무엇인지.
+ * cli: 그 서비스 CLI의 로그인 폴더(providers 중 첫째가 추정값) / profile: 앱 프로필 폴더 자체 / parent: 프로필을 담은 상위 폴더 / none: 해당 없음
+ */
+export type FolderInspection =
+  | { kind: 'cli'; providers: Array<'codex' | 'xai' | 'claude'> }
+  | { kind: 'profile'; app: ProfileApp }
+  | { kind: 'parent'; apps: Partial<Record<ProfileApp, number>> }
+  | { kind: 'none' }

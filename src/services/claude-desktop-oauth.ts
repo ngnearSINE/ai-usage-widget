@@ -6,7 +6,9 @@ import { formatCountdown } from '../common/time-utils.js'
 import type { AccountConfig, AccountUsage, QuotaInfo } from '../common/types.js'
 import { appDataDir } from './platform-paths.js'
 import { msg } from '../common/i18n.js'
+import { AppProfiles } from './app-profiles.js'
 
+/** 앱 기본 데이터 폴더(일반 판·Store 판). 다른 프로필 폴더까지 포함한 목록은 AppProfiles.dirs('claude'). */
 export function findClaudeDataDirs(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string[] {
   // Linux: ~/.config/Claude
   if (platform !== 'win32') return [path.join(appDataDir(env, platform), 'Claude')]
@@ -23,6 +25,12 @@ export function findClaudeDataDirs(env: NodeJS.ProcessEnv = process.env, platfor
     } catch { /* Store installation is optional. */ }
   }
   return [...new Set(dirs)]
+}
+
+/** 조회할 Claude 앱 데이터 폴더: 찾은 프로필 폴더, 하나도 못 찾았으면 기본 폴더(오류 안내용). */
+function claudeProfileDirs(): string[] {
+  // 사용자가 모두 제외했으면 빈 목록 그대로(제외를 무시하지 않는다).
+  return AppProfiles.list('claude', true).length ? AppProfiles.dirs('claude') : findClaudeDataDirs()
 }
 
 // Only the DPAPI-wrapped encryption key crosses stdin. No credentials in argv,
@@ -225,7 +233,7 @@ export function parseClaudeDesktopLiveUsage(raw: unknown, account: AccountConfig
 }
 
 /** 데스크톱 앱 OAuth 캐시의 anthropic 토큰 중 아직 유효한 것을 모두 돌려준다(계정·조직 구분은 호출한 쪽이 profile로 한다). */
-export interface ClaudeDesktopTokenEntry { accountUuid: string; token: string; expiresAt: number; scopes: string[] }
+export interface ClaudeDesktopTokenEntry { accountUuid: string; token: string; expiresAt: number; scopes: string[]; dir?: string }
 export function listClaudeDesktopTokens(cache: unknown, now = Date.now()): ClaudeDesktopTokenEntry[] {
   if (!cache || typeof cache !== 'object') return []
   const out: ClaudeDesktopTokenEntry[] = []
@@ -247,12 +255,13 @@ export function listClaudeDesktopTokens(cache: unknown, now = Date.now()): Claud
 export async function readClaudeDesktopTokens(): Promise<ClaudeDesktopTokenEntry[]> {
   if (process.platform !== 'win32' && process.platform !== 'linux') return []
   const out: ClaudeDesktopTokenEntry[] = []
-  for (const dir of findClaudeDataDirs()) {
+  // 기본 폴더와 다른 프로필 폴더(--user-data-dir로 띄운 계정 등)를 모두 본다.
+  for (const dir of claudeProfileDirs()) {
     try {
       if (!hasDesktopSession(dir)) continue
       const config = JSON.parse(await fs.promises.readFile(path.join(dir, 'config.json'), 'utf8'))
       if (typeof config['oauth:tokenCacheV2'] !== 'string') continue
-      out.push(...listClaudeDesktopTokens(await openClaudeCache(dir, config['oauth:tokenCacheV2'])))
+      out.push(...listClaudeDesktopTokens(await openClaudeCache(dir, config['oauth:tokenCacheV2'])).map(t => ({ ...t, dir })))
     } catch { /* 이 폴더는 건너뛴다. 예외 메시지에 복호화 내용이 섞일 수 있어 남기지 않는다 */ }
   }
   return out
@@ -300,7 +309,7 @@ export function parseRetryAfterMs(header: string | null, now = Date.now()): numb
 export async function fetchClaudeDesktopLiveUsage(account: AccountConfig): Promise<AccountUsage> {
   if (process.platform !== 'win32' && process.platform !== 'linux') throw new Error(msg('Claude 앱 OAuth 조회는 Windows·Linux에서 지원됩니다'))
   const failures: string[] = []
-  for (const dir of findClaudeDataDirs()) {
+  for (const dir of claudeProfileDirs()) {
     if (!hasDesktopSession(dir)) continue
     // 실패 사유는 단계 이름만 남긴다. 예외 메시지에는 복호화된 내용 일부가 섞일 수 있어 그대로 쓰지 않는다
     let step = msg('설정 파일 읽기')

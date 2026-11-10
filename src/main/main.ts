@@ -4,11 +4,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, powerMonitor, screen, shell, Tray } from 'electron'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
-import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec, FolderInspection } from '../common/types.js'
 import { AccountStore } from '../services/account-store.js'
 import { QuotaManager } from '../services/quota-manager.js'
 import { calculatePopupPosition, calculateWidgetPosition, getTaskbarInfo } from './taskbar-position.js'
 import { LocalAppDetector } from '../services/local-app-detector.js'
+import { AppProfiles, inspectProfileFolder, pathKey } from '../services/app-profiles.js'
+import { ClaudeOrgs } from '../services/claude-orgs.js'
+import { cursorUsers } from '../services/cursor-client.js'
 import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { LANG_NAMES, LANGUAGE_LABEL, locale, msg, resolveLang, setLang, tr, trText, type Lang, type LangSetting } from '../common/i18n.js'
@@ -99,6 +102,27 @@ let history: UsageHistory | null = null
 let costScanner: CostScanner | null = null
 let modelPrices: ModelPrices | null = null
 
+/** 화면에서 받은 값이 있는 폴더의 절대 경로인지. */
+function isFolder(dir: unknown): dir is string {
+  try { return typeof dir === 'string' && path.isAbsolute(dir) && fs.statSync(dir).isDirectory() } catch { return false }
+}
+
+/**
+ * 이 폴더가 어느 CLI의 로그인 폴더인지(앞쪽이 더 그럴듯한 것). Claude Code는 .credentials.json,
+ * Codex·Grok은 둘 다 auth.json이라 내용(Codex는 tokens·auth_mode 항목)으로 순서를 정한다.
+ */
+function cliProvidersIn(dir: string): Array<'codex' | 'xai' | 'claude'> {
+  const out: Array<'codex' | 'xai' | 'claude'> = []
+  if (fs.existsSync(path.join(dir, '.credentials.json'))) out.push('claude')
+  const auth = path.join(dir, 'auth.json')
+  if (fs.existsSync(auth)) {
+    let codex = false
+    try { const j = JSON.parse(fs.readFileSync(auth, 'utf-8')); codex = !!j && typeof j === 'object' && ('tokens' in j || 'auth_mode' in j) } catch { /* 형식을 모름 */ }
+    out.push(...(codex ? ['codex', 'xai'] as const : ['xai', 'codex'] as const))
+  }
+  return out
+}
+
 /** 비용 환산에 읽을 기록 폴더: 기본 로그인 폴더와 '다른 로그인 폴더' 계정의 폴더. */
 function costRoots(): Array<{ source: CostSource; dir: string }> {
   const accs = accountStore.getAccounts()
@@ -186,6 +210,8 @@ function getAppState(): AppState {
     acrylicSupported,
     dockSupported,
     launchers,
+    // 미리보기도 이 PC에서 찾은 프로필을 보여 준다(읽기만 하고 조회하지 않는다).
+    profiles: AppProfiles.list(undefined, true),
     config: (({ webPasswordHash: _h, ...c }) => c)(accountStore.getConfig()),
     accounts,
     usages,
@@ -1843,7 +1869,7 @@ function setupIpcHandlers() {
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const r = await dialog.showSaveDialog(win!, { title: tr('설정 내보내기'), defaultPath: `ai-usage-settings-${stamp}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
     if (r.canceled || !r.filePath) return { ok: false }
-    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, grokOffered: _g, uiVersion: _u, webPasswordHash: _p, ...config } = accountStore.getConfig()
+    const { windowBounds: _w, layoutsByMonitor: _l, claudeOrgsSeen: _c, cursorUsersSeen: _cu, profileLearned: _pl, grokOffered: _g, uiVersion: _u, webPasswordHash: _p, ...config } = accountStore.getConfig()
     fs.writeFileSync(r.filePath, JSON.stringify({ app: 'ai-usage-widget', version: app.getVersion(), exportedAt: new Date().toISOString(), config, accounts: accountStore.getAccounts() }, null, 2), 'utf-8')
     return { ok: true, message: tr('설정을 파일로 내보냈어요.') }
   })
@@ -1937,6 +1963,78 @@ function setupIpcHandlers() {
     broadcastState()
     if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
     return { ok: true, message: tr("'{name}' 카드를 추가했어요.", { name: label }), state: getAppState() }
+  })
+  // 폴더로 계정 추가: 고른 폴더가 CLI 로그인 폴더인지, 앱 프로필(또는 프로필을 담은 상위 폴더)인지 먼저 알아본다.
+  ipcMain.handle(IPC_CHANNELS.INSPECT_FOLDER, async (_event, dir: unknown): Promise<FolderInspection> => {
+    if (!isFolder(dir)) return { kind: 'none' }
+    const providers = cliProvidersIn(dir)
+    return providers.length ? { kind: 'cli', providers } : inspectProfileFolder(dir)
+  })
+  // 앱 프로필 폴더 추가: 찾으면 설정에 남기고, 그 안의 계정은 예전에 지운 카드여도 다시 넣는다.
+  ipcMain.handle(IPC_CHANNELS.ADD_PROFILE_FOLDER, async (_event, dir: unknown) => {
+    if (!isFolder(dir)) return { ok: false, message: tr('폴더를 찾을 수 없어요.') }
+    const c = accountStore.getConfig(), key = pathKey(dir)
+    const before = c.profileFolders || []
+    const folders = before.some(f => pathKey(f) === key) ? before : [...before, dir]
+    // 직접 고른 폴더는 제외해 둔 것도 다시 조회한다.
+    const inFolder = (d: string) => { const k = pathKey(d); return k === key || k.startsWith(key + path.sep) }
+    accountStore.saveConfig({ ...c, profileFolders: folders, profileExcluded: (c.profileExcluded || []).filter(d => !inFolder(d)) })
+    await quotaManager.rescanProfiles()
+    const found = AppProfiles.under(dir).filter(p => !p.excluded)
+    if (!found.length) {
+      accountStore.saveConfig({ ...accountStore.getConfig(), profileFolders: before })
+      await quotaManager.rescanProfiles()
+      return { ok: false, message: tr('이 폴더에서 로그인된 앱 프로필을 찾지 못했어요. 그 프로필로 앱을 열어 로그인한 뒤 다시 골라 주세요.') }
+    }
+    const dirs = new Set(found.map(p => pathKey(p.dir)))
+    // 미리보기는 실제 로그인을 조회하지 않는다(설정과 목록만 바꾼다).
+    if (isPreview) { broadcastState(); return { ok: true, message: tr('앱 프로필 {n}개를 찾았어요. 로그인한 계정이 카드로 나타나요.', { n: found.length }), state: getAppState() } }
+    if (found.some(p => p.app === 'claude')) {
+      const orgs = await ClaudeOrgs.discover(true)
+      accountStore.forgetSeen('claudeOrgsSeen', orgs.filter(o => o.tokens.some(t => t.dir && dirs.has(pathKey(t.dir)))).map(o => o.orgUuid))
+    }
+    if (found.some(p => p.app === 'cursor')) {
+      const users = cursorUsers().filter(u => u.dirs.some(d => dirs.has(pathKey(d))))
+      accountStore.forgetSeen('cursorUsersSeen', users.map(u => u.userId))
+      // Cursor 카드가 하나도 없으면 하나 넣어 둔다(조회 때 이 폴더의 사용자들로 맞춰진다).
+      if (users.length && !accountStore.getAccounts().some(a => a.provider === 'cursor')) {
+        accountStore.addAccount({ id: 'local-cursor', name: 'Cursor', provider: 'cursor', enabled: true, cursorUser: users[0].userId })
+      }
+    }
+    await quotaManager.refreshAll()
+    broadcastState()
+    return { ok: true, message: tr('앱 프로필 {n}개를 찾았어요. 로그인한 계정이 카드로 나타나요.', { n: found.length }), state: getAppState() }
+  })
+  ipcMain.handle(IPC_CHANNELS.REMOVE_PROFILE_FOLDER, async (_event, dir: unknown) => {
+    if (typeof dir !== 'string') return null
+    const c = accountStore.getConfig(), key = pathKey(dir)
+    accountStore.saveConfig({ ...c, profileFolders: (c.profileFolders || []).filter(f => pathKey(f) !== key) })
+    await quotaManager.rescanProfiles()
+    broadcastState()
+    if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
+    return getAppState()
+  })
+  // 찾은 프로필을 조회에서 빼거나 다시 넣는다(카드는 그대로 두고, 그 폴더의 로그인만 쓰지 않는다).
+  ipcMain.handle(IPC_CHANNELS.EXCLUDE_PROFILE, async (_event, dir: unknown, excluded: unknown) => {
+    if (typeof dir !== 'string' || typeof excluded !== 'boolean') return null
+    const c = accountStore.getConfig(), key = pathKey(dir)
+    const rest = (c.profileExcluded || []).filter(d => pathKey(d) !== key)
+    accountStore.saveConfig({ ...c, profileExcluded: excluded ? [...rest, dir] : rest })
+    await quotaManager.rescanProfiles()
+    broadcastState()
+    if (!isPreview) void quotaManager.refreshAll().then(() => broadcastState())
+    return getAppState()
+  })
+  // 깊게 찾기: 사용자 폴더 전체를 훑어 로그인된 앱 프로필을 찾아 기억한다(몇 초 걸릴 수 있다).
+  ipcMain.handle(IPC_CHANNELS.DEEP_SCAN_PROFILES, async () => {
+    if (isPreview) return { ok: true, message: tr('미리보기에서는 찾지 않아요.') }
+    await quotaManager.rescanProfiles()
+    const r = await AppProfiles.deepScan()
+    accountStore.saveConfig({ ...accountStore.getConfig(), profileLearned: r.learned })
+    await quotaManager.rescanProfiles()
+    await quotaManager.refreshAll()
+    broadcastState()
+    return { ok: true, message: r.added ? tr('새 앱 프로필 {n}개를 찾았어요.', { n: r.added }) : tr('새로 찾은 앱 프로필이 없어요.'), state: getAppState() }
   })
   // Ctrl+1~5 크기: 위젯 창(자유 창)과 작업 표시줄 팝업. 왼쪽 위를 그대로 두고 화면 안으로 맞춘다.
   ipcMain.handle(IPC_CHANNELS.SIZE_PRESET, (event, n: number) => {

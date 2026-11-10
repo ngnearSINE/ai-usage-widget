@@ -7,6 +7,7 @@ import { LocalLspClient } from './local-lsp-client.js'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { ClaudeDesktopClient } from './claude-desktop-client.js'
 import { findClaudeDataDirs, hasDesktopSession } from './claude-desktop-oauth.js'
+import { AppProfiles } from './app-profiles.js'
 import { appDataDir, findExecutable } from './platform-paths.js'
 import { GrokCliClient, readGrokAuth } from './grok-cli-client.js'
 import { CursorClient } from './cursor-client.js'
@@ -64,7 +65,8 @@ export class LocalAppDetector {
     }
 
     // CLI를 우선 사용하고 실패 시 데스크톱 앱 실시간 세션 또는 기록을 사용한다.
-    const desktopDirs = findClaudeDataDirs()
+    // 기본 폴더와 다른 프로필 폴더(--user-data-dir로 띄운 계정 등)를 모두 본다.
+    const desktopDirs = [...new Set([...findClaudeDataDirs(), ...AppProfiles.dirs('claude')])]
     const desktopSessionDetected = desktopDirs.some(dir => hasDesktopSession(dir))
     const desktopHistoryPath = ClaudeDesktopClient.getUsageHistoryPath()
     const desktopDetected = !!desktopHistoryPath && fs.existsSync(desktopHistoryPath)

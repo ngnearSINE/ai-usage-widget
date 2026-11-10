@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../common/ipc-events.js'
-import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec } from '../common/types.js'
+import type { AccountConfig, AppState, WidgetConfig, MenuItemSpec, FolderInspection } from '../common/types.js'
 import type { CostReport } from '../common/cost.js'
 
 export const api = {
@@ -57,6 +57,11 @@ export const api = {
   openWeb: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_WEB),
   pickFolder: (title?: string): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.PICK_FOLDER, title),
   addHomeAccount: (provider: 'codex' | 'xai' | 'claude', homeDir: string, name: string): Promise<{ ok: boolean; message?: string; state?: AppState }> => ipcRenderer.invoke(IPC_CHANNELS.ADD_HOME_ACCOUNT, provider, homeDir, name),
+  inspectFolder: (dir: string): Promise<FolderInspection> => ipcRenderer.invoke(IPC_CHANNELS.INSPECT_FOLDER, dir),
+  addProfileFolder: (dir: string): Promise<{ ok: boolean; message?: string; state?: AppState }> => ipcRenderer.invoke(IPC_CHANNELS.ADD_PROFILE_FOLDER, dir),
+  removeProfileFolder: (dir: string): Promise<AppState | null> => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_PROFILE_FOLDER, dir),
+  excludeProfile: (dir: string, excluded: boolean): Promise<AppState | null> => ipcRenderer.invoke(IPC_CHANNELS.EXCLUDE_PROFILE, dir, excluded),
+  deepScanProfiles: (): Promise<{ ok: boolean; message?: string; state?: AppState }> => ipcRenderer.invoke(IPC_CHANNELS.DEEP_SCAN_PROFILES),
   sizePreset: (n: number): Promise<string | null> => ipcRenderer.invoke(IPC_CHANNELS.SIZE_PRESET, n),
   setFocus: (id: string | null): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.SET_FOCUS, id),
   openServiceTool: (kind: 'cli' | 'app', id: string): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.OPEN_SERVICE_TOOL, kind, id),

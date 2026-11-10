@@ -81,4 +81,11 @@ export const EN_MAIN: Record<string, string> = {
   '암호가 맞지 않아요.': 'Wrong password.',
   '접속 암호': 'Access password',
   '보기': 'View',
+
+  // 앱 프로필 폴더
+  '이 폴더에서 로그인된 앱 프로필을 찾지 못했어요. 그 프로필로 앱을 열어 로그인한 뒤 다시 골라 주세요.': 'No signed-in app profile found in this folder. Open the app with that profile, sign in, then choose it again.',
+  '앱 프로필 {n}개를 찾았어요. 로그인한 계정이 카드로 나타나요.': 'Found {n} app profile(s). Signed-in accounts will show up as cards.',
+  '미리보기에서는 찾지 않아요.': 'Not searched in preview.',
+  '새 앱 프로필 {n}개를 찾았어요.': 'Found {n} new app profile(s).',
+  '새로 찾은 앱 프로필이 없어요.': 'No new app profiles found.',
 }
