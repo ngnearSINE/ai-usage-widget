@@ -246,4 +246,11 @@ export const EN_DASHBOARD: Record<string, string> = {
   '카드 두 번 누르기': 'Double-click a card',
   '카드 우클릭': 'Right-click a card',
   '다 썼어요': 'Used up',
+
+  // Ctrl+모서리 끌기로 스케일
+  '끌어서 크기 바꾸기 · Ctrl을 누른 채 끌면 스케일(전체 확대·축소)': 'Drag to resize · hold Ctrl and drag to change the scale (zoom everything)',
+  '스케일 {n}%': 'Scale {n}%',
+  '스케일은 80~150% 사이에서 바뀌어요.': 'The scale changes between 80% and 150%.',
+  'Ctrl + 창 모서리 끌기': 'Ctrl + drag a window corner',
+  '스케일(창 전체 확대·축소) 바꾸기': 'Change the scale (zoom the whole window)',
 }
