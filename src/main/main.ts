@@ -15,7 +15,7 @@ import { cursorUsers } from '../services/cursor-client.js'
 import { TaskbarDocker } from './taskbar-docker.js'
 import { CodexAppServerClient } from '../services/codex-app-server-client.js'
 import { LANG_NAMES, LANGUAGE_LABEL, locale, msg, resolveLang, setLang, tr, trText, type Lang, type LangSetting } from '../common/i18n.js'
-import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, snapToEdges, visibleUsages } from '../common/widget-layout.js'
+import { DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, fitWindow, isDockTarget, minWindowHeight, scaleGesture, snapToEdges, visibleUsages } from '../common/widget-layout.js'
 import { sanitizeConfigPatch } from '../common/config-schema.js'
 import { ownColor } from '../common/bar-color.js'
 import { DISPLAY_KEYS, displayOf, setDisplay } from '../common/display-options.js'
@@ -455,10 +455,10 @@ function applyZoom() {
   set(widgetWindow, docked ? 1 : z); set(popupWindow, z); set(settingsWindow, z); set(aboutWindow, z); set(statsWindow, z)
 }
 /** 스케일이 바뀐 비율만큼 창 크기를 바꾼다(왼쪽 위는 그대로, 화면 안으로). 작업 표시줄에 붙은 위젯은 빼고. */
-function rescaleWindows(ratio: number) {
+function rescaleWindows(ratio: number, skip?: SurfaceWindow | null) {
   const docked = accountStore.getConfig().placementMode === 'docked'
   const resize = (w: SurfaceWindow | null, save?: (b: Electron.Rectangle) => void) => {
-    if (!w || w.isDestroyed()) return
+    if (!w || w.isDestroyed() || w === skip) return
     const b = w.getBounds(), area = screen.getDisplayMatching(b).workArea
     const next = fitWindow({ x: b.x, y: b.y, width: Math.min(area.width, Math.round(b.width * ratio)), height: Math.min(area.height, Math.round(b.height * ratio)) }, area)
     w.setBounds(next)
@@ -468,7 +468,7 @@ function rescaleWindows(ratio: number) {
   else { const wb = accountStore.getConfig().windowBounds; if (wb) accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: { ...wb, width: Math.round(wb.width * ratio), height: Math.round(wb.height * ratio) } }) }
   const pb = accountStore.getConfig().popupBounds
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) resize(popupWindow, b => savePopupBounds(b))
-  else if (pb) accountStore.saveConfig({ ...accountStore.getConfig(), popupBounds: { ...pb, width: Math.round(pb.width * ratio), height: Math.round(pb.height * ratio) } })
+  else if (pb && popupWindow !== skip) accountStore.saveConfig({ ...accountStore.getConfig(), popupBounds: { ...pb, width: Math.round(pb.width * ratio), height: Math.round(pb.height * ratio) } })
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     // 최소 크기도 스케일을 따라야 줄였을 때 배치가 깨지지 않는다
     const area = screen.getDisplayMatching(settingsWindow.getBounds()).workArea
@@ -477,6 +477,18 @@ function rescaleWindows(ratio: number) {
   resize(settingsWindow); resize(aboutWindow); resize(statsWindow)
   broadcastState() // 설정 미리보기가 바뀐 위젯 크기를 따라가게
 }
+
+/**
+ * Ctrl+모서리 끌기로 정한 스케일을 저장한다. 끈 창은 이미 그 크기·배율이므로 빼고, 나머지 창만 같은 비율로 맞춘다
+ * (설정의 스케일 슬라이더와 같은 결과).
+ */
+function commitGestureScale(scale: number, startScale: number, dragged: SurfaceWindow) {
+  if (scale === startScale) return
+  accountStore.saveConfig({ ...accountStore.getConfig(), fontScale: scale })
+  rescaleWindows(scale / startScale, dragged)
+  applyZoom()
+}
+type ScaleCorner = 'ne' | 'nw' | 'se' | 'sw'
 
 /** 창이 페이지를 다시 읽으면 확대 비율이 처음으로 돌아가므로 그때마다 다시 맞춘다. */
 function keepZoom(w: { webContents: Electron.WebContents }) { w.webContents.on('did-finish-load', () => applyZoom()) }
@@ -1004,10 +1016,14 @@ function dragMove(win: BrowserWindow, x: number, y: number, size: { width: numbe
 }
 
 async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:number}, rendererDriven = false) {
-  if (interacting || !widgetWindow || widgetWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
+  if (interacting || !widgetWindow || widgetWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw)|scale-(ne|nw|se|sw))$/.test(kind)) return
+  const startedDocked = accountStore.getConfig().placementMode === 'docked'
+  // 스케일 끌기는 자유 창에서만(작업 표시줄에 붙은 위젯은 작업 표시줄 높이를 따라야 한다).
+  if (startedDocked && kind.startsWith('scale-')) return
   interacting = true
   const win = widgetWindow
-  const startedDocked = accountStore.getConfig().placementMode === 'docked'
+  const startScale = Math.round(uiZoom() * 100)
+  let liveScale = startScale
   let leftDockArea = !startedDocked
   refreshUsableRight()
   hidePopup(true)
@@ -1074,6 +1090,13 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
       last = p
       const dx = p.x - origin.x, dy = p.y - origin.y
       moved ||= Math.abs(dx) + Math.abs(dy) > 5
+      if (kind.startsWith('scale-')) {
+        // 창을 비율 그대로 키우고 줄이며, 같은 비율로 화면 배율을 바꾼다(놓으면 스케일로 저장).
+        const g = scaleGesture(start, kind.slice(6) as ScaleCorner, dx, dy, startScale)
+        win.setBounds(g.bounds)
+        if (g.scale !== liveScale) { liveScale = g.scale; win.webContents.setZoomFactor(g.scale / 100) }
+        return
+      }
       if (kind !== 'move') {
         const edge = kind.slice(7)
         let { x, y, width, height } = start
@@ -1145,6 +1168,7 @@ async function beginWindowInteraction(kind: string, pointerOrigin?: {x:number;y:
         win.setBounds(bounds)
         accountStore.saveConfig({ ...accountStore.getConfig(), windowBounds: bounds })
         rememberLayout()
+        if (kind.startsWith('scale-')) commitGestureScale(liveScale, startScale, win)
         // 끄는 동안 내려놓았던 키보드 포커스를 돌려준다(제목줄을 누른 뒤 숫자키·Esc가 다른 창으로 가지 않게).
         if (!win.isDestroyed() && !accountStore.getConfig().clickThrough) win.focus()
       }
@@ -1228,9 +1252,11 @@ function savePopupBounds(b: Electron.Rectangle) {
 
 /** 팝업 창 옮기기·크기 바꾸기. 위젯 창과 같은 제스처(렌더러가 좌표를 보냄)이고, 작업표시줄 도킹만 없다. */
 function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}) {
-  if (interacting || !popupWindow || popupWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw))$/.test(kind)) return
+  if (interacting || !popupWindow || popupWindow.isDestroyed() || !/^(move|resize-(n|s|e|w|ne|nw|se|sw)|scale-(ne|nw|se|sw))$/.test(kind)) return
   interacting = true
   const win = popupWindow
+  const startScale = Math.round(uiZoom() * 100)
+  let liveScale = startScale
   cancelHidePopup()
   hideTip()
   const origin = pointerOrigin && Number.isFinite(pointerOrigin.x) && Number.isFinite(pointerOrigin.y)
@@ -1244,6 +1270,12 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
     last = p
     const dx = p.x - origin.x, dy = p.y - origin.y
     if (kind === 'move') { dragMove(win, start.x + dx, start.y + dy, start, p, displays); return }
+    if (kind.startsWith('scale-')) {
+      const g = scaleGesture(start, kind.slice(6) as ScaleCorner, dx, dy, startScale)
+      win.setBounds(g.bounds)
+      if (g.scale !== liveScale) { liveScale = g.scale; win.webContents.setZoomFactor(g.scale / 100) }
+      return
+    }
     const edge = kind.slice(7)
     let { x, y, width, height } = start
     if (edge.includes('e')) width = Math.max(MIN_WINDOW_SIZE.width, start.width + dx)
@@ -1266,6 +1298,7 @@ function beginPopupInteraction(kind: string, pointerOrigin?: {x:number;y:number}
     const bounds = fitWindow(kind === 'move' ? { ...now, width: start.width, height: start.height } : now, screen.getDisplayNearestPoint(last).workArea)
     win.setBounds(bounds)
     savePopupBounds(bounds)
+    if (kind.startsWith('scale-')) commitGestureScale(liveScale, startScale, win)
   }
 }
 

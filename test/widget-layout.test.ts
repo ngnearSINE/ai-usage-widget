@@ -126,3 +126,22 @@ test('화면 가장자리 자석: 다른 모니터와 맞닿은 경계에는 붙
   assert.deepEqual(snapToEdges({ x: 1515, y: 500, width: 400, height: 300 }, area, left, []), { x: 1520, y: 500 }, '모니터 하나면 붙음')
   assert.deepEqual(snapToEdges({ x: 1515, y: 6, width: 400, height: 250 }, area, left, [right]), { x: 1520, y: 0 }, '옆 모니터가 낮게 붙어 있으면 오른쪽 위 구석은 바깥 경계라 붙음')
 })
+
+import { scaleGesture } from '../src/common/widget-layout.js'
+
+test('Ctrl+모서리 끌기: 비율 그대로 키우고 반대쪽 모서리는 제자리, 스케일은 정수 %로 80~150 안', () => {
+  const start = { x: 100, y: 200, width: 400, height: 300 }
+  // 오른쪽 아래를 가로 10%·세로 10% 끌면 110%
+  const a = scaleGesture(start, 'se', 40, 30, 100)
+  assert.deepEqual(a, { scale: 110, bounds: { x: 100, y: 200, width: 440, height: 330 } })
+  // 왼쪽 위를 바깥으로 끌면 커지고 오른쪽 아래 모서리가 그대로
+  const b = scaleGesture(start, 'nw', -40, -30, 100)
+  assert.equal(b.scale, 110)
+  assert.equal(b.bounds.x + b.bounds.width, 500); assert.equal(b.bounds.y + b.bounds.height, 500)
+  // 지금 스케일 120%에서 시작하면 그 비율만큼
+  assert.equal(scaleGesture(start, 'se', -40, -30, 120).scale, 108)
+  // 범위 밖으로는 가지 않는다(창 크기도 범위에 맞춘 비율로)
+  const big = scaleGesture(start, 'se', 4000, 3000, 100)
+  assert.deepEqual([big.scale, big.bounds.width, big.bounds.height], [150, 600, 450])
+  assert.equal(scaleGesture(start, 'ne', -400, 300, 100).scale, 80)
+})

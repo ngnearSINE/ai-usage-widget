@@ -150,14 +150,14 @@ Change the design from the menu (☰) in the window or widget title bar, or in S
 ## 6. Working with the window
 
 - **Move**: drag the title bar.
-- **Resize**: drag an edge or corner. Card layout and the amount of detail adjust to the size automatically, and no scrollbars appear (if it's too small, cards are split into pages).
+- **Resize**: drag an edge or corner. Card layout and the amount of detail adjust to the size automatically, and no scrollbars appear (if it's too small, cards are split into pages). **Hold Ctrl and drag a corner** to change the **scale** instead: the window grows or shrinks in proportion while text and cards zoom with it, and the value (80–150%) is saved to Settings when you let go.
 - **Really small**: with a single service you can shrink the window to about 170×64. When the window is narrow or short the title bar hides; **hover over the top edge of the window** to bring it back.
 - **Card order**: with only one card (including Focus mode), dragging the card moves the whole window, just like the title bar. With several cards, press and drag a card and the others move aside to show where it will go; let go and it lands there. You can also use **Move forward / Move back** in the right-click menu, or Settings → Services. You can't reorder while "Put services with less room first" is on. Turn on **Lock card positions** in a card's right-click menu or the title bar menu (☰) and dragging a card moves the whole window instead of reordering (off by default).
 - **Open the CLI or app directly**: **Ctrl+double-click** a card to run that service's CLI (claude, codex, grok, agy) in your default terminal; **Shift+double-click** opens its desktop app (Claude, ChatGPT/Codex, Grok and so on). "Open CLI" and "Open app" in the right-click menu do the same. If it can't be found on this PC the menu item is greyed out; in **Settings → Services**, expand that service and use "Choose…" to point at the executable or a shortcut ("Automatic" goes back to finding it automatically). In the same place, **CLI start folder** sets the folder the CLI opens in (your home folder by default; "Home folder" resets it).
 - **Right-click menu**: right-click a card for Refresh, the official usage page, the big-number basis, what to show (for that card only), reordering, hiding, and service settings.
 - **Number keys 1–5**: resize the window (or widget) in one step, from very small (1) to very large (5).
 - **Ctrl+1–6**: change the design (1 Overview, 2 Numbers, 3 Bars, 4 Rings, 5 Timeline, 6 Battery).
-- **`** (the key left of 1): turns Always hide title bar on and off. **~** (Shift+`): turns Lock card positions on and off.
+- **`` ` ``** (the key left of 1): turns Always hide title bar on and off. **~** (Shift+`` ` ``): turns Lock card positions on and off.
 - **Ctrl+K — Find a command**: a search box appears over the window. Type part of a service name, design or setting (in any order) and only matching commands remain; pick with ↑↓ and run with Enter. Each service has "Focus on", "Open CLI" and "Open app" (with its status and tightest limit shown), and recently used commands come first. Esc closes it.
 - **? — Show shortcuts**: this window's shortcuts, what the mouse does, and the shortcuts that work anywhere, on one screen.
 - **Title bar**: the current time is shown in the middle (preview builds add a label, as in `13:38 (Preview)`, and it hides if the window is too narrow and it would overlap the text on the left). On the left you'll see how many services are connected and how many need attention; hover over the refresh button for the last and next update times. The buttons on the right are pin, refresh, settings, menu and hide, in that order.
@@ -218,7 +218,7 @@ When **Background color** is "None" (default), it follows the theme (light or da
 
 ### Scale
 
-**Scale** (80–150%, default 100%) under **Settings → Design → Size and spacing** zooms the whole interface in or out. Not just the text: cards, icons and spacing all grow and shrink together, in the window, the widget, Settings and the About window.
+**Scale** (80–150%, default 100%) under **Settings → Design → Size and spacing** zooms the whole interface in or out. Not just the text: cards, icons and spacing all grow and shrink together, in the window, the widget, Settings and the About window. You can also change it by **holding Ctrl and dragging a corner** of the window or widget.
 
 - The window size changes by the same ratio, so the card layout stays the same. For example, going from 100% to 120% makes the window 1.2 times bigger too.
 - The slider changes only by how far you move it from where you first pressed. While you drag, the preview on the left grows or shrinks with the same layout, and the change is applied to the window when you let go. The line under the preview shows the actual window size at that scale.

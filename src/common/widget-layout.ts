@@ -26,6 +26,26 @@ export function fitWindow(rect: Rect, area: Rect): Rect {
     y: Math.round(Math.max(area.y, Math.min(y, area.y + area.height - height))), width: Math.round(width), height: Math.round(height) }
 }
 
+/** 스케일(창 전체 확대·축소)의 범위(%). 설정 슬라이더와 같다. */
+export const SCALE_RANGE = { min: 80, max: 150 }
+
+/**
+ * Ctrl을 누른 채 모서리를 끌 때: 창을 비율 그대로 키우거나 줄이고, 같은 비율로 스케일을 바꾼다(창 안의 배치는 그대로).
+ * 끈 거리를 가로·세로 비율로 바꿔 평균을 내고, 스케일은 정수 %로 범위 안에 맞춘 뒤 창 크기를 그 비율로 정한다.
+ * 끄는 모서리의 반대쪽 모서리는 제자리에 둔다.
+ */
+export function scaleGesture(start: Rect, corner: 'ne' | 'nw' | 'se' | 'sw', dx: number, dy: number, startScale: number): { scale: number; bounds: Rect } {
+  const sx = corner.includes('e') ? 1 : -1, sy = corner.includes('s') ? 1 : -1
+  const raw = ((start.width + sx * dx) / start.width + (start.height + sy * dy) / start.height) / 2
+  const scale = Math.max(SCALE_RANGE.min, Math.min(SCALE_RANGE.max, Math.round(startScale * raw)))
+  const r = scale / startScale
+  const width = Math.round(start.width * r), height = Math.round(start.height * r)
+  return { scale, bounds: {
+    x: corner.includes('w') ? start.x + start.width - width : start.x,
+    y: corner.includes('n') ? start.y + start.height - height : start.y,
+    width, height } }
+}
+
 /** 이 거리(px) 안으로 가장자리에 다가가면 붙는다. 더 끌어 이 거리를 넘으면 바로 떨어진다(붙는 기준과 떨어지는 기준이 같아 떨리지 않는다). */
 export const SNAP_PX = 12
 

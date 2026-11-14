@@ -260,7 +260,7 @@ export function renderDashboard(container: HTMLElement, state: AppState, force =
     ${header}
     <main class="dashboard-content" data-grid-host data-keep><div class="service-grid"></div></main>
     <div class="toast${toastShown ? ' visible' : ''}" role="status" aria-live="polite">${escapeText(toastText)}</div>
-    ${web ? '' : ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(edge => `<div class="resize-handle resize-${edge}" data-resize="${edge}" aria-hidden="true"></div>`).join('')}
+    ${web ? '' : ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].map(edge => `<div class="resize-handle resize-${edge}" data-resize="${edge}" aria-hidden="true"${edge.length === 2 ? ` title="${tr('끌어서 크기 바꾸기 · Ctrl을 누른 채 끌면 스케일(전체 확대·축소)')}"` : ''}></div>`).join('')}
   </div>`)
   bindEvents(container, state)
   layoutObserver?.disconnect()
@@ -520,7 +520,9 @@ function bindEvents(container: HTMLElement, state: AppState) {
   })
   container.querySelectorAll<HTMLElement>('[data-window-drag],[data-resize]').forEach(el => el.onpointerdown = e => {
     if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return
-    startWindowGesture(el, e, el.dataset.resize ? `resize-${el.dataset.resize}` : 'move')
+    const edge = el.dataset.resize
+    // Ctrl을 누른 채 모서리를 끌면 창 크기 대신 스케일(창 전체 확대·축소)을 바꾼다.
+    startWindowGesture(el, e, edge ? (e.ctrlKey && edge.length === 2 ? `scale-${edge}` : `resize-${edge}`) : 'move')
   })
   container.onkeydown = null
 }
@@ -539,7 +541,16 @@ function startWindowGesture(el: HTMLElement, e: PointerEvent, kind: string) {
   }
   el.onpointermove = onMove
   const stop = () => { cancelAnimationFrame(frame); el.onpointermove = null; el.onpointerup = null; el.onpointercancel = null }
-  el.onpointerup = up => { void window.api.endInteraction?.({ x: up.screenX, y: up.screenY }); stop() }
+  const scaleBefore = lastState?.config.fontScale ?? 100
+  el.onpointerup = up => {
+    const done = window.api.endInteraction?.({ x: up.screenX, y: up.screenY })
+    stop()
+    // 스케일을 바꿨으면 몇 %가 됐는지 알린다(새 설정은 메인이 상태로 다시 보낸다).
+    if (kind.startsWith('scale-')) void Promise.resolve(done).then(() => setTimeout(() => {
+      const now = lastState?.config.fontScale ?? 100
+      notify(now !== scaleBefore ? tr('스케일 {n}%', { n: now }) : tr('스케일은 80~150% 사이에서 바뀌어요.'))
+    }, 150))
+  }
   el.onpointercancel = () => { void window.api.endInteraction?.(); stop() }
   void window.api.beginInteraction(kind, { x: e.screenX, y: e.screenY }).catch(() => notify(tr('창 조작을 시작하지 못했어요.')))
 }
